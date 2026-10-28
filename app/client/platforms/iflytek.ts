@@ -1,4 +1,5 @@
 "use client";
+import { getUnauthorizedMessage } from "@/app/utils/auth-message";
 import { ModelDiscoveryUnsupportedError } from "../models";
 import {
   ApiPath,
@@ -15,7 +16,6 @@ import {
   LLMModel,
   SpeechOptions,
 } from "../api";
-import Locale from "../../locales";
 import {
   EventStreamContentType,
   fetchEventSource,
@@ -177,7 +177,7 @@ export class SparkApi implements LLMApi {
               } catch {}
 
               if (res.status === 401) {
-                extraInfo = Locale.Error.Unauthorized;
+                extraInfo = getUnauthorizedMessage();
               }
 
               options.onError?.(

@@ -1,4 +1,5 @@
 "use client";
+import { getUnauthorizedMessage } from "@/app/utils/auth-message";
 import { ModelDiscoveryUnsupportedError } from "../models";
 import { ApiPath, TENCENT_BASE_URL } from "@/app/constant";
 import { useAccessStore, useAppConfig, useChatStore } from "@/app/store";
@@ -11,7 +12,6 @@ import {
   MultimodalContent,
   SpeechOptions,
 } from "../api";
-import Locale from "../../locales";
 import {
   EventStreamContentType,
   fetchEventSource,
@@ -214,7 +214,7 @@ export class HunyuanApi implements LLMApi {
               } catch {}
 
               if (res.status === 401) {
-                responseTexts.push(Locale.Error.Unauthorized);
+                responseTexts.push(getUnauthorizedMessage());
               }
 
               if (extraInfo) {

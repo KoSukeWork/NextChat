@@ -1,3 +1,4 @@
+import { getUnauthorizedMessage } from "@/app/utils/auth-message";
 import { useDebouncedCallback } from "use-debounce";
 import React, {
   Fragment,
@@ -1358,7 +1359,7 @@ function _Chat() {
   ) {
     const copiedHello = Object.assign({}, BOT_HELLO);
     if (!accessStore.isAuthorized()) {
-      copiedHello.content = Locale.Error.Unauthorized;
+      copiedHello.content = getUnauthorizedMessage();
     }
     context.push(copiedHello);
   }

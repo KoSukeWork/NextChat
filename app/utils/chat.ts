@@ -4,7 +4,7 @@ import {
   REQUEST_TIMEOUT_MS,
 } from "@/app/constant";
 import { MultimodalContent, RequestMessage } from "@/app/client/api";
-import Locale from "@/app/locales";
+import { getUnauthorizedMessage } from "./auth-message";
 import {
   EventStreamContentType,
   fetchEventSource,
@@ -345,7 +345,7 @@ export function stream(
           } catch {}
 
           if (res.status === 401) {
-            responseTexts.push(Locale.Error.Unauthorized);
+            responseTexts.push(getUnauthorizedMessage());
           }
 
           if (extraInfo) {
@@ -571,7 +571,7 @@ export function streamWithThink(
           } catch {}
 
           if (res.status === 401) {
-            responseTexts.push(Locale.Error.Unauthorized);
+            responseTexts.push(getUnauthorizedMessage());
           }
 
           if (extraInfo) {

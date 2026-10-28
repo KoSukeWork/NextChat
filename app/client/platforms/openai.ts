@@ -1,4 +1,5 @@
 "use client";
+import { getUnauthorizedMessage } from "@/app/utils/auth-message";
 import { fetchOpenAIModels, ModelDiscoveryUnsupportedError } from "../models";
 
 // azure and openai, using same models. so using same LLMApi.
@@ -36,7 +37,6 @@ import {
   MultimodalContent,
   SpeechOptions,
 } from "../api";
-import Locale from "../../locales";
 import { getClientConfig } from "@/app/config/client";
 import {
   getMessageTextContent,
@@ -459,7 +459,7 @@ export class ChatGPTApi implements LLMApi {
     ]);
 
     if (used.status === 401) {
-      throw new Error(Locale.Error.Unauthorized);
+      throw new Error(getUnauthorizedMessage());
     }
 
     if (!used.ok || !subs.ok) {
