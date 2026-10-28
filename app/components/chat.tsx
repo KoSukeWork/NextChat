@@ -103,8 +103,6 @@ import {
 import { useNavigate } from "react-router-dom";
 import {
   CHAT_PAGE_SIZE,
-  DEFAULT_TTS_ENGINE,
-  ModelProvider,
   Path,
   REQUEST_TIMEOUT_MS,
   ServiceProvider,
@@ -118,9 +116,9 @@ import { prettyObject } from "../utils/format";
 import { ExportMessageModal } from "./exporter";
 import { getClientConfig } from "../config/client";
 import { useAllModels } from "../utils/hooks";
-import { ClientApi, MultimodalContent } from "../client/api";
-import { createTTSPlayer } from "../utils/audio";
-import { MsEdgeTTS, OUTPUT_FORMAT } from "../utils/ms_edge_tts";
+import { MultimodalContent } from "../client/api";
+import { speak, stop } from "../utils/local-tts";
+import { useLocalTTS } from "../utils/use-local-tts";
 
 import { isEmpty } from "lodash-es";
 import { getModelProvider } from "../utils/model";
@@ -129,8 +127,6 @@ import clsx from "clsx";
 import { getAvailableClientsCount, isMcpEnabled } from "../mcp/actions";
 
 const localStorage = safeLocalStorage();
-
-const ttsPlayer = createTTSPlayer();
 
 const Markdown = dynamic(async () => (await import("./markdown")).Markdown, {
   loading: () => <LoadingIcon />,
@@ -1306,51 +1302,90 @@ function _Chat() {
   };
 
   const accessStore = useAccessStore();
-  const [speechStatus, setSpeechStatus] = useState(false);
-  const [speechLoading, setSpeechLoading] = useState(false);
-
-  async function openaiSpeech(text: string) {
-    if (speechStatus) {
-      ttsPlayer.stop();
-      setSpeechStatus(false);
-    } else {
-      var api: ClientApi;
-      api = new ClientApi(ModelProvider.GPT);
-      const config = useAppConfig.getState();
-      setSpeechLoading(true);
-      ttsPlayer.init();
-      let audioBuffer: ArrayBuffer;
-      const { markdownToTxt } = require("markdown-to-txt");
-      const textContent = markdownToTxt(text);
-      if (config.ttsConfig.engine !== DEFAULT_TTS_ENGINE) {
-        const edgeVoiceName = accessStore.edgeVoiceName();
-        const tts = new MsEdgeTTS();
-        await tts.setMetadata(
-          edgeVoiceName,
-          OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3,
-        );
-        audioBuffer = await tts.toArrayBuffer(textContent);
-      } else {
-        audioBuffer = await api.llm.speech({
-          model: config.ttsConfig.model,
-          input: textContent,
-          voice: config.ttsConfig.voice,
-          speed: config.ttsConfig.speed,
-        });
-      }
-      setSpeechStatus(true);
-      ttsPlayer
-        .play(audioBuffer, () => {
-          setSpeechStatus(false);
-        })
-        .catch((e) => {
-          console.error("[OpenAI Speech]", e);
-          showToast(prettyObject(e));
-          setSpeechStatus(false);
-        })
-        .finally(() => setSpeechLoading(false));
+  const { supported: speechSupported } = useLocalTTS();
+  const [speechMessageId, setSpeechMessageId] = useState<string>();
+  const speechRequest = useRef(0);
+  const currentSpeechId = useRef<string>();
+  const speakMessage = useCallback(async (message: ChatMessage) => {
+    const ticket = ++speechRequest.current;
+    if (currentSpeechId.current === message.id) {
+      stop();
+      currentSpeechId.current = undefined;
+      setSpeechMessageId(undefined);
+      return;
     }
-  }
+    currentSpeechId.current = message.id;
+    setSpeechMessageId(message.id);
+    const { markdownToTxt } = require("markdown-to-txt");
+    const text = markdownToTxt(getMessageTextContentForContext(message));
+    try {
+      await speak(text, useAppConfig.getState().ttsConfig);
+    } catch (error) {
+      if (ticket === speechRequest.current)
+        showToast(
+          error instanceof Error && error.message === "NO_LOCAL_VOICES"
+            ? Locale.Settings.TTS.NoVoices
+            : Locale.Settings.TTS.Failed,
+        );
+    } finally {
+      if (ticket === speechRequest.current) {
+        currentSpeechId.current = undefined;
+        setSpeechMessageId(undefined);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    setSpeechMessageId(undefined);
+    return () => {
+      speechRequest.current++;
+      currentSpeechId.current = undefined;
+      stop();
+    };
+  }, [session.id]);
+  useEffect(() => {
+    if (!config.ttsConfig.enable) {
+      speechRequest.current++;
+      currentSpeechId.current = undefined;
+      stop();
+      setSpeechMessageId(undefined);
+    }
+  }, [config.ttsConfig.enable]);
+  const previousSpeechMessages = useRef<{
+    sessionId: string;
+    streaming: Set<string>;
+  }>();
+  useEffect(() => {
+    const previous = previousSpeechMessages.current;
+    previousSpeechMessages.current = {
+      sessionId: session.id,
+      streaming: new Set(
+        session.messages
+          .filter((message) => message.streaming)
+          .map((message) => message.id),
+      ),
+    };
+    const message = session.messages.at(-1);
+    if (
+      speechSupported &&
+      config.ttsConfig.enable &&
+      config.ttsConfig.autoplay &&
+      previous?.sessionId === session.id &&
+      message?.role === "assistant" &&
+      previous.streaming.has(message.id) &&
+      !message.streaming &&
+      !message.isError
+    ) {
+      void speakMessage(message);
+    }
+  }, [
+    session.id,
+    session.messages,
+    speechSupported,
+    config.ttsConfig.enable,
+    config.ttsConfig.autoplay,
+    speakMessage,
+  ]);
 
   const context: RenderMessage[] = useMemo(() => {
     return session.mask.hideContext ? [] : session.mask.context.slice();
@@ -1938,29 +1973,26 @@ function _Chat() {
                                           )
                                         }
                                       />
-                                      {config.ttsConfig.enable && (
-                                        <ChatAction
-                                          text={
-                                            speechStatus
-                                              ? Locale.Chat.Actions.StopSpeech
-                                              : Locale.Chat.Actions.Speech
-                                          }
-                                          icon={
-                                            speechStatus ? (
-                                              <SpeakStopIcon />
-                                            ) : (
-                                              <SpeakIcon />
-                                            )
-                                          }
-                                          onClick={() =>
-                                            openaiSpeech(
-                                              getMessageTextContentForContext(
-                                                message,
-                                              ),
-                                            )
-                                          }
-                                        />
-                                      )}
+                                      {speechSupported &&
+                                        config.ttsConfig.enable && (
+                                          <ChatAction
+                                            text={
+                                              speechMessageId === message.id
+                                                ? Locale.Chat.Actions.StopSpeech
+                                                : Locale.Chat.Actions.Speech
+                                            }
+                                            icon={
+                                              speechMessageId === message.id ? (
+                                                <SpeakStopIcon />
+                                              ) : (
+                                                <SpeakIcon />
+                                              )
+                                            }
+                                            onClick={() =>
+                                              speakMessage(message)
+                                            }
+                                          />
+                                        )}
                                     </>
                                   )}
                                 </div>

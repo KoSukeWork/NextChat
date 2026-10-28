@@ -4,7 +4,7 @@ import {
 } from "@/app/utils/thinking";
 import { fetchModelPage, discoveredModels } from "../models";
 import { Anthropic, ApiPath } from "@/app/constant";
-import { ChatOptions, getHeaders, LLMApi, SpeechOptions } from "../api";
+import { ChatOptions, getHeaders, LLMApi } from "../api";
 import {
   useAccessStore,
   useAppConfig,
@@ -79,10 +79,6 @@ const ClaudeMapper = {
 const keys = ["claude-2, claude-instant-1"];
 
 export class ClaudeApi implements LLMApi {
-  speech(options: SpeechOptions): Promise<ArrayBuffer> {
-    throw new Error("Method not implemented.");
-  }
-
   extractMessage(res: any) {
     console.log("[Response] claude response: ", res);
 

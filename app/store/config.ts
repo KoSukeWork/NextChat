@@ -4,23 +4,19 @@ import { getClientConfig } from "../config/client";
 import {
   DEFAULT_INPUT_TEMPLATE,
   DEFAULT_SIDEBAR_WIDTH,
-  DEFAULT_TTS_ENGINE,
-  DEFAULT_TTS_ENGINES,
-  DEFAULT_TTS_MODEL,
-  DEFAULT_TTS_MODELS,
-  DEFAULT_TTS_VOICE,
-  DEFAULT_TTS_VOICES,
   StoreKey,
   ServiceProvider,
 } from "../constant";
 import { createPersistStore } from "../utils/store";
 import { normalizeZoom } from "../utils/zoom";
+import {
+  DEFAULT_LOCAL_TTS,
+  migrateTTSConfig,
+  speechValue,
+} from "../utils/local-tts";
 import type { Voice } from "rt-client";
 
 export type ModelType = string;
-export type TTSModelType = (typeof DEFAULT_TTS_MODELS)[number];
-export type TTSVoiceType = (typeof DEFAULT_TTS_VOICES)[number];
-export type TTSEngineType = (typeof DEFAULT_TTS_ENGINES)[number];
 
 export enum SubmitKey {
   Enter = "Enter",
@@ -84,14 +80,7 @@ export const DEFAULT_CONFIG = {
     style: "vivid" as DalleStyle,
   },
 
-  ttsConfig: {
-    enable: false,
-    autoplay: false,
-    engine: DEFAULT_TTS_ENGINE,
-    model: DEFAULT_TTS_MODEL,
-    voice: DEFAULT_TTS_VOICE,
-    speed: 1.0,
-  },
+  ttsConfig: { ...DEFAULT_LOCAL_TTS },
 
   realtimeConfig: {
     enable: false,
@@ -126,20 +115,7 @@ export function limitNumber(
   return Math.min(max, Math.max(min, x));
 }
 
-export const TTSConfigValidator = {
-  engine(x: string) {
-    return x as TTSEngineType;
-  },
-  model(x: string) {
-    return x as TTSModelType;
-  },
-  voice(x: string) {
-    return x as TTSVoiceType;
-  },
-  speed(x: number) {
-    return limitNumber(x, 0.25, 4.0, 1.0);
-  },
-};
+export const TTSConfigValidator = { rate: speechValue, pitch: speechValue };
 
 export const ModalConfigValidator = {
   model(x: string) {
@@ -183,7 +159,7 @@ export const useAppConfig = createPersistStore(
   }),
   {
     name: StoreKey.Config,
-    version: 4.2,
+    version: 4.3,
 
     merge(persistedState, currentState) {
       const state = persistedState as ChatConfig | undefined;
@@ -193,6 +169,7 @@ export const useAppConfig = createPersistStore(
         ...state,
         models: state.models ?? [],
         zoom: normalizeZoom(state.zoom),
+        ttsConfig: migrateTTSConfig(state.ttsConfig),
       };
     },
 
@@ -243,6 +220,8 @@ export const useAppConfig = createPersistStore(
       if (version < 4.2) {
         state.models = [];
       }
+
+      if (version < 4.3) state.ttsConfig = migrateTTSConfig(state.ttsConfig);
 
       return state as any;
     },

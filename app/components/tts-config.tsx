@@ -1,133 +1,149 @@
+import { useEffect, useRef, useState } from "react";
 import { TTSConfig, TTSConfigValidator } from "../store";
-
 import Locale from "../locales";
-import { ListItem, Select } from "./ui-lib";
-import {
-  DEFAULT_TTS_ENGINE,
-  DEFAULT_TTS_ENGINES,
-  DEFAULT_TTS_MODELS,
-  DEFAULT_TTS_VOICES,
-} from "../constant";
+import { List, ListItem, Select, showToast } from "./ui-lib";
+import { IconButton } from "./button";
 import { InputRange } from "./input-range";
+import { speak, stop } from "../utils/local-tts";
+import { useLocalTTS } from "../utils/use-local-tts";
 
 export function TTSConfigList(props: {
   ttsConfig: TTSConfig;
   updateConfig: (updater: (config: TTSConfig) => void) => void;
 }) {
+  const { supported, voices } = useLocalTTS();
+  const [previewing, setPreviewing] = useState(false);
+  const preview = useRef(0);
+  useEffect(
+    () => () => {
+      preview.current++;
+      stop();
+    },
+    [],
+  );
+  if (!supported) return null;
+  const text = Locale.Settings.TTS;
+  const selected = voices.some(
+    (voice) => voice.voiceURI === props.ttsConfig.voiceURI,
+  )
+    ? props.ttsConfig.voiceURI
+    : "";
+  const audition = async () => {
+    if (previewing) {
+      preview.current++;
+      stop();
+      setPreviewing(false);
+      return;
+    }
+    const ticket = ++preview.current;
+    setPreviewing(true);
+    try {
+      await speak(text.Sample, props.ttsConfig);
+    } catch (error) {
+      if (ticket === preview.current)
+        showToast(
+          error instanceof Error && error.message === "NO_LOCAL_VOICES"
+            ? text.NoVoices
+            : text.Failed,
+        );
+    } finally {
+      if (ticket === preview.current) setPreviewing(false);
+    }
+  };
   return (
-    <>
-      <ListItem
-        title={Locale.Settings.TTS.Enable.Title}
-        subTitle={Locale.Settings.TTS.Enable.SubTitle}
-      >
+    <List>
+      <ListItem title={text.Enable.Title} subTitle={text.LocalDescription}>
         <input
+          aria-label={text.Enable.Title}
           type="checkbox"
           checked={props.ttsConfig.enable}
-          onChange={(e) =>
-            props.updateConfig(
-              (config) => (config.enable = e.currentTarget.checked),
-            )
-          }
-        ></input>
+          onChange={(e) => {
+            const value = e.currentTarget.checked;
+            props.updateConfig((config) => {
+              config.enable = value;
+            });
+          }}
+        />
       </ListItem>
-      {/* <ListItem
-        title={Locale.Settings.TTS.Autoplay.Title}
-        subTitle={Locale.Settings.TTS.Autoplay.SubTitle}
-      >
+      <ListItem title={text.Autoplay.Title} subTitle={text.Autoplay.SubTitle}>
         <input
+          aria-label={text.Autoplay.Title}
           type="checkbox"
           checked={props.ttsConfig.autoplay}
-          onChange={(e) =>
-            props.updateConfig(
-              (config) => (config.autoplay = e.currentTarget.checked),
-            )
-          }
-        ></input>
-      </ListItem> */}
-      <ListItem title={Locale.Settings.TTS.Engine}>
-        <Select
-          value={props.ttsConfig.engine}
+          disabled={!props.ttsConfig.enable}
           onChange={(e) => {
-            props.updateConfig(
-              (config) =>
-                (config.engine = TTSConfigValidator.engine(
-                  e.currentTarget.value,
-                )),
-            );
+            const value = e.currentTarget.checked;
+            props.updateConfig((config) => {
+              config.autoplay = value;
+            });
+          }}
+        />
+      </ListItem>
+      <ListItem
+        title={text.LocalVoice}
+        subTitle={voices.length ? text.LocalDescription : text.NoVoices}
+      >
+        <Select
+          aria-label={text.LocalVoice}
+          value={selected}
+          onChange={(e) => {
+            const value = e.currentTarget.value;
+            props.updateConfig((config) => {
+              config.voiceURI = value;
+            });
           }}
         >
-          {DEFAULT_TTS_ENGINES.map((v, i) => (
-            <option value={v} key={i}>
-              {v}
+          <option value="">{text.Automatic}</option>
+          {voices.map((voice) => (
+            <option key={voice.voiceURI} value={voice.voiceURI}>
+              {voice.name}（{voice.lang}）
             </option>
           ))}
         </Select>
       </ListItem>
-      {props.ttsConfig.engine === DEFAULT_TTS_ENGINE && (
-        <>
-          <ListItem title={Locale.Settings.TTS.Model}>
-            <Select
-              value={props.ttsConfig.model}
-              onChange={(e) => {
-                props.updateConfig(
-                  (config) =>
-                    (config.model = TTSConfigValidator.model(
-                      e.currentTarget.value,
-                    )),
-                );
-              }}
-            >
-              {DEFAULT_TTS_MODELS.map((v, i) => (
-                <option value={v} key={i}>
-                  {v}
-                </option>
-              ))}
-            </Select>
-          </ListItem>
-          <ListItem
-            title={Locale.Settings.TTS.Voice.Title}
-            subTitle={Locale.Settings.TTS.Voice.SubTitle}
-          >
-            <Select
-              value={props.ttsConfig.voice}
-              onChange={(e) => {
-                props.updateConfig(
-                  (config) =>
-                    (config.voice = TTSConfigValidator.voice(
-                      e.currentTarget.value,
-                    )),
-                );
-              }}
-            >
-              {DEFAULT_TTS_VOICES.map((v, i) => (
-                <option value={v} key={i}>
-                  {v}
-                </option>
-              ))}
-            </Select>
-          </ListItem>
-          <ListItem
-            title={Locale.Settings.TTS.Speed.Title}
-            subTitle={Locale.Settings.TTS.Speed.SubTitle}
-          >
-            <InputRange
-              aria={Locale.Settings.TTS.Speed.Title}
-              value={props.ttsConfig.speed?.toFixed(1)}
-              min="0.3"
-              max="4.0"
-              step="0.1"
-              onChange={(e) => {
-                props.updateConfig(
-                  (config) =>
-                    (config.speed = TTSConfigValidator.speed(
-                      e.currentTarget.valueAsNumber,
-                    )),
-                );
-              }}
-            ></InputRange>
-          </ListItem>
-        </>
-      )}
-    </>
+      <ListItem title={text.Rate}>
+        <InputRange
+          aria={text.Rate}
+          value={props.ttsConfig.rate.toFixed(1)}
+          min="0.5"
+          max="2"
+          step="0.1"
+          onChange={(e) => {
+            const value = TTSConfigValidator.rate(
+              e.currentTarget.valueAsNumber,
+            );
+            props.updateConfig((config) => {
+              config.rate = value;
+            });
+          }}
+        />
+      </ListItem>
+      <ListItem title={text.Pitch}>
+        <InputRange
+          aria={text.Pitch}
+          value={props.ttsConfig.pitch.toFixed(1)}
+          min="0.5"
+          max="2"
+          step="0.1"
+          onChange={(e) => {
+            const value = TTSConfigValidator.pitch(
+              e.currentTarget.valueAsNumber,
+            );
+            props.updateConfig((config) => {
+              config.pitch = value;
+            });
+          }}
+        />
+      </ListItem>
+      <ListItem title={text.Preview}>
+        <IconButton
+          aria={previewing ? Locale.Chat.Actions.StopSpeech : text.Preview}
+          text={previewing ? Locale.Chat.Actions.StopSpeech : text.Preview}
+          onClick={audition}
+          disabled={!voices.length}
+          bordered
+        />
+      </ListItem>
+    </List>
   );
 }

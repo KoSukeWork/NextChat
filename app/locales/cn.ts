@@ -595,6 +595,18 @@ const cn = {
       SubTitle: "值越大，越有可能降低重复字词",
     },
     TTS: {
+      LocalDescription: "仅使用本机语音，文本不会发送到网络",
+      LocalVoice: "本地语音",
+      Automatic: "自动（按文本语言选择）",
+      Rate: "语速",
+      Pitch: "音调",
+      Preview: "试听",
+      Sample:
+        "你好，这是本地系统语音试听。你可以调整语速和音调，让朗读更舒适。",
+      NoVoices:
+        "系统中没有可用的本地语音，请在 Windows 设置 → 时间和语言 → 语音 中添加",
+      Failed: "朗读失败，请检查系统语音设置后重试。",
+
       Enable: {
         Title: "启用文本转语音",
         SubTitle: "启用文本生成语音服务",

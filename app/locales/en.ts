@@ -608,6 +608,19 @@ const en: LocaleType = {
         "A larger value decreasing the likelihood to repeat the same line",
     },
     TTS: {
+      LocalDescription:
+        "Uses installed local voices. Text stays on this device.",
+      LocalVoice: "Local voice",
+      Automatic: "Automatic (match text language)",
+      Rate: "Speech rate",
+      Pitch: "Pitch",
+      Preview: "Preview voice",
+      Sample:
+        "Hello, this is a preview of your local system voice. Adjust the rate and pitch to make reading comfortable.",
+      NoVoices:
+        "No local voices available. Add a voice in Windows Settings → Time & language → Speech.",
+      Failed: "Speech failed. Check your system voice settings and try again.",
+
       Enable: {
         Title: "Enable TTS",
         SubTitle: "Enable text-to-speech service",

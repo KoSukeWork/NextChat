@@ -148,9 +148,6 @@ const DEFAULT_ACCESS_STATE = {
   customModels: "",
   defaultModel: "",
   visionModels: "",
-
-  // tts config
-  edgeTTSVoiceName: "zh-CN-YunxiNeural",
 };
 
 export const useAccessStore = createPersistStore(
@@ -165,11 +162,6 @@ export const useAccessStore = createPersistStore(
     getVisionModels() {
       this.fetch();
       return get().visionModels;
-    },
-    edgeVoiceName() {
-      this.fetch();
-
-      return get().edgeTTSVoiceName;
     },
 
     isValidOpenAI() {
@@ -284,7 +276,12 @@ export const useAccessStore = createPersistStore(
   }),
   {
     name: StoreKey.Access,
-    version: 2,
+    version: 3,
+    merge(persistedState, currentState) {
+      const { edgeTTSVoiceName, edgeVoiceName, ...state } = (persistedState ??
+        {}) as Record<string, unknown>;
+      return { ...currentState, ...state };
+    },
     migrate(persistedState, version) {
       if (version < 2) {
         const state = persistedState as {
@@ -297,7 +294,9 @@ export const useAccessStore = createPersistStore(
         state.azureApiVersion = "2023-08-01-preview";
       }
 
-      return persistedState as any;
+      const { edgeTTSVoiceName, edgeVoiceName, ...state } = (persistedState ??
+        {}) as Record<string, unknown>;
+      return state as any;
     },
   },
 );

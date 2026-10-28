@@ -1,35 +1,69 @@
-// app/store/config.ts participates in an import cycle, so a static import can
-// hit a temporal-dead-zone error. Load it dynamically in beforeAll instead.
-let TTSConfigValidator: {
-  engine: (x: string) => string;
-  model: (x: string) => string;
-  voice: (x: string) => string;
-  speed: (x: number) => number;
-};
+import { migrateTTSConfig, speechValue } from "../app/utils/local-tts";
 
+let configStore: typeof import("../app/store/config").useAppConfig;
+let accessStore: typeof import("../app/store/access").useAccessStore;
 beforeAll(async () => {
-  // Warm up the import cycle in a working order before loading the target.
   await import("../app/client/api");
-  ({ TTSConfigValidator } = await import("../app/store/config"));
+  configStore = (await import("../app/store/config")).useAppConfig;
+  accessStore = (await import("../app/store/access")).useAccessStore;
 });
 
-describe("TTSConfigValidator", () => {
-  test("speed clamps to [0.25, 4.0] and defaults to 1.0 on NaN", () => {
-    expect(TTSConfigValidator.speed(0.1)).toBe(0.25);
-    expect(TTSConfigValidator.speed(10)).toBe(4.0);
-    expect(TTSConfigValidator.speed(2)).toBe(2);
-    expect(TTSConfigValidator.speed(NaN)).toBe(1.0);
-  });
+test("local speech controls clamp to 0.5–2 with safe invalid defaults", () => {
+  expect([0.1, 4, 1.5, NaN, Infinity, undefined].map(speechValue)).toEqual([
+    0.5, 2, 1.5, 1, 1, 1,
+  ]);
+});
 
-  test("engine passes the value through unchanged", () => {
-    expect(TTSConfigValidator.engine("OpenAI-TTS")).toBe("OpenAI-TTS");
+test("legacy settings migrate without retaining cloud engine/model/voice/speed", async () => {
+  const legacy = {
+    enable: true,
+    autoplay: true,
+    engine: "Edge-TTS",
+    model: "tts-1",
+    voice: "alloy",
+    speed: 1.7,
+  };
+  expect(migrateTTSConfig(legacy)).toEqual({
+    enable: true,
+    autoplay: true,
+    voiceURI: "",
+    rate: 1.7,
+    pitch: 1,
   });
+  const options = configStore.persist.getOptions();
+  const realtimeConfig = configStore.getState().realtimeConfig;
+  const migrated = await options.migrate!(
+    { ttsConfig: legacy, realtimeConfig },
+    4.2,
+  );
+  expect((migrated as any).ttsConfig).toEqual(migrateTTSConfig(legacy));
+  expect((migrated as any).realtimeConfig).toBe(realtimeConfig);
+  expect(
+    options.merge!({ ttsConfig: legacy }, configStore.getState()).ttsConfig,
+  ).toEqual(migrateTTSConfig(legacy));
+  expect(migrateTTSConfig(undefined)).toEqual({
+    enable: false,
+    autoplay: false,
+    voiceURI: "",
+    rate: 1,
+    pitch: 1,
+  });
+  expect(
+    migrateTTSConfig({ voiceURI: "installed", rate: 1.2, pitch: 0.8 }),
+  ).toMatchObject({ voiceURI: "installed", rate: 1.2, pitch: 0.8 });
+});
 
-  test("model passes the value through unchanged", () => {
-    expect(TTSConfigValidator.model("tts-1")).toBe("tts-1");
-  });
-
-  test("voice passes the value through unchanged", () => {
-    expect(TTSConfigValidator.voice("alloy")).toBe("alloy");
-  });
+test("access migration and merge discard obsolete Edge settings without affecting credentials", async () => {
+  const options = accessStore.persist.getOptions();
+  const legacy = {
+    edgeTTSVoiceName: "remote",
+    edgeVoiceName: "obsolete",
+    openaiApiKey: "test-only",
+  };
+  const migrated = await options.migrate!(legacy, 2);
+  expect(migrated).toEqual({ openaiApiKey: "test-only" });
+  const merged = options.merge!(legacy, accessStore.getState());
+  expect(merged).not.toHaveProperty("edgeTTSVoiceName");
+  expect(merged).not.toHaveProperty("edgeVoiceName");
+  expect(merged.openaiApiKey).toBe("test-only");
 });
