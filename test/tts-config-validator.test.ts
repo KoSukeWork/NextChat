@@ -24,6 +24,7 @@ test("legacy settings migrate without retaining cloud engine/model/voice/speed",
     speed: 1.7,
   };
   expect(migrateTTSConfig(legacy)).toEqual({
+    engine: "system",
     enable: true,
     autoplay: true,
     voiceURI: "",
@@ -42,6 +43,7 @@ test("legacy settings migrate without retaining cloud engine/model/voice/speed",
     options.merge!({ ttsConfig: legacy }, configStore.getState()).ttsConfig,
   ).toEqual(migrateTTSConfig(legacy));
   expect(migrateTTSConfig(undefined)).toEqual({
+    engine: "system",
     enable: false,
     autoplay: false,
     voiceURI: "",
@@ -51,6 +53,26 @@ test("legacy settings migrate without retaining cloud engine/model/voice/speed",
   expect(
     migrateTTSConfig({ voiceURI: "installed", rate: 1.2, pitch: 0.8 }),
   ).toMatchObject({ voiceURI: "installed", rate: 1.2, pitch: 0.8 });
+});
+
+test("4.4 migration defaults old local settings to system and preserves valid Melo selection", async () => {
+  const options = configStore.persist.getOptions();
+  expect(options.version).toBe(4.4);
+  const migrated = await options.migrate!(
+    { ttsConfig: { enable: true, rate: 1.1 } },
+    4.3,
+  );
+  expect((migrated as any).ttsConfig).toMatchObject({
+    engine: "system",
+    enable: true,
+    rate: 1.1,
+  });
+  expect(migrateTTSConfig({ engine: "melo" }).engine).toBe("melo");
+  expect(migrateTTSConfig({ engine: "unknown" }).engine).toBe("system");
+  expect(
+    options.merge!({ ttsConfig: { engine: "melo" } }, configStore.getState())
+      .ttsConfig.engine,
+  ).toBe("melo");
 });
 
 test("access migration and merge discard obsolete Edge settings without affecting credentials", async () => {

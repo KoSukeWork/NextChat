@@ -4,6 +4,7 @@
 mod mcp;
 mod stream;
 mod zoom;
+mod tts;
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -20,6 +21,7 @@ fn main() {
             app.manage(Arc::new(mcp::McpState::new(
                 directory.join("mcp_config.json"),
             )));
+            app.manage(tts::setup(app)?);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -29,7 +31,15 @@ fn main() {
             mcp::mcp_spawn,
             mcp::mcp_send,
             mcp::mcp_kill,
-            zoom::set_zoom
+            zoom::set_zoom,
+            tts::melo_status,
+            tts::melo_download,
+            tts::melo_import,
+            tts::melo_cancel_install,
+            tts::melo_delete,
+            tts::melo_begin_speech,
+            tts::melo_cancel_speech,
+            tts::melo_synthesize
         ])
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .build(tauri::generate_context!())
@@ -37,6 +47,7 @@ fn main() {
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
                 app.state::<Arc<mcp::McpState>>().kill_all();
+                app.state::<Arc<tts::TtsState>>().shutdown();
             }
         });
 }

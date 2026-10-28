@@ -159,7 +159,7 @@ export const useAppConfig = createPersistStore(
   }),
   {
     name: StoreKey.Config,
-    version: 4.3,
+    version: 4.4,
 
     merge(persistedState, currentState) {
       const state = persistedState as ChatConfig | undefined;
@@ -221,7 +221,7 @@ export const useAppConfig = createPersistStore(
         state.models = [];
       }
 
-      if (version < 4.3) state.ttsConfig = migrateTTSConfig(state.ttsConfig);
+      if (version < 4.4) state.ttsConfig = migrateTTSConfig(state.ttsConfig);
 
       return state as any;
     },

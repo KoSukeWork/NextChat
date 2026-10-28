@@ -119,6 +119,7 @@ import { useAllModels } from "../utils/hooks";
 import { MultimodalContent } from "../client/api";
 import { speak, stop } from "../utils/local-tts";
 import { useLocalTTS } from "../utils/use-local-tts";
+import { showSpeechFallback } from "./tts-feedback";
 
 import { isEmpty } from "lodash-es";
 import { getModelProvider } from "../utils/model";
@@ -1319,7 +1320,10 @@ function _Chat() {
     const { markdownToTxt } = require("markdown-to-txt");
     const text = markdownToTxt(getMessageTextContentForContext(message));
     try {
-      await speak(text, useAppConfig.getState().ttsConfig);
+      await speak(text, {
+        ...useAppConfig.getState().ttsConfig,
+        onFallback: showSpeechFallback,
+      });
     } catch (error) {
       if (ticket === speechRequest.current)
         showToast(
@@ -1351,6 +1355,15 @@ function _Chat() {
       setSpeechMessageId(undefined);
     }
   }, [config.ttsConfig.enable]);
+  useEffect(
+    () => () => {
+      speechRequest.current++;
+      currentSpeechId.current = undefined;
+      stop();
+      setSpeechMessageId(undefined);
+    },
+    [config.ttsConfig.engine],
+  );
   const previousSpeechMessages = useRef<{
     sessionId: string;
     streaming: Set<string>;

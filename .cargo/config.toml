@@ -1,0 +1,10 @@
+# A fresh native build must run scripts/with-sherpa.mjs first. Do not let the
+# dependency's build.rs silently download an archive without SHA256 verification.
+[env]
+SHERPA_ONNX_LIB_DIR = { value = "src-tauri/target/sherpa-native/current/lib", relative = true }
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

@@ -6,6 +6,9 @@ import { IconButton } from "./button";
 import { InputRange } from "./input-range";
 import { speak, stop } from "../utils/local-tts";
 import { useLocalTTS } from "../utils/use-local-tts";
+import { isMeloDesktop } from "../utils/melo-client";
+import { MeloModelControls } from "./melo-model-controls";
+import { showSpeechFallback } from "./tts-feedback";
 
 export function TTSConfigList(props: {
   ttsConfig: TTSConfig;
@@ -14,6 +17,13 @@ export function TTSConfigList(props: {
   const { supported, voices } = useLocalTTS();
   const [previewing, setPreviewing] = useState(false);
   const preview = useRef(0);
+  const desktop = isMeloDesktop();
+  const engine = desktop ? props.ttsConfig.engine : "system";
+  const stopPreview = () => {
+    preview.current++;
+    stop();
+    setPreviewing(false);
+  };
   useEffect(
     () => () => {
       preview.current++;
@@ -38,7 +48,10 @@ export function TTSConfigList(props: {
     const ticket = ++preview.current;
     setPreviewing(true);
     try {
-      await speak(text.Sample, props.ttsConfig);
+      await speak(engine === "melo" ? text.Melo.Sample : text.Sample, {
+        ...props.ttsConfig,
+        onFallback: showSpeechFallback,
+      });
     } catch (error) {
       if (ticket === preview.current)
         showToast(
@@ -52,6 +65,25 @@ export function TTSConfigList(props: {
   };
   return (
     <List>
+      {desktop && (
+        <ListItem title={text.Engine}>
+          <Select
+            aria-label={text.Engine}
+            value={engine}
+            onChange={(event) => {
+              const value =
+                event.currentTarget.value === "melo" ? "melo" : "system";
+              stopPreview();
+              props.updateConfig((config) => {
+                config.engine = value;
+              });
+            }}
+          >
+            <option value="system">{text.SystemEngine}</option>
+            <option value="melo">{text.Melo.Engine}</option>
+          </Select>
+        </ListItem>
+      )}
       <ListItem title={text.Enable.Title} subTitle={text.LocalDescription}>
         <input
           aria-label={text.Enable.Title}
@@ -79,28 +111,31 @@ export function TTSConfigList(props: {
           }}
         />
       </ListItem>
-      <ListItem
-        title={text.LocalVoice}
-        subTitle={voices.length ? text.LocalDescription : text.NoVoices}
-      >
-        <Select
-          aria-label={text.LocalVoice}
-          value={selected}
-          onChange={(e) => {
-            const value = e.currentTarget.value;
-            props.updateConfig((config) => {
-              config.voiceURI = value;
-            });
-          }}
+      {engine === "melo" && <MeloModelControls onStop={stopPreview} />}
+      {engine !== "melo" && (
+        <ListItem
+          title={text.LocalVoice}
+          subTitle={voices.length ? text.LocalDescription : text.NoVoices}
         >
-          <option value="">{text.Automatic}</option>
-          {voices.map((voice) => (
-            <option key={voice.voiceURI} value={voice.voiceURI}>
-              {voice.name}（{voice.lang}）
-            </option>
-          ))}
-        </Select>
-      </ListItem>
+          <Select
+            aria-label={text.LocalVoice}
+            value={selected}
+            onChange={(e) => {
+              const value = e.currentTarget.value;
+              props.updateConfig((config) => {
+                config.voiceURI = value;
+              });
+            }}
+          >
+            <option value="">{text.Automatic}</option>
+            {voices.map((voice) => (
+              <option key={voice.voiceURI} value={voice.voiceURI}>
+                {voice.name}（{voice.lang}）
+              </option>
+            ))}
+          </Select>
+        </ListItem>
+      )}
       <ListItem title={text.Rate}>
         <InputRange
           aria={text.Rate}
@@ -118,29 +153,31 @@ export function TTSConfigList(props: {
           }}
         />
       </ListItem>
-      <ListItem title={text.Pitch}>
-        <InputRange
-          aria={text.Pitch}
-          value={props.ttsConfig.pitch.toFixed(1)}
-          min="0.5"
-          max="2"
-          step="0.1"
-          onChange={(e) => {
-            const value = TTSConfigValidator.pitch(
-              e.currentTarget.valueAsNumber,
-            );
-            props.updateConfig((config) => {
-              config.pitch = value;
-            });
-          }}
-        />
-      </ListItem>
+      {engine !== "melo" && (
+        <ListItem title={text.Pitch}>
+          <InputRange
+            aria={text.Pitch}
+            value={props.ttsConfig.pitch.toFixed(1)}
+            min="0.5"
+            max="2"
+            step="0.1"
+            onChange={(e) => {
+              const value = TTSConfigValidator.pitch(
+                e.currentTarget.valueAsNumber,
+              );
+              props.updateConfig((config) => {
+                config.pitch = value;
+              });
+            }}
+          />
+        </ListItem>
+      )}
       <ListItem title={text.Preview}>
         <IconButton
           aria={previewing ? Locale.Chat.Actions.StopSpeech : text.Preview}
           text={previewing ? Locale.Chat.Actions.StopSpeech : text.Preview}
           onClick={audition}
-          disabled={!voices.length}
+          disabled={engine !== "melo" && !voices.length}
           bordered
         />
       </ListItem>

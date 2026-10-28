@@ -608,6 +608,58 @@ const en: LocaleType = {
         "A larger value decreasing the likelihood to repeat the same line",
     },
     TTS: {
+      SystemEngine: "System voice",
+      Melo: {
+        Engine: "MeloTTS (local neural voice, Chinese + English)",
+        Model: "MeloTTS model",
+        Manage: "Manage model",
+        Description:
+          "About 167 MB. Works offline after download, with one female Chinese/English voice.",
+        Checking: "Checking model…",
+        Missing: "Not downloaded",
+        Downloading: (percent: number) => `Downloading ${percent}%`,
+        Verifying: "Verifying and extracting…",
+        Deleting: "Deleting model…",
+        Ready: (size: string) => `Ready (${size} MiB)`,
+        Progress: "Model download progress",
+        Download: "Download model",
+        Import: "Import local file",
+        Delete: "Delete model",
+        Cancel: "Cancel download/import",
+        Sample:
+          "Hello, this is a local MeloTTS preview. Python and the API are ready, and progress is 85%.",
+        Fallback: (reason: string) =>
+          `MeloTTS is unavailable: ${reason}. Using the system voice.`,
+        Stopped: (reason: string) => `MeloTTS playback stopped: ${reason}.`,
+        UnknownError: "Local speech operation failed. Please try again",
+        Errors: {
+          MODEL_NOT_READY: "Download or import the model first",
+          MODEL_LOAD_FAILED:
+            "Model loading failed; download or import it again",
+          MODEL_FILES_MISSING:
+            "Model files are incomplete; delete and import again",
+          MODEL_HASH_MISMATCH:
+            "Model verification failed; use the specified official model archive",
+          MODEL_SIZE_MISMATCH:
+            "Model file size is incorrect; download it again",
+          INVALID_ARCHIVE:
+            "The model archive has an invalid format or unsafe paths",
+          INVALID_MODEL_PATH: "The model directory is invalid",
+          MODEL_ALREADY_EXISTS:
+            "The model directory already exists; delete the model first",
+          MODEL_BUSY: "A model operation is still in progress",
+          MODEL_IO:
+            "Cannot access model files; check disk space and permissions",
+          MODEL_STATE_FAILED: "Local speech state is invalid; restart the app",
+          DOWNLOAD_FAILED: "Download failed; retry or import a local file",
+          SYNTHESIS_FAILED: "Speech synthesis failed",
+          EMPTY_SPEECH: "The text produced no playable speech",
+          AUDIO_DECODE_FAILED: "The generated speech could not be decoded",
+          INVALID_SPEECH_INPUT: "The text or speech rate is invalid",
+          AUDIO_UNAVAILABLE: "Local audio playback is unavailable",
+          CANCELLED: "The operation was cancelled",
+        },
+      },
       LocalDescription:
         "Uses installed local voices. Text stays on this device.",
       LocalVoice: "Local voice",
