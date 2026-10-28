@@ -6,6 +6,21 @@ import { SAAS_CHAT_UTM_URL } from "@/app/constant";
 
 const isApp = !!getClientConfig()?.isApp;
 const en: LocaleType = {
+  ModelDiscovery: {
+    Placeholder: "gpt-4o,claude-sonnet-4-5@Anthropic,my-model=Display name",
+    Title: "Fetch models",
+    Loading: "Fetching…",
+    Saved: "Saved models",
+    Search: "Search models",
+    SelectAll: "Select all",
+    SelectNone: "Select none",
+    Empty: "No models found",
+    Unsupported:
+      "This provider does not support model discovery. Please add models manually.",
+    Failed: "Failed to fetch models",
+    Unconfigured: "No models configured",
+    ConfigureFirst: "Add or fetch models in Settings first.",
+  },
   WIP: "Coming Soon...",
   Error: {
     Unauthorized: isApp

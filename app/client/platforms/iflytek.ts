@@ -1,4 +1,5 @@
 "use client";
+import { ModelDiscoveryUnsupportedError } from "../models";
 import {
   ApiPath,
   IFLYTEK_BASE_URL,
@@ -27,8 +28,6 @@ import { fetch } from "@/app/utils/stream";
 import { RequestPayload } from "./openai";
 
 export class SparkApi implements LLMApi {
-  private disableListModels = true;
-
   path(path: string): string {
     const accessStore = useAccessStore.getState();
 
@@ -248,6 +247,6 @@ export class SparkApi implements LLMApi {
   }
 
   async models(): Promise<LLMModel[]> {
-    return [];
+    throw new ModelDiscoveryUnsupportedError();
   }
 }

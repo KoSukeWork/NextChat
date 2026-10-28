@@ -109,7 +109,7 @@ export async function requestOpenai(req: NextRequest) {
   };
 
   // #1815 try to refuse gpt4 request
-  if (serverConfig.customModels && req.body) {
+  if ((serverConfig.customModels || serverConfig.disableGPT4) && req.body) {
     try {
       const clonedBody = await req.text();
       fetchOptions.body = clonedBody;

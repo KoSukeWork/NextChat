@@ -1,4 +1,6 @@
 "use client";
+import { fetchOpenAIModels } from "../models";
+
 // azure and openai, using same models. so using same LLMApi.
 import { ApiPath, DEEPSEEK_BASE_URL, DeepSeek } from "@/app/constant";
 import {
@@ -26,8 +28,6 @@ import { RequestPayload } from "./openai";
 import { fetch } from "@/app/utils/stream";
 
 export class DeepSeekApi implements LLMApi {
-  private disableListModels = true;
-
   path(path: string): string {
     const accessStore = useAccessStore.getState();
 
@@ -248,6 +248,6 @@ export class DeepSeekApi implements LLMApi {
   }
 
   async models(): Promise<LLMModel[]> {
-    return [];
+    return fetchOpenAIModels(this.path("models"), "DeepSeek");
   }
 }

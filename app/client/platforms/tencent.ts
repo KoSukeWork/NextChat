@@ -1,4 +1,5 @@
 "use client";
+import { ModelDiscoveryUnsupportedError } from "../models";
 import { ApiPath, TENCENT_BASE_URL } from "@/app/constant";
 import { useAccessStore, useAppConfig, useChatStore } from "@/app/store";
 
@@ -273,6 +274,6 @@ export class HunyuanApi implements LLMApi {
   }
 
   async models(): Promise<LLMModel[]> {
-    return [];
+    throw new ModelDiscoveryUnsupportedError();
   }
 }

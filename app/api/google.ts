@@ -92,9 +92,7 @@ async function request(req: NextRequest, apiKey: string) {
     },
     10 * 60 * 1000,
   );
-  const fetchUrl = `${baseUrl}${path}${
-    req?.nextUrl?.searchParams?.get("alt") === "sse" ? "?alt=sse" : ""
-  }`;
+  const fetchUrl = `${baseUrl}${path}${req.nextUrl.search}`;
 
   console.log("[Fetch Url] ", fetchUrl);
   const fetchOptions: RequestInit = {

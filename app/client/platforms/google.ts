@@ -1,3 +1,4 @@
+import { fetchModelPage, discoveredModels } from "../models";
 import { ApiPath, Google } from "@/app/constant";
 import {
   ChatOptions,
@@ -312,6 +313,33 @@ export class GeminiProApi implements LLMApi {
     throw new Error("Method not implemented.");
   }
   async models(): Promise<LLMModel[]> {
-    return [];
+    const names: string[] = [];
+    let pageToken = "";
+    do {
+      const version = useAccessStore.getState().googleApiVersion;
+      const result = await fetchModelPage(
+        this.path(
+          `${version}/models?pageSize=1000${
+            pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""
+          }`,
+        ),
+        "Google",
+      );
+      if (!Array.isArray(result.models))
+        throw new Error("Invalid model list response");
+      names.push(
+        ...result.models
+          .filter(
+            (m: { supportedGenerationMethods?: string[] }) =>
+              m.supportedGenerationMethods?.includes("generateContent"),
+          )
+          .map((m: { name: string }) => m.name.replace(/^models\//, "")),
+      );
+      const next = result.nextPageToken || "";
+      if (next && next === pageToken)
+        throw new Error("Invalid model pagination");
+      pageToken = next;
+    } while (pageToken);
+    return discoveredModels(names, "Google");
   }
 }

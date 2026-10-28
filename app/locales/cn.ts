@@ -5,6 +5,20 @@ import { SAAS_CHAT_UTM_URL } from "@/app/constant";
 const isApp = !!getClientConfig()?.isApp;
 
 const cn = {
+  ModelDiscovery: {
+    Placeholder: "gpt-4o,claude-sonnet-4-5@Anthropic,my-model=显示名",
+    Title: "获取模型列表",
+    Loading: "正在获取…",
+    Saved: "已保存的模型",
+    Search: "搜索模型",
+    SelectAll: "全选",
+    SelectNone: "全不选",
+    Empty: "没有找到模型",
+    Unsupported: "该服务商不支持自动获取，请手动添加",
+    Failed: "获取模型失败",
+    Unconfigured: "未配置模型",
+    ConfigureFirst: "请先在设置中添加或获取模型",
+  },
   WIP: "该功能仍在开发中……",
   Error: {
     Unauthorized: isApp

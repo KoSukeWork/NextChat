@@ -1,3 +1,4 @@
+import { fetchModelPage, discoveredModels } from "../models";
 import { Anthropic, ApiPath } from "@/app/constant";
 import { ChatOptions, getHeaders, LLMApi, SpeechOptions } from "../api";
 import {
@@ -224,7 +225,11 @@ export class ClaudeApi implements LLMApi {
           let chunkJson:
             | undefined
             | {
-                type: "content_block_delta" | "content_block_stop" | "message_delta" | "message_stop";
+                type:
+                  | "content_block_delta"
+                  | "content_block_stop"
+                  | "message_delta"
+                  | "message_stop";
                 content_block?: {
                   type: "tool_use";
                   id: string;
@@ -243,8 +248,11 @@ export class ClaudeApi implements LLMApi {
           // Handle refusal stop reason in message_delta
           if (chunkJson?.delta?.stop_reason === "refusal") {
             // Return a message to display to the user
-            const refusalMessage = "\n\n[Assistant refused to respond. Please modify your request and try again.]";
-            options.onError?.(new Error("Content policy violation: " + refusalMessage));
+            const refusalMessage =
+              "\n\n[Assistant refused to respond. Please modify your request and try again.]";
+            options.onError?.(
+              new Error("Content policy violation: " + refusalMessage),
+            );
             return refusalMessage;
           }
 
@@ -347,44 +355,30 @@ export class ClaudeApi implements LLMApi {
     };
   }
   async models() {
-    // const provider = {
-    //   id: "anthropic",
-    //   providerName: "Anthropic",
-    //   providerType: "anthropic",
-    // };
-
-    return [
-      // {
-      //   name: "claude-instant-1.2",
-      //   available: true,
-      //   provider,
-      // },
-      // {
-      //   name: "claude-2.0",
-      //   available: true,
-      //   provider,
-      // },
-      // {
-      //   name: "claude-2.1",
-      //   available: true,
-      //   provider,
-      // },
-      // {
-      //   name: "claude-3-opus-20240229",
-      //   available: true,
-      //   provider,
-      // },
-      // {
-      //   name: "claude-3-sonnet-20240229",
-      //   available: true,
-      //   provider,
-      // },
-      // {
-      //   name: "claude-3-haiku-20240307",
-      //   available: true,
-      //   provider,
-      // },
-    ];
+    const names: string[] = [];
+    let after = "";
+    do {
+      const result = await fetchModelPage(
+        this.path(
+          `v1/models?limit=100${
+            after ? `&after_id=${encodeURIComponent(after)}` : ""
+          }`,
+        ),
+        "Anthropic",
+        {
+          "anthropic-version": useAccessStore.getState().anthropicApiVersion,
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+      );
+      if (!Array.isArray(result.data))
+        throw new Error("Invalid model list response");
+      names.push(...result.data.map((m: { id: string }) => m.id));
+      const next = result.has_more ? result.last_id : "";
+      if (result.has_more && (!next || next === after))
+        throw new Error("Invalid model pagination");
+      after = next;
+    } while (after);
+    return discoveredModels(names, "Anthropic");
   }
   path(path: string): string {
     const accessStore = useAccessStore.getState();

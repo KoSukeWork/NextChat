@@ -1,5 +1,5 @@
 import md5 from "spark-md5";
-import { DEFAULT_MODELS, DEFAULT_GA_ID } from "../constant";
+import { DEFAULT_GA_ID } from "../constant";
 import { isGPT4Model } from "../utils/model";
 
 declare global {
@@ -142,10 +142,6 @@ export const getServerSideConfig = () => {
   let visionModels = process.env.VISION_MODELS ?? "";
 
   if (disableGPT4) {
-    if (customModels) customModels += ",";
-    customModels += DEFAULT_MODELS.filter((m) => isGPT4Model(m.name))
-      .map((m) => "-" + m.name)
-      .join(",");
     if (defaultModel && isGPT4Model(defaultModel)) {
       defaultModel = "";
     }

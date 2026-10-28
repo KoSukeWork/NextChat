@@ -29,7 +29,6 @@ import { Ai302Api } from "./platforms/ai302";
 export const ROLES = ["system", "user", "assistant"] as const;
 export type MessageRole = (typeof ROLES)[number];
 
-export const Models = ["gpt-3.5-turbo", "gpt-4"] as const;
 export const TTSModels = ["tts-1", "tts-1-hd"] as const;
 export type ChatModel = ModelType;
 
@@ -136,7 +135,10 @@ interface ChatProvider {
 export class ClientApi {
   public llm: LLMApi;
 
-  constructor(provider: ModelProvider = ModelProvider.GPT) {
+  constructor(
+    provider: ModelProvider = ModelProvider.GPT,
+    serviceProvider: string = ServiceProvider.OpenAI,
+  ) {
     switch (provider) {
       case ModelProvider.GeminiPro:
         this.llm = new GeminiProApi();
@@ -178,7 +180,7 @@ export class ClientApi {
         this.llm = new Ai302Api();
         break;
       default:
-        this.llm = new ChatGPTApi();
+        this.llm = new ChatGPTApi(serviceProvider);
     }
   }
 
@@ -241,7 +243,10 @@ export function validString(x: string): boolean {
   return x?.length > 0;
 }
 
-export function getHeaders(ignoreHeaders: boolean = false) {
+export function getHeaders(
+  ignoreHeaders: boolean = false,
+  providerName?: string,
+) {
   const accessStore = useAccessStore.getState();
   const chatStore = useChatStore.getState();
   let headers: Record<string, string> = {};
@@ -255,7 +260,11 @@ export function getHeaders(ignoreHeaders: boolean = false) {
   const clientConfig = getClientConfig();
 
   function getConfig() {
-    const modelConfig = chatStore.currentSession().mask.modelConfig;
+    const modelConfig = {
+      providerName:
+        providerName ??
+        chatStore.currentSession().mask.modelConfig.providerName,
+    };
     const isGoogle = modelConfig.providerName === ServiceProvider.Google;
     const isAzure = modelConfig.providerName === ServiceProvider.Azure;
     const isAnthropic = modelConfig.providerName === ServiceProvider.Anthropic;
@@ -367,6 +376,8 @@ export function getHeaders(ignoreHeaders: boolean = false) {
 
 export function getClientApi(provider: ServiceProvider): ClientApi {
   switch (provider) {
+    case ServiceProvider.Azure:
+      return new ClientApi(ModelProvider.GPT, ServiceProvider.Azure);
     case ServiceProvider.Google:
       return new ClientApi(ModelProvider.GeminiPro);
     case ServiceProvider.Anthropic:

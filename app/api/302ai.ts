@@ -64,7 +64,7 @@ async function request(req: NextRequest) {
     10 * 60 * 1000,
   );
 
-  const fetchUrl = `${baseUrl}${path}`;
+  const fetchUrl = `${baseUrl}${path}${req.nextUrl.search}`;
   const fetchOptions: RequestInit = {
     headers: {
       "Content-Type": "application/json",

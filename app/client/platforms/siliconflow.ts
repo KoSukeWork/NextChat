@@ -1,11 +1,8 @@
 "use client";
+import { fetchOpenAIModels } from "../models";
+
 // azure and openai, using same models. so using same LLMApi.
-import {
-  ApiPath,
-  SILICONFLOW_BASE_URL,
-  SiliconFlow,
-  DEFAULT_MODELS,
-} from "@/app/constant";
+import { ApiPath, SILICONFLOW_BASE_URL, SiliconFlow } from "@/app/constant";
 import {
   useAccessStore,
   useAppConfig,
@@ -41,8 +38,6 @@ export interface SiliconFlowListModelResponse {
 }
 
 export class SiliconflowApi implements LLMApi {
-  private disableListModels = false;
-
   path(path: string): string {
     const accessStore = useAccessStore.getState();
 
@@ -252,36 +247,9 @@ export class SiliconflowApi implements LLMApi {
   }
 
   async models(): Promise<LLMModel[]> {
-    if (this.disableListModels) {
-      return DEFAULT_MODELS.slice();
-    }
-
-    const res = await fetch(this.path(SiliconFlow.ListModelPath), {
-      method: "GET",
-      headers: {
-        ...getHeaders(),
-      },
-    });
-
-    const resJson = (await res.json()) as SiliconFlowListModelResponse;
-    const chatModels = resJson.data;
-    console.log("[Models]", chatModels);
-
-    if (!chatModels) {
-      return [];
-    }
-
-    let seq = 1000; //同 Constant.ts 中的排序保持一致
-    return chatModels.map((m) => ({
-      name: m.id,
-      available: true,
-      sorted: seq++,
-      provider: {
-        id: "siliconflow",
-        providerName: "SiliconFlow",
-        providerType: "siliconflow",
-        sorted: 14,
-      },
-    }));
+    return fetchOpenAIModels(
+      this.path(SiliconFlow.ListModelPath),
+      "SiliconFlow",
+    );
   }
 }

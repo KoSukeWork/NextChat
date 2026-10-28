@@ -1,4 +1,5 @@
 "use client";
+import { ModelDiscoveryUnsupportedError } from "../models";
 import { ApiPath, ByteDance, BYTEDANCE_BASE_URL } from "@/app/constant";
 import {
   useAccessStore,
@@ -244,7 +245,7 @@ export class DoubaoApi implements LLMApi {
   }
 
   async models(): Promise<LLMModel[]> {
-    return [];
+    throw new ModelDiscoveryUnsupportedError();
   }
 }
 export { ByteDance };

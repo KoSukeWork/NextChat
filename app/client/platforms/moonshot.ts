@@ -1,4 +1,6 @@
 "use client";
+import { fetchOpenAIModels } from "../models";
+
 // azure and openai, using same models. so using same LLMApi.
 import {
   ApiPath,
@@ -27,8 +29,6 @@ import { RequestPayload } from "./openai";
 import { fetch } from "@/app/utils/stream";
 
 export class MoonshotApi implements LLMApi {
-  private disableListModels = true;
-
   path(path: string): string {
     const accessStore = useAccessStore.getState();
 
@@ -195,6 +195,6 @@ export class MoonshotApi implements LLMApi {
   }
 
   async models(): Promise<LLMModel[]> {
-    return [];
+    return fetchOpenAIModels(this.path("v1/models"), "Moonshot");
   }
 }

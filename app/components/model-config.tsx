@@ -38,6 +38,9 @@ export function ModelConfigList(props: {
             });
           }}
         >
+          {Object.keys(groupModels).length === 0 && (
+            <option value="">{Locale.ModelDiscovery.Unconfigured}</option>
+          )}
           {Object.keys(groupModels).map((providerName, index) => (
             <optgroup label={providerName} key={index}>
               {groupModels[providerName].map((v, i) => (

@@ -17,7 +17,6 @@ import { ChatControllerPool } from "../client/controller";
 import { showToast } from "../components/ui-lib";
 import {
   DEFAULT_INPUT_TEMPLATE,
-  DEFAULT_MODELS,
   DEFAULT_SYSTEM_TEMPLATE,
   GEMINI_SUMMARIZE_MODEL,
   DEEPSEEK_SUMMARIZE_MODEL,
@@ -123,32 +122,28 @@ function getSummarizeModel(
   currentModel: string,
   providerName: string,
 ): string[] {
-  // if it is using gpt-* models, force to use 4o-mini to summarize
-  if (currentModel.startsWith("gpt") || currentModel.startsWith("chatgpt")) {
-    const configStore = useAppConfig.getState();
-    const accessStore = useAccessStore.getState();
-    const allModel = collectModelsWithDefaultModel(
-      configStore.models,
-      [configStore.customModels, accessStore.customModels].join(","),
-      accessStore.defaultModel,
-    );
-    const summarizeModel = allModel.find(
-      (m) => m.name === SUMMARIZE_MODEL && m.available,
-    );
-    if (summarizeModel) {
-      return [
-        summarizeModel.name,
-        summarizeModel.provider?.providerName as string,
-      ];
-    }
-  }
-  if (currentModel.startsWith("gemini")) {
-    return [GEMINI_SUMMARIZE_MODEL, ServiceProvider.Google];
-  } else if (currentModel.startsWith("deepseek-")) {
-    return [DEEPSEEK_SUMMARIZE_MODEL, ServiceProvider.DeepSeek];
-  }
-
-  return [currentModel, providerName];
+  const configStore = useAppConfig.getState();
+  const accessStore = useAccessStore.getState();
+  const models = collectModelsWithDefaultModel(
+    configStore.models,
+    [configStore.customModels, accessStore.customModels].join(","),
+    accessStore.defaultModel,
+    accessStore.useCustomConfig ? accessStore.provider : ServiceProvider.OpenAI,
+  );
+  const target = currentModel.startsWith("gemini")
+    ? GEMINI_SUMMARIZE_MODEL
+    : currentModel.startsWith("deepseek-")
+    ? DEEPSEEK_SUMMARIZE_MODEL
+    : /^(gpt|chatgpt)/.test(currentModel)
+    ? SUMMARIZE_MODEL
+    : currentModel;
+  const model = models.find(
+    (m) =>
+      m.name === target &&
+      m.available &&
+      m.provider?.providerName === providerName,
+  );
+  return model ? [model.name, providerName] : [currentModel, providerName];
 }
 
 function countMessages(msgs: ChatMessage[]) {
@@ -161,19 +156,8 @@ function countMessages(msgs: ChatMessage[]) {
 function fillTemplateWith(input: string, modelConfig: ModelConfig) {
   const cutoff =
     KnowledgeCutOffDate[modelConfig.model] ?? KnowledgeCutOffDate.default;
-  // Find the model in the DEFAULT_MODELS array that matches the modelConfig.model
-  const modelInfo = DEFAULT_MODELS.find((m) => m.name === modelConfig.model);
-
-  var serviceProvider = "OpenAI";
-  if (modelInfo) {
-    // TODO: auto detect the providerName from the modelConfig.model
-
-    // Directly use the providerName from the modelInfo
-    serviceProvider = modelInfo.provider.providerName;
-  }
-
   const vars = {
-    ServiceProvider: serviceProvider,
+    ServiceProvider: modelConfig.providerName,
     cutoff,
     model: modelConfig.model,
     time: new Date().toString(),

@@ -1,6 +1,9 @@
 import { isModelNotavailableInServer } from "../app/utils/model";
 
 describe("isModelNotavailableInServer", () => {
+  afterEach(() => {
+    delete process.env.DISABLE_GPT4;
+  });
   test("test model will return false, which means the model is available", () => {
     const customModels = "";
     const modelName = "gpt-4";
@@ -69,7 +72,7 @@ describe("isModelNotavailableInServer", () => {
   test("test custom model without setting provider", () => {
     const customModels = "-all,mistral-large";
     const modelName = "mistral-large";
-    const providerNames = modelName;
+    const providerNames = "OpenAI";
     const result = isModelNotavailableInServer(
       customModels,
       modelName,

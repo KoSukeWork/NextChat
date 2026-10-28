@@ -1,3 +1,4 @@
+import { ServiceProvider } from "../constant";
 import { useMemo } from "react";
 import { useAccessStore, useAppConfig } from "../store";
 import { collectModelsWithDefaultModel } from "./model";
@@ -10,8 +11,13 @@ export function useAllModels() {
       configStore.models,
       [configStore.customModels, accessStore.customModels].join(","),
       accessStore.defaultModel,
+      accessStore.useCustomConfig
+        ? accessStore.provider
+        : ServiceProvider.OpenAI,
     );
   }, [
+    accessStore.useCustomConfig,
+    accessStore.provider,
     accessStore.customModels,
     accessStore.defaultModel,
     configStore.customModels,

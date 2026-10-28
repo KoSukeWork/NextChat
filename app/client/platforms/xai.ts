@@ -1,4 +1,6 @@
 "use client";
+import { fetchOpenAIModels } from "../models";
+
 // azure and openai, using same models. so using same LLMApi.
 import { ApiPath, XAI_BASE_URL, XAI } from "@/app/constant";
 import {
@@ -23,8 +25,6 @@ import { RequestPayload } from "./openai";
 import { fetch } from "@/app/utils/stream";
 
 export class XAIApi implements LLMApi {
-  private disableListModels = true;
-
   path(path: string): string {
     const accessStore = useAccessStore.getState();
 
@@ -189,6 +189,6 @@ export class XAIApi implements LLMApi {
   }
 
   async models(): Promise<LLMModel[]> {
-    return [];
+    return fetchOpenAIModels(this.path("v1/models"), "XAI");
   }
 }

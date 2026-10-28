@@ -1,11 +1,7 @@
 "use client";
+import { fetchOpenAIModels } from "../models";
 
-import {
-  ApiPath,
-  AI302_BASE_URL,
-  DEFAULT_MODELS,
-  AI302,
-} from "@/app/constant";
+import { ApiPath, AI302_BASE_URL, AI302 } from "@/app/constant";
 import {
   useAccessStore,
   useAppConfig,
@@ -41,8 +37,6 @@ export interface Ai302ListModelResponse {
 }
 
 export class Ai302Api implements LLMApi {
-  private disableListModels = false;
-
   path(path: string): string {
     const accessStore = useAccessStore.getState();
 
@@ -61,10 +55,7 @@ export class Ai302Api implements LLMApi {
     if (baseUrl.endsWith("/")) {
       baseUrl = baseUrl.slice(0, baseUrl.length - 1);
     }
-    if (
-      !baseUrl.startsWith("http") &&
-      !baseUrl.startsWith(ApiPath["302.AI"])
-    ) {
+    if (!baseUrl.startsWith("http") && !baseUrl.startsWith(ApiPath["302.AI"])) {
       baseUrl = "https://" + baseUrl;
     }
 
@@ -252,36 +243,6 @@ export class Ai302Api implements LLMApi {
   }
 
   async models(): Promise<LLMModel[]> {
-    if (this.disableListModels) {
-      return DEFAULT_MODELS.slice();
-    }
-
-    const res = await fetch(this.path(AI302.ListModelPath), {
-      method: "GET",
-      headers: {
-        ...getHeaders(),
-      },
-    });
-
-    const resJson = (await res.json()) as Ai302ListModelResponse;
-    const chatModels = resJson.data;
-    console.log("[Models]", chatModels);
-
-    if (!chatModels) {
-      return [];
-    }
-
-    let seq = 1000; //同 Constant.ts 中的排序保持一致
-    return chatModels.map((m) => ({
-      name: m.id,
-      available: true,
-      sorted: seq++,
-      provider: {
-        id: "ai302",
-        providerName: "302.AI",
-        providerType: "ai302",
-        sorted: 15,
-      },
-    }));
+    return fetchOpenAIModels(this.path(AI302.ListModelPath), "302.AI");
   }
 }

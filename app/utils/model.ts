@@ -1,5 +1,5 @@
-import { DEFAULT_MODELS, ServiceProvider } from "../constant";
-import { LLMModel } from "../client/api";
+import { ServiceProvider } from "../constant";
+import type { LLMModel } from "../client/api";
 
 const CustomSeq = {
   val: -1000, //To ensure the custom model located at front, start from -1000, refer to constant.ts
@@ -14,6 +14,38 @@ const CustomSeq = {
     }
   },
 };
+
+const providers = [
+  ["openai", ServiceProvider["OpenAI"]],
+  ["azure", ServiceProvider["Azure"]],
+  ["google", ServiceProvider["Google"]],
+  ["anthropic", ServiceProvider["Anthropic"]],
+  ["baidu", ServiceProvider["Baidu"]],
+  ["bytedance", ServiceProvider["ByteDance"]],
+  ["alibaba", ServiceProvider["Alibaba"]],
+  ["tencent", ServiceProvider["Tencent"]],
+  ["moonshot", ServiceProvider["Moonshot"]],
+  ["iflytek", ServiceProvider["Iflytek"]],
+  ["xai", ServiceProvider["XAI"]],
+  ["chatglm", ServiceProvider["ChatGLM"]],
+  ["deepseek", ServiceProvider["DeepSeek"]],
+  ["siliconflow", ServiceProvider["SiliconFlow"]],
+  ["ai302", ServiceProvider["302.AI"]],
+] as const;
+
+export function getModelProviderInfo(
+  providerName: string,
+): LLMModel["provider"] {
+  const normalized = providerName.toLowerCase();
+  const index = providers.findIndex(
+    ([id, name]) => id === normalized || name.toLowerCase() === normalized,
+  );
+  if (index !== -1) {
+    const [id, name] = providers[index];
+    return { id, providerName: name, providerType: id, sorted: index + 1 };
+  }
+  return customProvider(providerName);
+}
 
 const customProvider = (providerName: string) => ({
   id: providerName.toLowerCase(),
@@ -51,6 +83,7 @@ export function getModelProvider(modelWithProvider: string): [string, string?] {
 export function collectModelTable(
   models: readonly LLMModel[],
   customModels: string,
+  defaultProviderName: string = ServiceProvider.OpenAI,
 ) {
   const modelTable: Record<
     string,
@@ -69,14 +102,15 @@ export function collectModelTable(
     // using <modelName>@<providerId> as fullName
     modelTable[`${m.name}@${m?.provider?.id}`] = {
       ...m,
-      displayName: m.name, // 'provider' is copied over if it exists
+      displayName: m.displayName || m.name, // 'provider' is copied over if it exists
     };
   });
 
   // server custom models
   customModels
     .split(",")
-    .filter((v) => !!v && v.length > 0)
+    .map((v) => v.trim())
+    .filter(Boolean)
     .forEach((m) => {
       const available = !m.startsWith("-");
       const nameConfig =
@@ -97,12 +131,12 @@ export function collectModelTable(
           if (
             customModelName == modelName &&
             (customProviderName === undefined ||
-              customProviderName === providerName)
+              getModelProviderInfo(customProviderName).id === providerName)
           ) {
             count += 1;
             modelTable[fullName]["available"] = available;
             // swap name and displayName for bytedance
-            if (providerName === "bytedance") {
+            if (providerName === "bytedance" && displayName) {
               [name, displayName] = [displayName, modelName];
               modelTable[fullName]["name"] = name;
             }
@@ -114,8 +148,8 @@ export function collectModelTable(
         // 2. if model not exists, create new model with available value
         if (count === 0) {
           let [customModelName, customProviderName] = getModelProvider(name);
-          const provider = customProvider(
-            customProviderName || customModelName,
+          const provider = getModelProviderInfo(
+            customProviderName || defaultProviderName,
           );
           // swap name and displayName for bytedance
           if (displayName && provider.providerName == "ByteDance") {
@@ -139,12 +173,15 @@ export function collectModelTableWithDefaultModel(
   models: readonly LLMModel[],
   customModels: string,
   defaultModel: string,
+  defaultProviderName: string = ServiceProvider.OpenAI,
 ) {
-  let modelTable = collectModelTable(models, customModels);
+  let modelTable = collectModelTable(models, customModels, defaultProviderName);
   if (defaultModel && defaultModel !== "") {
     if (defaultModel.includes("@")) {
-      if (defaultModel in modelTable) {
-        modelTable[defaultModel].isDefault = true;
+      const [name, provider] = getModelProvider(defaultModel);
+      const key = `${name}@${getModelProviderInfo(provider!).id}`;
+      if (modelTable[key]?.available) {
+        modelTable[key].isDefault = true;
       }
     } else {
       for (const key of Object.keys(modelTable)) {
@@ -167,8 +204,13 @@ export function collectModelTableWithDefaultModel(
 export function collectModels(
   models: readonly LLMModel[],
   customModels: string,
+  defaultProviderName: string = ServiceProvider.OpenAI,
 ) {
-  const modelTable = collectModelTable(models, customModels);
+  const modelTable = collectModelTable(
+    models,
+    customModels,
+    defaultProviderName,
+  );
   let allModels = Object.values(modelTable);
 
   allModels = sortModelTable(allModels);
@@ -180,11 +222,13 @@ export function collectModelsWithDefaultModel(
   models: readonly LLMModel[],
   customModels: string,
   defaultModel: string,
+  defaultProviderName: string = ServiceProvider.OpenAI,
 ) {
   const modelTable = collectModelTableWithDefaultModel(
     models,
     customModels,
     defaultModel,
+    defaultProviderName,
   );
   let allModels = Object.values(modelTable);
 
@@ -198,9 +242,7 @@ export function isModelAvailableInServer(
   modelName: string,
   providerName: string,
 ) {
-  const fullName = `${modelName}@${providerName}`;
-  const modelTable = collectModelTable(DEFAULT_MODELS, customModels);
-  return modelTable[fullName]?.available === false;
+  return isModelNotavailableInServer(customModels, modelName, providerName);
 }
 
 /**
@@ -240,19 +282,24 @@ export function isModelNotavailableInServer(
     return true;
   }
 
-  const modelTable = collectModelTable(DEFAULT_MODELS, customModels);
-
-  const providerNamesArray = Array.isArray(providerNames)
+  // Seed the requested model so unqualified rules and +/-all retain their order.
+  const providers = Array.isArray(providerNames)
     ? providerNames
     : [providerNames];
-  for (const providerName of providerNamesArray) {
-    // if model provider is bytedance, use model config name to check if not avaliable
-    if (providerName === ServiceProvider.ByteDance) {
-      return !Object.values(modelTable).filter((v) => v.name === modelName)?.[0]
-        ?.available;
-    }
-    const fullName = `${modelName}@${providerName.toLowerCase()}`;
-    if (modelTable?.[fullName]?.available === true) return false;
-  }
-  return true;
+  return providers.every((providerName) => {
+    if (!providerName) return true;
+    const provider = getModelProviderInfo(providerName);
+    const table = collectModelTable(
+      [
+        {
+          name: modelName,
+          available: true,
+          provider,
+          sorted: 0,
+        },
+      ],
+      customModels,
+    );
+    return table[`${modelName}@${provider.id}`]?.available !== true;
+  });
 }

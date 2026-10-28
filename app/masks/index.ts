@@ -13,7 +13,8 @@ export const BUILTIN_MASK_STORE = {
     return this.masks[id] as Mask | undefined;
   },
   add(m: BuiltinMask) {
-    const mask = { ...m, id: this.buildinId++, builtin: true };
+    const { model, providerName, ...modelConfig } = m.modelConfig;
+    const mask = { ...m, modelConfig, id: this.buildinId++, builtin: true };
     this.masks[mask.id] = mask;
     return mask;
   },

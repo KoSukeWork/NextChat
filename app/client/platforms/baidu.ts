@@ -1,4 +1,5 @@
 "use client";
+import { ModelDiscoveryUnsupportedError } from "../models";
 import { ApiPath, Baidu, BAIDU_BASE_URL } from "@/app/constant";
 import { useAccessStore, useAppConfig, useChatStore } from "@/app/store";
 import { getAccessToken } from "@/app/utils/baidu";
@@ -278,7 +279,7 @@ export class ErnieApi implements LLMApi {
   }
 
   async models(): Promise<LLMModel[]> {
-    return [];
+    throw new ModelDiscoveryUnsupportedError();
   }
 }
 export { Baidu };

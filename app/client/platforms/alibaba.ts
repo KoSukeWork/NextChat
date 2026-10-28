@@ -1,4 +1,5 @@
 "use client";
+import { ModelDiscoveryUnsupportedError } from "../models";
 import { ApiPath, Alibaba, ALIBABA_BASE_URL } from "@/app/constant";
 import {
   useAccessStore,
@@ -271,7 +272,7 @@ export class QwenApi implements LLMApi {
   }
 
   async models(): Promise<LLMModel[]> {
-    return [];
+    throw new ModelDiscoveryUnsupportedError();
   }
 }
 export { Alibaba };

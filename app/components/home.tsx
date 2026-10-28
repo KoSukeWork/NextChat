@@ -26,7 +26,6 @@ import { SideBar } from "./sidebar";
 import { useAppConfig } from "../store/config";
 import { AuthPage } from "./auth";
 import { getClientConfig } from "../config/client";
-import { type ClientApi, getClientApi } from "../client/api";
 import { useAccessStore } from "../store";
 import clsx from "clsx";
 import { initializeMcpSystem, isMcpEnabled } from "../mcp/actions";
@@ -220,23 +219,8 @@ function Screen() {
   );
 }
 
-export function useLoadData() {
-  const config = useAppConfig();
-
-  const api: ClientApi = getClientApi(config.modelConfig.providerName);
-
-  useEffect(() => {
-    (async () => {
-      const models = await api.llm.models();
-      config.mergeModels(models);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-}
-
 export function Home() {
   useSwitchTheme();
-  useLoadData();
   useHtmlLang();
 
   useEffect(() => {

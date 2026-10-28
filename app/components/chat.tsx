@@ -551,7 +551,7 @@ export function ChatActions(props: {
         m.name == currentModel &&
         m?.provider?.providerName == currentProviderName,
     );
-    return model?.displayName ?? "";
+    return model?.displayName ?? Locale.ModelDiscovery.Unconfigured;
   }, [models, currentModel, currentProviderName]);
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [showPluginSelector, setShowPluginSelector] = useState(false);
@@ -580,7 +580,16 @@ export function ChatActions(props: {
 
     // if current model is not available
     // switch to first available model
-    const isUnavailableModel = !models.some((m) => m.name === currentModel);
+    const isUnavailableModel = !models.some(
+      (m) =>
+        m.name === currentModel &&
+        m.provider?.providerName === currentProviderName,
+    );
+    if (isUnavailableModel && models.length === 0 && currentModel) {
+      chatStore.updateTargetSession(session, (session) => {
+        session.mask.modelConfig.model = "";
+      });
+    }
     if (isUnavailableModel && models.length > 0) {
       // show next model to default model if exist
       let nextModel = models.find((model) => model.isDefault) || models[0];
@@ -595,7 +604,7 @@ export function ChatActions(props: {
           : nextModel.name,
       );
     }
-  }, [chatStore, currentModel, models, session]);
+  }, [chatStore, currentModel, currentProviderName, models, session]);
 
   return (
     <div className={styles["chat-input-actions"]}>
@@ -675,7 +684,11 @@ export function ChatActions(props: {
         />
 
         <ChatAction
-          onClick={() => setShowModelSelector(true)}
+          onClick={() =>
+            models.length
+              ? setShowModelSelector(true)
+              : showToast(Locale.ModelDiscovery.ConfigureFirst)
+          }
           text={currentModelName}
           icon={<RobotIcon />}
         />
@@ -1110,6 +1123,10 @@ function _Chat() {
       setUserInput("");
       setPromptHints([]);
       matchCommand.invoke();
+      return;
+    }
+    if (!chatStore.currentSession().mask.modelConfig.model) {
+      showToast(Locale.ModelDiscovery.ConfigureFirst);
       return;
     }
     setIsLoading(true);

@@ -1,4 +1,5 @@
 "use client";
+import { ModelDiscoveryUnsupportedError } from "../models";
 import { ApiPath, CHATGLM_BASE_URL, ChatGLM } from "@/app/constant";
 import {
   useAccessStore,
@@ -54,8 +55,6 @@ interface VideoGenerationPayload extends BasePayload {
 type ModelType = "chat" | "image" | "video";
 
 export class ChatGLMApi implements LLMApi {
-  private disableListModels = true;
-
   private getModelType(model: string): ModelType {
     if (model.startsWith("cogview-")) return "image";
     if (model.startsWith("cogvideo-")) return "video";
@@ -287,6 +286,6 @@ export class ChatGLMApi implements LLMApi {
   }
 
   async models(): Promise<LLMModel[]> {
-    return [];
+    throw new ModelDiscoveryUnsupportedError();
   }
 }
