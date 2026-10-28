@@ -3,6 +3,7 @@
 
 mod mcp;
 mod stream;
+mod zoom;
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -27,7 +28,8 @@ fn main() {
             mcp::mcp_write_config,
             mcp::mcp_spawn,
             mcp::mcp_send,
-            mcp::mcp_kill
+            mcp::mcp_kill,
+            zoom::set_zoom
         ])
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .build(tauri::generate_context!())

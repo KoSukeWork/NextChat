@@ -14,6 +14,7 @@ import {
   ServiceProvider,
 } from "../constant";
 import { createPersistStore } from "../utils/store";
+import { normalizeZoom } from "../utils/zoom";
 import type { Voice } from "rt-client";
 
 export type ModelType = string;
@@ -43,6 +44,7 @@ export const DEFAULT_CONFIG = {
   submitKey: SubmitKey.Enter,
   avatar: "1f603",
   fontSize: 14,
+  zoom: 1,
   fontFamily: "",
   theme: Theme.Auto as Theme,
   tightBorder: !!config?.isApp,
@@ -186,7 +188,12 @@ export const useAppConfig = createPersistStore(
     merge(persistedState, currentState) {
       const state = persistedState as ChatConfig | undefined;
       if (!state) return { ...currentState };
-      return { ...currentState, ...state, models: state.models ?? [] };
+      return {
+        ...currentState,
+        ...state,
+        models: state.models ?? [],
+        zoom: normalizeZoom(state.zoom),
+      };
     },
 
     migrate(persistedState, version) {

@@ -201,6 +201,11 @@ const en: LocaleType = {
       Title: "Font Size",
       SubTitle: "Adjust font size of chat content",
     },
+    Zoom: {
+      Title: "Interface Zoom",
+      SubTitle: "Ctrl + = / - / 0, Ctrl + scroll (Cmd on macOS)",
+      Toast: (percent: string) => `Zoom ${percent}`,
+    },
     FontFamily: {
       Title: "Chat Font Family",
       SubTitle:

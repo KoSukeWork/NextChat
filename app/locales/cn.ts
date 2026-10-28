@@ -198,6 +198,11 @@ const cn = {
       Title: "字体大小",
       SubTitle: "聊天内容的字体大小",
     },
+    Zoom: {
+      Title: "界面缩放",
+      SubTitle: "Ctrl + = / - / 0，Ctrl + 滚轮（macOS 使用 Cmd）",
+      Toast: (percent: string) => `缩放 ${percent}`,
+    },
     FontFamily: {
       Title: "聊天字体",
       SubTitle: "聊天内容的字体，若置空则应用全局默认字体",

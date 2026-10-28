@@ -29,6 +29,7 @@ import { getClientConfig } from "../config/client";
 import { useAccessStore } from "../store";
 import clsx from "clsx";
 import { initializeMcpSystem, isMcpEnabled } from "../mcp/actions";
+import { useDesktopZoom } from "../utils/use-desktop-zoom";
 
 export function Loading(props: { noLogo?: boolean }) {
   return (
@@ -220,6 +221,7 @@ function Screen() {
 }
 
 export function Home() {
+  useDesktopZoom();
   useSwitchTheme();
   useHtmlLang();
 

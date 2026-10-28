@@ -1,4 +1,6 @@
 import { ModelDiscovery } from "./model-discovery";
+import { useZoomSupport } from "../utils/use-desktop-zoom";
+import { ZOOM_LEVELS, normalizeZoom, zoomPercent } from "../utils/zoom";
 import { useState, useEffect, useMemo } from "react";
 
 import styles from "./settings.module.scss";
@@ -577,6 +579,7 @@ function SyncItems() {
 }
 
 export function Settings() {
+  const zoomSupported = useZoomSupport((state) => state.supported);
   const navigate = useNavigate();
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const config = useAppConfig();
@@ -1581,6 +1584,35 @@ export function Settings() {
               }
             ></InputRange>
           </ListItem>
+
+          {zoomSupported && (
+            <ListItem
+              title={Locale.Settings.Zoom.Title}
+              subTitle={Locale.Settings.Zoom.SubTitle}
+            >
+              <Select
+                aria-label={Locale.Settings.Zoom.Title}
+                value={normalizeZoom(config.zoom)}
+                onChange={(event) =>
+                  updateConfig((state) => {
+                    state.zoom = Number(event.target.value);
+                  })
+                }
+              >
+                {/* Preserve a valid custom value restored from older/imported config. */}
+                {!ZOOM_LEVELS.includes(normalizeZoom(config.zoom)) && (
+                  <option value={normalizeZoom(config.zoom)}>
+                    {zoomPercent(config.zoom)}
+                  </option>
+                )}
+                {ZOOM_LEVELS.map((factor) => (
+                  <option key={factor} value={factor}>
+                    {zoomPercent(factor)}
+                  </option>
+                ))}
+              </Select>
+            </ListItem>
+          )}
 
           <ListItem
             title={Locale.Settings.FontFamily.Title}
