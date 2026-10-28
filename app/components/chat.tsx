@@ -68,6 +68,7 @@ import {
   copyToClipboard,
   getMessageImages,
   getMessageTextContent,
+  getMessageTextContentForContext,
   isDalle3,
   isVisionModel,
   safeLocalStorage,
@@ -1212,9 +1213,11 @@ function _Chat() {
   };
   const onRightClick = (e: any, message: ChatMessage) => {
     // copy to clipboard
-    if (selectOrCopy(e.currentTarget, getMessageTextContent(message))) {
+    if (
+      selectOrCopy(e.currentTarget, getMessageTextContentForContext(message))
+    ) {
       if (userInput.length === 0) {
-        setUserInput(getMessageTextContent(message));
+        setUserInput(getMessageTextContentForContext(message));
       }
 
       e.preventDefault();
@@ -1662,7 +1665,8 @@ function _Chat() {
           .filter((message) => message.role !== "user")
           .pop();
         if (lastNonUserMessage) {
-          const lastMessageContent = getMessageTextContent(lastNonUserMessage);
+          const lastMessageContent =
+            getMessageTextContentForContext(lastNonUserMessage);
           copyToClipboard(lastMessageContent);
         }
       }
@@ -1928,7 +1932,9 @@ function _Chat() {
                                         icon={<CopyIcon />}
                                         onClick={() =>
                                           copyToClipboard(
-                                            getMessageTextContent(message),
+                                            getMessageTextContentForContext(
+                                              message,
+                                            ),
                                           )
                                         }
                                       />
@@ -1948,7 +1954,9 @@ function _Chat() {
                                           }
                                           onClick={() =>
                                             openaiSpeech(
-                                              getMessageTextContent(message),
+                                              getMessageTextContentForContext(
+                                                message,
+                                              ),
                                             )
                                           }
                                         />
@@ -1987,8 +1995,11 @@ function _Chat() {
                           )}
                           <div className={styles["chat-message-item"]}>
                             <Markdown
-                              key={message.streaming ? "loading" : "done"}
+                              key={message.id}
                               content={getMessageTextContent(message)}
+                              streaming={message.streaming}
+                              thinkingActive={message.thinkingActive}
+                              parseThoughts={message.role === "assistant"}
                               loading={
                                 (message.preview || message.streaming) &&
                                 message.content.length === 0 &&
@@ -1997,7 +2008,9 @@ function _Chat() {
                               //   onContextMenu={(e) => onRightClick(e, message)} // hard to use
                               onDoubleClickCapture={() => {
                                 if (!isMobileScreen) return;
-                                setUserInput(getMessageTextContent(message));
+                                setUserInput(
+                                  getMessageTextContentForContext(message),
+                                );
                               }}
                               fontSize={fontSize}
                               fontFamily={fontFamily}

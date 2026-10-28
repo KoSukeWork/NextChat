@@ -1,3 +1,4 @@
+import { thinkingToMarkdown } from "../utils/thinking";
 import { getClientConfig } from "../config/client";
 import {
   ACCESS_CODE_PREFIX,
@@ -76,7 +77,7 @@ export interface ChatOptions {
   messages: RequestMessage[];
   config: LLMConfig;
 
-  onUpdate?: (message: string, chunk: string) => void;
+  onUpdate?: (message: string, chunk: string, thinkingActive?: boolean) => void;
   onFinish: (message: string, responseRes: Response) => void;
   onError?: (err: Error) => void;
   onController?: (controller: AbortController) => void;
@@ -193,7 +194,16 @@ export class ClientApi {
   async share(messages: ChatMessage[], avatarUrl: string | null = null) {
     const msgs = messages.map((m) => ({
       from: m.role === "user" ? "human" : "gpt",
-      value: m.content,
+      value:
+        m.role !== "assistant"
+          ? m.content
+          : typeof m.content === "string"
+          ? thinkingToMarkdown(m.content)
+          : m.content.map((part) =>
+              part.type === "text"
+                ? { ...part, text: thinkingToMarkdown(part.text ?? "") }
+                : part,
+            ),
     }));
 
     console.log("[Share]", messages, msgs);

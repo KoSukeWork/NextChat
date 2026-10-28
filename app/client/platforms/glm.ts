@@ -1,4 +1,10 @@
 "use client";
+import {
+  stripThinkingFromMessages,
+  thinkingChunk,
+  normalizeThinkingResponse,
+} from "@/app/utils/thinking";
+
 import { ModelDiscoveryUnsupportedError } from "../models";
 import { ApiPath, CHATGLM_BASE_URL, ChatGLM } from "@/app/constant";
 import {
@@ -8,7 +14,7 @@ import {
   ChatMessageTool,
   usePluginStore,
 } from "@/app/store";
-import { stream } from "@/app/utils/chat";
+import { streamWithThink } from "@/app/utils/chat";
 import {
   ChatOptions,
   getHeaders,
@@ -153,6 +159,10 @@ export class ChatGLMApi implements LLMApi {
   }
 
   async chat(options: ChatOptions) {
+    options = {
+      ...options,
+      messages: stripThinkingFromMessages(options.messages),
+    };
     const visionModel = isVisionModel(options.config.model);
     const messages: ChatOptions["messages"] = [];
     for (const v of options.messages) {
@@ -199,7 +209,7 @@ export class ChatGLMApi implements LLMApi {
         const resJson = await res.json();
         console.log(`[Response] glm ${modelType}:`, resJson);
         const message = this.parseResponse(modelType, resJson);
-        options.onFinish(message, res);
+        options.onFinish(normalizeThinkingResponse(resJson, message), res);
         return;
       }
 
@@ -210,7 +220,7 @@ export class ChatGLMApi implements LLMApi {
           .getAsTools(
             useChatStore.getState().currentSession().mask?.plugin || [],
           );
-        return stream(
+        return streamWithThink(
           path,
           requestPayload,
           getHeaders(),
@@ -245,7 +255,7 @@ export class ChatGLMApi implements LLMApi {
                 runTools[index]["function"]["arguments"] += args;
               }
             }
-            return choices[0]?.delta?.content;
+            return thinkingChunk(choices[0]?.delta);
           },
           // processToolMessage
           (
@@ -270,7 +280,7 @@ export class ChatGLMApi implements LLMApi {
 
         const resJson = await res.json();
         const message = this.extractMessage(resJson);
-        options.onFinish(message, res);
+        options.onFinish(normalizeThinkingResponse(resJson, message), res);
       }
     } catch (e) {
       console.log("[Request] failed to make a chat request", e);

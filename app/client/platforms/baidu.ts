@@ -1,4 +1,11 @@
 "use client";
+import {
+  stripThinkingFromMessages,
+  thinkingChunk,
+  normalizeThinkingResponse,
+  ThinkingStream,
+} from "@/app/utils/thinking";
+
 import { getUnauthorizedMessage } from "@/app/utils/auth-message";
 import { ModelDiscoveryUnsupportedError } from "../models";
 import { ApiPath, Baidu, BAIDU_BASE_URL } from "@/app/constant";
@@ -78,6 +85,10 @@ export class ErnieApi implements LLMApi {
   }
 
   async chat(options: ChatOptions) {
+    options = {
+      ...options,
+      messages: stripThinkingFromMessages(options.messages),
+    };
     const messages = options.messages.map((v) => ({
       // "error_code": 336006, "error_msg": "the role of message with even index in the messages must be user or function",
       role: v.role === "system" ? "user" : v.role,
@@ -156,6 +167,7 @@ export class ErnieApi implements LLMApi {
 
       if (shouldStream) {
         let responseText = "";
+        const thinking = new ThinkingStream();
         let remainText = "";
         let finished = false;
         let responseRes: Response;
@@ -176,7 +188,7 @@ export class ErnieApi implements LLMApi {
             const fetchText = remainText.slice(0, fetchCount);
             responseText += fetchText;
             remainText = remainText.slice(fetchCount);
-            options.onUpdate?.(responseText, fetchText);
+            options.onUpdate?.(responseText, fetchText, thinking.isThinking());
           }
 
           requestAnimationFrame(animateResponseText);
@@ -188,7 +200,10 @@ export class ErnieApi implements LLMApi {
         const finish = () => {
           if (!finished) {
             finished = true;
-            options.onFinish(responseText + remainText, responseRes);
+            options.onFinish(
+              thinking.endSegment() || responseText + remainText,
+              responseRes,
+            );
           }
         };
 
@@ -242,9 +257,15 @@ export class ErnieApi implements LLMApi {
             try {
               const json = JSON.parse(text);
               const delta = json?.result;
-              if (delta) {
-                remainText += delta;
-              }
+              const chunk = thinkingChunk(json, delta ?? "");
+              let snapshot = thinking.append(chunk.content, chunk.isThinking);
+              if (chunk.followingContent)
+                snapshot = thinking.append(chunk.followingContent, false);
+              if (!snapshot.startsWith(responseText)) {
+                responseText = snapshot;
+                remainText = "";
+                options.onUpdate?.(snapshot, "", thinking.isThinking());
+              } else remainText = snapshot.slice(responseText.length);
             } catch (e) {
               console.error("[Request] parse error", text, msg);
             }
@@ -264,7 +285,7 @@ export class ErnieApi implements LLMApi {
 
         const resJson = await res.json();
         const message = resJson?.result;
-        options.onFinish(message, res);
+        options.onFinish(normalizeThinkingResponse(resJson, message), res);
       }
     } catch (e) {
       console.log("[Request] failed to make a chat request", e);

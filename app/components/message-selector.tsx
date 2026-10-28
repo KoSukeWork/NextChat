@@ -7,7 +7,7 @@ import { MaskAvatar } from "./mask";
 import Locale from "../locales";
 
 import styles from "./message-selector.module.scss";
-import { getMessageTextContent } from "../utils";
+import { getMessageTextContentForContext } from "../utils";
 import clsx from "clsx";
 
 function useShiftRange() {
@@ -106,7 +106,7 @@ export function MessageSelector(props: {
     const searchResults = new Set<string>();
     if (text.length > 0) {
       messages.forEach((m) =>
-        getMessageTextContent(m).includes(text)
+        getMessageTextContentForContext(m).includes(text)
           ? searchResults.add(m.id!)
           : null,
       );
@@ -222,7 +222,7 @@ export function MessageSelector(props: {
                   {new Date(m.date).toLocaleString()}
                 </div>
                 <div className={clsx(styles["content"], "one-line")}>
-                  {getMessageTextContent(m)}
+                  {getMessageTextContentForContext(m)}
                 </div>
               </div>
 

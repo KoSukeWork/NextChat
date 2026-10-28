@@ -1,5 +1,6 @@
+import { stripThinking, stripThinkingFromMessages } from "../utils/thinking";
 import {
-  getMessageTextContent,
+  getMessageTextContentForContext,
   isDalle3,
   safeLocalStorage,
   trimTopic,
@@ -56,6 +57,7 @@ export type ChatMessageTool = {
 export type ChatMessage = RequestMessage & {
   date: string;
   streaming?: boolean;
+  thinkingActive?: boolean;
   isError?: boolean;
   id: string;
   model?: ModelType;
@@ -148,7 +150,8 @@ function getSummarizeModel(
 
 function countMessages(msgs: ChatMessage[]) {
   return msgs.reduce(
-    (pre, cur) => pre + estimateTokenLength(getMessageTextContent(cur)),
+    (pre, cur) =>
+      pre + estimateTokenLength(getMessageTextContentForContext(cur)),
     0,
   );
 }
@@ -445,8 +448,9 @@ export const useChatStore = createPersistStore(
         api.llm.chat({
           messages: sendMessages,
           config: { ...modelConfig, stream: true },
-          onUpdate(message) {
+          onUpdate(message, _chunk, thinkingActive) {
             botMessage.streaming = true;
+            botMessage.thinkingActive = thinkingActive;
             if (message) {
               botMessage.content = message;
             }
@@ -611,7 +615,9 @@ export const useChatStore = createPersistStore(
         ) {
           const msg = messages[i];
           if (!msg || msg.isError) continue;
-          tokenCount += estimateTokenLength(getMessageTextContent(msg));
+          tokenCount += estimateTokenLength(
+            getMessageTextContentForContext(msg),
+          );
           reversedRecentMessages.push(msg);
         }
         // concat all messages
@@ -622,7 +628,7 @@ export const useChatStore = createPersistStore(
           ...reversedRecentMessages.reverse(),
         ];
 
-        return recentMessages;
+        return stripThinkingFromMessages(recentMessages);
       },
 
       updateMessage(
@@ -666,7 +672,7 @@ export const useChatStore = createPersistStore(
         const api: ClientApi = getClientApi(providerName as ServiceProvider);
 
         // remove error messages if any
-        const messages = session.messages;
+        const messages = stripThinkingFromMessages(session.messages);
 
         // should summarize topic after chating more than 50 words
         const SUMMARIZE_MIN_LEN = 50;
@@ -704,7 +710,9 @@ export const useChatStore = createPersistStore(
                   session,
                   (session) =>
                     (session.topic =
-                      message.length > 0 ? trimTopic(message) : DEFAULT_TOPIC),
+                      stripThinking(message).length > 0
+                        ? trimTopic(stripThinking(message))
+                        : DEFAULT_TOPIC),
                 );
               }
             },
@@ -764,14 +772,14 @@ export const useChatStore = createPersistStore(
               providerName,
             },
             onUpdate(message) {
-              session.memoryPrompt = message;
+              session.memoryPrompt = stripThinking(message);
             },
             onFinish(message, responseRes) {
               if (responseRes?.status === 200) {
                 console.log("[Memory] ", message);
                 get().updateTargetSession(session, (session) => {
                   session.lastSummarizeIndex = lastSummarizeIndex;
-                  session.memoryPrompt = message; // Update the memory prompt for stored it in local storage
+                  session.memoryPrompt = stripThinking(message); // Update the memory prompt for stored it in local storage
                 });
               }
             },
@@ -813,7 +821,7 @@ export const useChatStore = createPersistStore(
       async checkMcpJson(message: ChatMessage) {
         const mcpEnabled = await isMcpEnabled();
         if (!mcpEnabled) return;
-        const content = getMessageTextContent(message);
+        const content = getMessageTextContentForContext(message);
         if (isMcpJson(content)) {
           try {
             const mcpRequest = extractMcpJson(content);

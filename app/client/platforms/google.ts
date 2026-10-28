@@ -1,3 +1,8 @@
+import {
+  stripThinkingFromMessages,
+  thinkingChunk,
+  normalizeThinkingResponse,
+} from "@/app/utils/thinking";
 import { fetchModelPage, discoveredModels } from "../models";
 import { ApiPath, Google } from "@/app/constant";
 import {
@@ -15,7 +20,7 @@ import {
   usePluginStore,
   ChatMessageTool,
 } from "@/app/store";
-import { stream } from "@/app/utils/chat";
+import { streamWithThink } from "@/app/utils/chat";
 import { getClientConfig } from "@/app/config/client";
 import { GEMINI_BASE_URL } from "@/app/constant";
 
@@ -90,6 +95,10 @@ export class GeminiProApi implements LLMApi {
   }
 
   async chat(options: ChatOptions): Promise<void> {
+    options = {
+      ...options,
+      messages: stripThinkingFromMessages(options.messages),
+    };
     const apiClient = this;
     let multimodal = false;
 
@@ -212,7 +221,7 @@ export class GeminiProApi implements LLMApi {
           .getAsTools(
             useChatStore.getState().currentSession().mask?.plugin || [],
           );
-        return stream(
+        return streamWithThink(
           chatPath,
           requestPayload,
           getHeaders(),
@@ -242,10 +251,16 @@ export class GeminiProApi implements LLMApi {
                 },
               });
             }
-            return chunkJson?.candidates
-              ?.at(0)
-              ?.content.parts?.map((part: { text: string }) => part.text)
-              .join("\n\n");
+            const parts = chunkJson?.candidates?.[0]?.content?.parts ?? [];
+            const reasoning = parts
+              .filter((part: any) => part.thought === true)
+              .map((part: any) => part.text ?? "")
+              .join("");
+            const body = parts
+              .filter((part: any) => part.thought !== true)
+              .map((part: any) => part.text ?? "")
+              .join("");
+            return thinkingChunk({ reasoning, content: body });
           },
           // processToolMessage, include tool_calls message and tool call results
           (
@@ -302,7 +317,7 @@ export class GeminiProApi implements LLMApi {
           );
         }
         const message = apiClient.extractMessage(resJson);
-        options.onFinish(message, res);
+        options.onFinish(normalizeThinkingResponse(resJson, message), res);
       }
     } catch (e) {
       console.log("[Request] failed to make a chat request", e);

@@ -1,3 +1,4 @@
+import { ThinkingStream } from "./thinking";
 import {
   CACHE_URL_PREFIX,
   UPLOAD_URL,
@@ -402,6 +403,7 @@ export function streamWithThink(
   ) => {
     isThinking: boolean;
     content: string | undefined;
+    followingContent?: string;
   },
   processToolMessage: (
     requestPayload: any,
@@ -416,9 +418,15 @@ export function streamWithThink(
   let running = false;
   let runTools: any[] = [];
   let responseRes: Response;
-  let isInThinkingMode = false;
-  let lastIsThinking = false;
-  let lastIsThinkingTagged = false; //between <think> and </think> tags
+  const thinking = new ThinkingStream();
+  const updateSnapshot = (content: string) => {
+    if (!content.startsWith(responseText)) {
+      // Closing-only templates and tool reasoning can reclassify prior text.
+      responseText = content;
+      remainText = "";
+      options.onUpdate?.(content, "", thinking.isThinking());
+    } else remainText = content.slice(responseText.length);
+  };
 
   // animate response to make it looks smooth
   function animateResponseText() {
@@ -436,7 +444,7 @@ export function streamWithThink(
       const fetchText = remainText.slice(0, fetchCount);
       responseText += fetchText;
       remainText = remainText.slice(fetchCount);
-      options.onUpdate?.(responseText, fetchText);
+      options.onUpdate?.(responseText, fetchText, thinking.isThinking());
     }
 
     requestAnimationFrame(animateResponseText);
@@ -447,6 +455,8 @@ export function streamWithThink(
 
   const finish = () => {
     if (!finished) {
+      const content = thinking.endSegment();
+      if (content) updateSnapshot(content);
       if (!running && runTools.length > 0) {
         const toolCallMessage = {
           role: "assistant",
@@ -599,54 +609,10 @@ export function streamWithThink(
             return;
           }
 
-          // deal with <think> and </think> tags start
-          if (!chunk.isThinking) {
-            if (chunk.content.startsWith("<think>")) {
-              chunk.isThinking = true;
-              chunk.content = chunk.content.slice(7).trim();
-              lastIsThinkingTagged = true;
-            } else if (chunk.content.endsWith("</think>")) {
-              chunk.isThinking = false;
-              chunk.content = chunk.content.slice(0, -8).trim();
-              lastIsThinkingTagged = false;
-            } else if (lastIsThinkingTagged) {
-              chunk.isThinking = true;
-            }
-          }
-          // deal with <think> and </think> tags start
-
-          // Check if thinking mode changed
-          const isThinkingChanged = lastIsThinking !== chunk.isThinking;
-          lastIsThinking = chunk.isThinking;
-
-          if (chunk.isThinking) {
-            // If in thinking mode
-            if (!isInThinkingMode || isThinkingChanged) {
-              // If this is a new thinking block or mode changed, add prefix
-              isInThinkingMode = true;
-              if (remainText.length > 0) {
-                remainText += "\n";
-              }
-              remainText += "> " + chunk.content;
-            } else {
-              // Handle newlines in thinking content
-              if (chunk.content.includes("\n\n")) {
-                const lines = chunk.content.split("\n\n");
-                remainText += lines.join("\n\n> ");
-              } else {
-                remainText += chunk.content;
-              }
-            }
-          } else {
-            // If in normal mode
-            if (isInThinkingMode || isThinkingChanged) {
-              // If switching from thinking mode to normal mode
-              isInThinkingMode = false;
-              remainText += "\n\n" + chunk.content;
-            } else {
-              remainText += chunk.content;
-            }
-          }
+          let content = thinking.append(chunk.content, chunk.isThinking);
+          if (chunk.followingContent)
+            content = thinking.append(chunk.followingContent, false);
+          updateSnapshot(content);
         } catch (e) {
           console.error("[Request] parse error", text, msg, e);
           // Don't throw error for parse failures, just log them
@@ -656,6 +622,9 @@ export function streamWithThink(
         finish();
       },
       onerror(e) {
+        const content = thinking.endSegment();
+        finished = true;
+        if (content) options.onUpdate?.(content, "", thinking.isThinking());
         options?.onError?.(e);
         throw e;
       },

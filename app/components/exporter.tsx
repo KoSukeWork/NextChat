@@ -1,3 +1,7 @@
+import {
+  thinkingToMarkdown,
+  stripThinkingFromMessages,
+} from "../utils/thinking";
 /* eslint-disable @next/next/no-img-element */
 import { ChatMessage, useAppConfig, useChatStore } from "../store";
 import Locale from "../locales";
@@ -294,7 +298,15 @@ export function RenderExport(props: {
           id={`${m.role}:${i}`}
           className={EXPORT_MESSAGE_CLASS_NAME}
         >
-          <Markdown content={getMessageTextContent(m)} defaultShow />
+          <Markdown
+            content={
+              m.role === "assistant"
+                ? thinkingToMarkdown(getMessageTextContent(m))
+                : getMessageTextContent(m)
+            }
+            parseThoughts={false}
+            defaultShow
+          />
         </div>
       ))}
     </div>
@@ -572,6 +584,7 @@ export function ImagePreviewer(props: {
               <div className={styles["body"]}>
                 <Markdown
                   content={getMessageTextContent(m)}
+                  parseThoughts={m.role === "assistant"}
                   fontSize={config.fontSize}
                   fontFamily={config.fontFamily}
                   defaultShow
@@ -622,9 +635,9 @@ export function MarkdownPreviewer(props: {
       .map((m) => {
         return m.role === "user"
           ? `## ${Locale.Export.MessageFromYou}:\n${getMessageTextContent(m)}`
-          : `## ${Locale.Export.MessageFromChatGPT}:\n${getMessageTextContent(
-              m,
-            ).trim()}`;
+          : `## ${Locale.Export.MessageFromChatGPT}:\n${thinkingToMarkdown(
+              getMessageTextContent(m),
+            )}`;
       })
       .join("\n\n");
 
@@ -659,7 +672,7 @@ export function JsonPreviewer(props: {
         role: "system",
         content: `${Locale.FineTuned.Sysmessage} ${props.topic}`,
       },
-      ...props.messages.map((m) => ({
+      ...stripThinkingFromMessages(props.messages).map((m) => ({
         role: m.role,
         content: m.content,
       })),

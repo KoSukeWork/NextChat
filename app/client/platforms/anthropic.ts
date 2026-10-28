@@ -1,3 +1,7 @@
+import {
+  stripThinkingFromMessages,
+  normalizeThinkingResponse,
+} from "@/app/utils/thinking";
 import { fetchModelPage, discoveredModels } from "../models";
 import { Anthropic, ApiPath } from "@/app/constant";
 import { ChatOptions, getHeaders, LLMApi, SpeechOptions } from "../api";
@@ -11,7 +15,7 @@ import {
 import { getClientConfig } from "@/app/config/client";
 import { ANTHROPIC_BASE_URL } from "@/app/constant";
 import { getMessageTextContent, isVisionModel } from "@/app/utils";
-import { preProcessImageContent, stream } from "@/app/utils/chat";
+import { preProcessImageContent, streamWithThink } from "@/app/utils/chat";
 import { cloudflareAIGatewayUrl } from "@/app/utils/cloudflare";
 import { RequestPayload } from "./openai";
 import { fetch } from "@/app/utils/stream";
@@ -85,6 +89,10 @@ export class ClaudeApi implements LLMApi {
     return res?.content?.[0]?.text;
   }
   async chat(options: ChatOptions): Promise<void> {
+    options = {
+      ...options,
+      messages: stripThinkingFromMessages(options.messages),
+    };
     const visionModel = isVisionModel(options.config.model);
 
     const accessStore = useAccessStore.getState();
@@ -204,7 +212,7 @@ export class ClaudeApi implements LLMApi {
         .getAsTools(
           useChatStore.getState().currentSession().mask?.plugin || [],
         );
-      return stream(
+      return streamWithThink(
         path,
         requestBody,
         {
@@ -231,12 +239,14 @@ export class ClaudeApi implements LLMApi {
                   | "message_delta"
                   | "message_stop";
                 content_block?: {
-                  type: "tool_use";
+                  type: "tool_use" | "thinking";
+                  thinking?: string;
                   id: string;
                   name: string;
                 };
                 delta?: {
-                  type: "text_delta" | "input_json_delta";
+                  type: "text_delta" | "input_json_delta" | "thinking_delta";
+                  thinking?: string;
                   text?: string;
                   partial_json?: string;
                   stop_reason?: string;
@@ -253,7 +263,7 @@ export class ClaudeApi implements LLMApi {
             options.onError?.(
               new Error("Content policy violation: " + refusalMessage),
             );
-            return refusalMessage;
+            return { isThinking: false, content: refusalMessage };
           }
 
           if (chunkJson?.content_block?.type == "tool_use") {
@@ -277,7 +287,16 @@ export class ClaudeApi implements LLMApi {
             runTools[index]["function"]["arguments"] +=
               chunkJson?.delta?.partial_json;
           }
-          return chunkJson?.delta?.text;
+          return chunkJson?.delta?.type === "thinking_delta" ||
+            chunkJson?.content_block?.type === "thinking"
+            ? {
+                isThinking: true,
+                content:
+                  chunkJson?.delta?.thinking ??
+                  chunkJson?.content_block?.thinking ??
+                  "",
+              }
+            : { isThinking: false, content: chunkJson?.delta?.text ?? "" };
         },
         // processToolMessage, include tool_calls message and tool call results
         (
@@ -341,7 +360,7 @@ export class ClaudeApi implements LLMApi {
         const resJson = await res.json();
 
         const message = this.extractMessage(resJson);
-        options.onFinish(message, res);
+        options.onFinish(normalizeThinkingResponse(resJson, message), res);
       } catch (e) {
         console.error("failed to chat", e);
         options.onError?.(e as Error);

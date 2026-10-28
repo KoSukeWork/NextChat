@@ -1,4 +1,10 @@
 "use client";
+import {
+  stripThinkingFromMessages,
+  reasoningText,
+  normalizeThinkingResponse,
+} from "@/app/utils/thinking";
+
 import { ModelDiscoveryUnsupportedError } from "../models";
 import { ApiPath, Alibaba, ALIBABA_BASE_URL } from "@/app/constant";
 import {
@@ -95,6 +101,10 @@ export class QwenApi implements LLMApi {
   }
 
   async chat(options: ChatOptions) {
+    options = {
+      ...options,
+      messages: stripThinkingFromMessages(options.messages),
+    };
     const modelConfig = {
       ...useAppConfig.getState().modelConfig,
       ...useChatStore.getState().currentSession().mask.modelConfig,
@@ -203,7 +213,7 @@ export class QwenApi implements LLMApi {
               }
             }
 
-            const reasoning = choices[0]?.message?.reasoning_content;
+            const reasoning = reasoningText(choices[0]?.message);
             const content = choices[0]?.message?.content;
 
             // Skip if both content and reasoning_content are empty or null
@@ -221,6 +231,9 @@ export class QwenApi implements LLMApi {
               return {
                 isThinking: true,
                 content: reasoning,
+                followingContent: Array.isArray(content)
+                  ? content.map((item) => item.text).join("")
+                  : content ?? "",
               };
             } else if (content && content.length > 0) {
               return {
@@ -257,7 +270,7 @@ export class QwenApi implements LLMApi {
 
         const resJson = await res.json();
         const message = this.extractMessage(resJson);
-        options.onFinish(message, res);
+        options.onFinish(normalizeThinkingResponse(resJson, message), res);
       }
     } catch (e) {
       console.log("[Request] failed to make a chat request", e);

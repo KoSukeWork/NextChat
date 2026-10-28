@@ -24,6 +24,8 @@ import { IconButton } from "./button";
 
 import { useAppConfig } from "../store/config";
 import clsx from "clsx";
+import { parseThinking } from "../utils/thinking";
+import { ThinkingBlock } from "./thinking";
 
 export function Mermaid(props: { code: string }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -316,12 +318,54 @@ function _MarkDownContent(props: { content: string }) {
   );
 }
 
-export const MarkdownContent = React.memo(_MarkDownContent);
+export const MarkdownContent = React.memo(function MarkdownWithThinking(props: {
+  content: string;
+  streaming?: boolean;
+  thinkingActive?: boolean;
+  parseThoughts?: boolean;
+}) {
+  const parts = useMemo(
+    () =>
+      props.parseThoughts === false
+        ? []
+        : parseThinking(props.content, props.streaming),
+    [props.content, props.streaming, props.parseThoughts],
+  );
+  if (props.parseThoughts === false)
+    return <_MarkDownContent content={props.content} />;
+  const thoughts = parts.filter(
+    (part) => part.type === "thinking" && part.content.trim(),
+  );
+  const body = parts
+    .filter((part) => part.type === "text")
+    .map((part) => part.content)
+    .join("");
+  return (
+    <>
+      {thoughts.length > 0 && (
+        <ThinkingBlock
+          thinking={
+            !!props.streaming &&
+            (props.thinkingActive || thoughts.some((part) => !part.closed))
+          }
+        >
+          <_MarkDownContent
+            content={thoughts.map((part) => part.content).join("\n\n")}
+          />
+        </ThinkingBlock>
+      )}
+      <_MarkDownContent content={body} />
+    </>
+  );
+});
 
 export function Markdown(
   props: {
     content: string;
     loading?: boolean;
+    streaming?: boolean;
+    thinkingActive?: boolean;
+    parseThoughts?: boolean;
     fontSize?: number;
     fontFamily?: string;
     parentRef?: RefObject<HTMLDivElement>;
@@ -345,7 +389,12 @@ export function Markdown(
       {props.loading ? (
         <LoadingIcon />
       ) : (
-        <MarkdownContent content={props.content} />
+        <MarkdownContent
+          content={props.content}
+          streaming={props.streaming}
+          thinkingActive={props.thinkingActive}
+          parseThoughts={props.parseThoughts}
+        />
       )}
     </div>
   );

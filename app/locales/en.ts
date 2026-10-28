@@ -49,6 +49,11 @@ const en: LocaleType = {
     ChatItemCount: (count: number) => `${count} messages`,
   },
   Chat: {
+    Thinking: {
+      Title: "Thinking process",
+      Active: "Thinking…",
+      Done: "Thought",
+    },
     SubTitle: (count: number) => `${count} messages`,
     EditMessage: {
       Title: "Edit All Messages",

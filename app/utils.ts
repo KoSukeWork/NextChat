@@ -1,3 +1,4 @@
+import { stripThinking } from "./utils/thinking";
 import { useEffect, useState } from "react";
 import { showToast } from "./components/ui-lib";
 import Locale from "./locales";
@@ -245,19 +246,16 @@ export function getMessageTextContent(message: RequestMessage) {
   return "";
 }
 
-export function getMessageTextContentWithoutThinking(message: RequestMessage) {
-  let content = "";
+// Plain assistant text for copying, speech, summaries, and context accounting.
+// Preserve ordinary quotations and user-authored tag examples.
+export function getMessageTextContentForContext(message: RequestMessage) {
+  const content = getMessageTextContent(message);
+  return message.role === "assistant" ? stripThinking(content) : content;
+}
 
-  if (typeof message.content === "string") {
-    content = message.content;
-  } else {
-    for (const c of message.content) {
-      if (c.type === "text") {
-        content = c.text ?? "";
-        break;
-      }
-    }
-  }
+// Legacy compatibility: only existing provider call sites use this filter.
+export function getMessageTextContentWithoutThinking(message: RequestMessage) {
+  const content = getMessageTextContentForContext(message);
 
   // Filter out thinking lines (starting with "> ")
   return content

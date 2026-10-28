@@ -1,4 +1,10 @@
 "use client";
+import {
+  stripThinkingFromMessages,
+  thinkingChunk,
+  normalizeThinkingResponse,
+} from "@/app/utils/thinking";
+
 import { fetchOpenAIModels } from "../models";
 
 // azure and openai, using same models. so using same LLMApi.
@@ -15,7 +21,7 @@ import {
   ChatMessageTool,
   usePluginStore,
 } from "@/app/store";
-import { stream } from "@/app/utils/chat";
+import { streamWithThink } from "@/app/utils/chat";
 import {
   ChatOptions,
   getHeaders,
@@ -65,6 +71,10 @@ export class MoonshotApi implements LLMApi {
   }
 
   async chat(options: ChatOptions) {
+    options = {
+      ...options,
+      messages: stripThinkingFromMessages(options.messages),
+    };
     const messages: ChatOptions["messages"] = [];
     for (const v of options.messages) {
       const content = getMessageTextContent(v);
@@ -119,7 +129,7 @@ export class MoonshotApi implements LLMApi {
           .getAsTools(
             useChatStore.getState().currentSession().mask?.plugin || [],
           );
-        return stream(
+        return streamWithThink(
           chatPath,
           requestPayload,
           getHeaders(),
@@ -155,7 +165,7 @@ export class MoonshotApi implements LLMApi {
                 runTools[index]["function"]["arguments"] += args;
               }
             }
-            return choices[0]?.delta?.content;
+            return thinkingChunk(choices[0]?.delta);
           },
           // processToolMessage, include tool_calls message and tool call results
           (
@@ -180,7 +190,7 @@ export class MoonshotApi implements LLMApi {
 
         const resJson = await res.json();
         const message = this.extractMessage(resJson);
-        options.onFinish(message, res);
+        options.onFinish(normalizeThinkingResponse(resJson, message), res);
       }
     } catch (e) {
       console.log("[Request] failed to make a chat request", e);

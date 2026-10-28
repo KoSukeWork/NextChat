@@ -1,4 +1,10 @@
 "use client";
+import {
+  stripThinkingFromMessages,
+  reasoningText,
+  normalizeThinkingResponse,
+} from "@/app/utils/thinking";
+
 import { fetchOpenAIModels } from "../models";
 
 import { ApiPath, AI302_BASE_URL, AI302 } from "@/app/constant";
@@ -73,6 +79,10 @@ export class Ai302Api implements LLMApi {
   }
 
   async chat(options: ChatOptions) {
+    options = {
+      ...options,
+      messages: stripThinkingFromMessages(options.messages),
+    };
     const visionModel = isVisionModel(options.config.model);
     const messages: ChatOptions["messages"] = [];
     for (const v of options.messages) {
@@ -174,7 +184,7 @@ export class Ai302Api implements LLMApi {
                 runTools[index]["function"]["arguments"] += args;
               }
             }
-            const reasoning = choices[0]?.delta?.reasoning_content;
+            const reasoning = reasoningText(choices[0]?.delta);
             const content = choices[0]?.delta?.content;
 
             // Skip if both content and reasoning_content are empty or null
@@ -192,6 +202,9 @@ export class Ai302Api implements LLMApi {
               return {
                 isThinking: true,
                 content: reasoning,
+                followingContent: Array.isArray(content)
+                  ? content.map((item) => item.text).join("")
+                  : content ?? "",
               };
             } else if (content && content.length > 0) {
               return {
@@ -228,7 +241,7 @@ export class Ai302Api implements LLMApi {
 
         const resJson = await res.json();
         const message = this.extractMessage(resJson);
-        options.onFinish(message, res);
+        options.onFinish(normalizeThinkingResponse(resJson, message), res);
       }
     } catch (e) {
       console.log("[Request] failed to make a chat request", e);

@@ -46,6 +46,7 @@ const cn = {
     ChatItemCount: (count: number) => `${count} 条对话`,
   },
   Chat: {
+    Thinking: { Title: "思考过程", Active: "思考中…", Done: "已思考" },
     SubTitle: (count: number) => `共 ${count} 条对话`,
     EditMessage: {
       Title: "编辑消息记录",
