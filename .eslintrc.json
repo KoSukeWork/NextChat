@@ -3,5 +3,14 @@
   "plugins": ["prettier", "unused-imports"],
   "rules": {
     "unused-imports/no-unused-imports": "warn"
-  }
+  },
+  "overrides": [
+    {
+      // The rule crashes on string-literal enum members such as "302.AI".
+      "files": ["app/constant.ts"],
+      "rules": {
+        "unused-imports/no-unused-imports": "off"
+      }
+    }
+  ]
 }
