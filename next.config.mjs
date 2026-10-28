@@ -22,12 +22,12 @@ const nextConfig = {
     }
 
     if (mode === "export") {
-      // Static desktop builds have no Node server for MCP Server Actions.
+      // Desktop MCP uses native process IPC instead of Node Server Actions.
       config.plugins.push(
         new webpack.NormalModuleReplacementPlugin(
           /[\\/]mcp[\\/]actions$/,
           fileURLToPath(
-            new URL("./app/mcp/actions-static.ts", import.meta.url),
+            new URL("./app/mcp/actions-tauri.ts", import.meta.url),
           ),
         ),
       );

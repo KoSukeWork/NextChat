@@ -20,6 +20,7 @@ import {
   pauseMcpServer,
   restartAllClients,
   resumeMcpServer,
+  removeMcpServer,
 } from "../mcp/actions";
 import {
   ListToolsResponse,
@@ -33,6 +34,7 @@ import PlayIcon from "../icons/play.svg";
 import StopIcon from "../icons/pause.svg";
 import { Path } from "../constant";
 import { useAccessStore } from "../store";
+import { fetch } from "../utils/stream";
 
 interface ConfigProperty {
   type: string;
@@ -57,6 +59,12 @@ export function McpMarketPage() {
   >({});
   const [loadingPresets, setLoadingPresets] = useState(true);
   const [presetServers, setPresetServers] = useState<PresetServer[]>([]);
+  const [customServer, setCustomServer] = useState<{
+    id: string;
+    command: string;
+    args: string;
+    env: string;
+  }>();
   const [loadingStates, setLoadingStates] = useState<Record<string, string>>(
     {},
   );
@@ -172,6 +180,62 @@ export function McpMarketPage() {
   }
 
   // 检查服务器是否已添加
+  const savedServers: PresetServer[] = Object.entries(config?.mcpServers ?? {})
+    .filter(([id]) => !presetServers.some((server) => server.id === id))
+    .map(([id, server]) => ({
+      id,
+      name: id,
+      description: server.command,
+      repo: "",
+      tags: ["Custom"],
+      command: server.command,
+      baseArgs: server.args,
+      configurable: false,
+    }));
+  const allServers = [...presetServers, ...savedServers];
+
+  const saveCustomServer = async () => {
+    if (!customServer) return;
+    try {
+      const id = customServer.id.trim();
+      const args: unknown = JSON.parse(customServer.args);
+      const env: unknown = JSON.parse(customServer.env);
+      if (
+        !id ||
+        !customServer.command.trim() ||
+        !Array.isArray(args) ||
+        !args.every((arg) => typeof arg === "string") ||
+        !env ||
+        typeof env !== "object" ||
+        Array.isArray(env) ||
+        !Object.values(env).every((value) => typeof value === "string")
+      ) {
+        throw new Error(
+          "Enter a server ID, command, JSON array of arguments, and JSON object of environment values.",
+        );
+      }
+      setIsLoading(true);
+      setConfig(
+        await addMcpServer(
+          id,
+          {
+            command: customServer.command.trim(),
+            args,
+            env: env as Record<string, string>,
+          },
+          accessCode,
+        ),
+      );
+      setCustomServer(undefined);
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "Failed to save server",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const isServerAdded = (id: string) => {
     return id in (config?.mcpServers ?? {});
   };
@@ -279,6 +343,10 @@ export function McpMarketPage() {
         // 更新状态
         const statuses = await getClientsStatus(accessCode);
         setClientStatuses(statuses);
+      } catch (error) {
+        showToast(
+          error instanceof Error ? error.message : "Failed to add server",
+        );
       } finally {
         updateLoadingState(preset.id, null);
       }
@@ -286,6 +354,20 @@ export function McpMarketPage() {
       // 如果需要配置，打开配置对话框
       setEditingServerId(preset.id);
       setUserConfig({});
+    }
+  };
+
+  const removeServer = async (id: string) => {
+    try {
+      updateLoadingState(id, "Removing server...");
+      setConfig(await removeMcpServer(id, accessCode));
+      setClientStatuses(await getClientsStatus(accessCode));
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "Failed to remove server",
+      );
+    } finally {
+      updateLoadingState(id, null);
     }
   };
 
@@ -458,7 +540,7 @@ export function McpMarketPage() {
 
   // 渲染服务器列表
   const renderServerList = () => {
-    if (loadingPresets) {
+    if (loadingPresets && allServers.length === 0) {
       return (
         <div className={styles["loading-container"]}>
           <div className={styles["loading-text"]}>
@@ -468,7 +550,7 @@ export function McpMarketPage() {
       );
     }
 
-    if (!Array.isArray(presetServers) || presetServers.length === 0) {
+    if (allServers.length === 0) {
       return (
         <div className={styles["empty-container"]}>
           <div className={styles["empty-text"]}>No servers available</div>
@@ -476,7 +558,7 @@ export function McpMarketPage() {
       );
     }
 
-    return presetServers
+    return allServers
       .filter((server) => {
         if (searchText.length === 0) return true;
         const searchLower = searchText.toLowerCase();
@@ -590,6 +672,22 @@ export function McpMarketPage() {
                       disabled={isLoading}
                     />
                   )}
+                  {!server.configurable && (
+                    <IconButton
+                      icon={<EditIcon />}
+                      text="Configure"
+                      disabled={isLoading}
+                      onClick={() => {
+                        const saved = config!.mcpServers[server.id];
+                        setCustomServer({
+                          id: server.id,
+                          command: saved.command,
+                          args: JSON.stringify(saved.args),
+                          env: JSON.stringify(saved.env ?? {}),
+                        });
+                      }}
+                    />
+                  )}
                   {checkServerStatus(server.id).status === "paused" ? (
                     <>
                       <IconButton
@@ -598,12 +696,12 @@ export function McpMarketPage() {
                         onClick={() => restartServer(server.id)}
                         disabled={isLoading}
                       />
-                      {/* <IconButton
+                      <IconButton
                         icon={<DeleteIcon />}
                         text="Remove"
                         onClick={() => removeServer(server.id)}
                         disabled={isLoading}
-                      /> */}
+                      />
                     </>
                   ) : (
                     <>
@@ -663,6 +761,22 @@ export function McpMarketPage() {
           <div className="window-actions">
             <div className="window-action-button">
               <IconButton
+                icon={<AddIcon />}
+                text="Add Server"
+                bordered
+                disabled={isLoading}
+                onClick={() =>
+                  setCustomServer({
+                    id: "",
+                    command: "",
+                    args: "[]",
+                    env: "{}",
+                  })
+                }
+              />
+            </div>
+            <div className="window-action-button">
+              <IconButton
                 icon={<RestartIcon />}
                 bordered
                 onClick={handleRestartAll}
@@ -694,6 +808,56 @@ export function McpMarketPage() {
 
           <div className={styles["server-list"]}>{renderServerList()}</div>
         </div>
+
+        {customServer && (
+          <div className="modal-mask">
+            <Modal
+              title="Configure stdio MCP Server"
+              onClose={() => !isLoading && setCustomServer(undefined)}
+              actions={[
+                <IconButton
+                  key="cancel"
+                  text="Cancel"
+                  bordered
+                  disabled={isLoading}
+                  onClick={() => setCustomServer(undefined)}
+                />,
+                <IconButton
+                  key="save"
+                  text="Save"
+                  bordered
+                  disabled={isLoading}
+                  onClick={saveCustomServer}
+                />,
+              ]}
+            >
+              <List>
+                {(
+                  [
+                    ["id", "Server ID"],
+                    ["command", "Command"],
+                    ["args", "Arguments (JSON array)"],
+                    ["env", "Environment (JSON object)"],
+                  ] as const
+                ).map(([key, title]) => (
+                  <ListItem key={key} title={title} vertical>
+                    <input
+                      aria-label={title}
+                      value={customServer[key]}
+                      disabled={isLoading}
+                      onChange={(event) =>
+                        setCustomServer({
+                          ...customServer,
+                          [key]: event.target.value,
+                        })
+                      }
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            </Modal>
+          </div>
+        )}
 
         {/*编辑服务器配置*/}
         {editingServerId && (

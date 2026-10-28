@@ -1981,6 +1981,7 @@ name = "nextchat"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "dunce",
  "futures-util",
  "percent-encoding",
  "reqwest",
@@ -1989,6 +1990,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-window-state",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

@@ -14,6 +14,12 @@ declare interface Window {
   __TAURI__?: {
     writeText(text: string): Promise<void>;
     invoke(command: string, payload?: Record<string, unknown>): Promise<any>;
+    event: {
+      listen<T>(
+        event: string,
+        handler: (event: { id: number; payload: T }) => void,
+      ): Promise<() => void>;
+    };
     dialog: {
       save(options?: Record<string, unknown>): Promise<string | null>;
     };
