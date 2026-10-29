@@ -1,4 +1,7 @@
+mod loudness;
 mod model;
+#[cfg(test)]
+mod phrase_probe;
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use model::Result;
@@ -363,6 +366,10 @@ fn generate(
     speed: f32,
     active: impl Fn() -> bool + 'static,
 ) -> Result<Vec<u8>> {
+    // The pinned VITS callback supplies each completed internal sentence, not
+    // cumulative audio. Keep lengths only; the returned audio owns the samples.
+    let boundaries = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let captured = boundaries.clone();
     let audio = tts
         .generate_with_config(
             text,
@@ -370,22 +377,39 @@ fn generate(
                 speed,
                 ..Default::default()
             },
-            Some(move |_: &[f32], _: f32| active()),
+            Some(move |samples: &[f32], _: f32| {
+                if !active() {
+                    return false;
+                }
+                captured.borrow_mut().push(samples.len());
+                true
+            }),
         )
         // The C API returns null for token-conversion failure as well as other
         // generation failures. Preserve that ambiguity; only a returned audio
         // object with zero samples can be classified as EMPTY_SPEECH.
         .ok_or("SYNTHESIS_FAILED")?;
-    encode_wav(audio.samples(), audio.sample_rate())
+    let lengths = boundaries.borrow();
+    encode_wav_with_boundaries(audio.samples(), audio.sample_rate(), &lengths)
 }
 
+#[cfg(test)]
 fn encode_wav(samples: &[f32], rate: i32) -> Result<Vec<u8>> {
+    encode_wav_with_boundaries(samples, rate, &[])
+}
+
+fn encode_wav_with_boundaries(samples: &[f32], rate: i32, lengths: &[usize]) -> Result<Vec<u8>> {
     if samples.is_empty() {
         return Err("EMPTY_SPEECH".into());
     }
-    if rate <= 0 || samples.len() > rate as usize * 180 {
+    if rate <= 0 || samples.len() > rate as usize * 180 || samples.iter().any(|s| !s.is_finite()) {
         return Err("SYNTHESIS_FAILED".into());
     }
+    let samples = loudness::normalize_phrases(samples, rate as u32, lengths);
+    Ok(encode_pcm(&samples, rate))
+}
+
+fn encode_pcm(samples: &[f32], rate: i32) -> Vec<u8> {
     let bytes = (samples.len() * 2) as u32;
     let mut wav = Vec::with_capacity(bytes as usize + 44);
     wav.extend_from_slice(b"RIFF");
@@ -403,7 +427,7 @@ fn encode_wav(samples: &[f32], rate: i32) -> Result<Vec<u8>> {
     for sample in samples {
         wav.extend_from_slice(&((sample.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes());
     }
-    Ok(wav)
+    wav
 }
 
 pub fn setup(app: &tauri::App) -> std::result::Result<Arc<TtsState>, Box<dyn std::error::Error>> {
@@ -504,9 +528,66 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "Requires NEXTCHAT_MELO_LOUDNESS_FIXTURES and NEXTCHAT_MELO_TEST_MODEL"]
+    fn melo_loudness_probe() {
+        use sha2::{Digest, Sha256};
+        let fixtures = PathBuf::from(std::env::var("NEXTCHAT_MELO_LOUDNESS_FIXTURES").unwrap());
+        let root = PathBuf::from(std::env::var("NEXTCHAT_MELO_TEST_MODEL").unwrap());
+        let output = fixtures.parent().unwrap().join("loudness-audio");
+        fs::create_dir_all(&output).unwrap();
+        let tts = create_engine(&root).unwrap();
+        let mut rows: Vec<serde_json::Value> =
+            serde_json::from_slice(&fs::read(&fixtures).unwrap()).unwrap();
+        for row in &mut rows {
+            let text = row["text"].as_str().unwrap();
+            let key = format!("{:x}", Sha256::digest(text.as_bytes()));
+            let raw = output.join(format!("{key}.f32"));
+            if !raw.exists() {
+                let audio = tts
+                    .generate_with_config(
+                        text,
+                        &GenerationConfig::default(),
+                        None::<fn(&[f32], f32) -> bool>,
+                    )
+                    .unwrap();
+                assert_eq!(audio.sample_rate(), 44100);
+                let bytes: Vec<u8> = audio
+                    .samples()
+                    .iter()
+                    .flat_map(|s| s.to_le_bytes())
+                    .collect();
+                fs::write(&raw, bytes).unwrap();
+            }
+            row["raw"] = raw.to_string_lossy().into_owned().into();
+            row["rate"] = 44100.into();
+            let bytes = fs::read(&raw).unwrap();
+            let samples: Vec<f32> = bytes
+                .chunks_exact(4)
+                .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+                .collect();
+            let normalized = output.join(format!("{key}.wav"));
+            fs::write(&normalized, encode_wav(&samples, 44100).unwrap()).unwrap();
+            row["normalized"] = normalized.to_string_lossy().into_owned().into();
+        }
+        fs::write(
+            fixtures.with_file_name("loudness-results.json"),
+            serde_json::to_vec_pretty(&rows).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
     fn empty_speech_is_distinct_from_invalid_audio() {
         assert_eq!(encode_wav(&[], 44100).unwrap_err(), "EMPTY_SPEECH");
         assert_eq!(encode_wav(&[0.0], 0).unwrap_err(), "SYNTHESIS_FAILED");
+        assert_eq!(
+            encode_wav(&[f32::NAN], 44100).unwrap_err(),
+            "SYNTHESIS_FAILED"
+        );
+        assert_eq!(
+            encode_wav(&[f32::INFINITY], 44100).unwrap_err(),
+            "SYNTHESIS_FAILED"
+        );
         assert!(encode_wav(&[0.0], 44100).unwrap().len() > 44);
     }
 

@@ -141,7 +141,46 @@ test("normalizes percentage by sentence language and keeps versions and Unicode 
   ]);
   expect(
     splitMelo("汉".repeat(401)).map((part) => Array.from(part).length),
-  ).toEqual([180, 180, 41]);
+  ).toEqual([150, 150, 101]);
+});
+
+test("only the first sufficiently readable comma ends an early chunk", () => {
+  expect(
+    splitMelo(
+      "你好，先检查本地环境，再确认 API 地址，最后启动服务。下一句，保持完整。",
+    ),
+  ).toEqual([
+    "你好，先检查本地环境，",
+    "再确认 API 地址，最后启动服务。",
+    "下一句，保持完整。",
+  ]);
+  expect(splitMelo("一二三四五，六七。下一句，继续。")).toEqual([
+    "一二三四五，六七。",
+    "下一句，继续。",
+  ]);
+  expect(splitMelo("，，😊，一二三四五六，七八，九十。")).toEqual([
+    "，，，一二三四五六，",
+    "七八，九十。",
+  ]);
+});
+
+test("long sentences prefer the latest comma within 150 Unicode characters", () => {
+  const prefix = "首句结束。";
+  const body =
+    "甲".repeat(80) + "，" + "乙".repeat(50) + "," + "丙".repeat(40) + "。";
+  expect(splitMelo(prefix + body)).toEqual([
+    prefix,
+    "甲".repeat(80) + "，" + "乙".repeat(50) + ",",
+    "丙".repeat(40) + "。",
+  ]);
+  expect(
+    splitMelo(prefix + "𠀀".repeat(301)).map(
+      (chunk) => Array.from(chunk).length,
+    ),
+  ).toEqual([5, 150, 150, 1]);
+  expect(
+    splitMelo("First sentence. Use v2.16.1, example.com and 3.14. Done!"),
+  ).toEqual(["First sentence.", "Use v2.16.1, example.com and 3.14.", "Done!"]);
 });
 
 test("trailing emoji and symbol blocks finish without inference or fallback", async () => {

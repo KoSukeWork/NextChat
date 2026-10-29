@@ -35,8 +35,8 @@ Plain Web `corepack yarn build` does not download or link native dependencies.
 The manifest includes Linux/macOS/ARM64 assets, but this change was built and
 tested on Windows x64 only.
 
-The Windows portable build measured 30,495,232 bytes versus 11,699,712 bytes
-before this change: **+18,795,520 bytes (+18.80 MB)**. This is below the agreed
+The Windows portable build measured 30,515,712 bytes versus 11,699,712 bytes
+before this change: **+18,816,000 bytes (+18.82 MB)**. This is below the agreed
 30 MB increase limit. Its PE imports contain only Windows system libraries;
 there is no separate sherpa-onnx/onnxruntime DLL. Existing Tauri/WebView2 system
 requirements remain. No separate runtime ZIP is needed for this static route.
@@ -79,6 +79,23 @@ errors do not prevent app startup or system speech.
   converts semicolons into commas. Sentence splitting preserves numeric
   decimals, version numbers and Unicode codepoints. Emoji (including flags and
   joined sequences) are removed; chunks without any letter or number are skipped.
+- The first chunk may end at a comma after at least six readable characters.
+  Later chunks end at sentence punctuation/newlines; a 150-codepoint limit prefers
+  the latest preceding comma, with a hard cut when no suitable comma exists.
+- Normalization uses the native VITS callbacks' internal sentences, not the
+  frontend chunk average. With `max_num_sentences: 1`, 80 audited callback arrays
+  concatenated exactly to the final audio across 30 chunks, including pauses.
+  Callback lengths are checked; missing/invalid boundaries fall back to pauses
+  of at least 160 ms. Internal gain changes are placed inside existing quiet gaps,
+  with about 5 ms fades on both sides, preserving sample count and pause duration.
+- Before PCM encoding, 20 ms frames below -45 dBFS RMS are excluded from the
+  loudness estimate. Active-frame RMS is normalized toward -29 dBFS (the measured
+  original median was -28.71 dBFS), with gain constrained to 0.5–3.0. Peak headroom
+  can reduce the requested gain; a final -1 dBFS sample clamp protects extreme
+  inputs. The gate estimate is refined before playback to account for quiet frames
+  crossing the threshold after scaling; gain stays constant during each phrase.
+  Near-silent segments are never amplified. Gain/peak constraints can prevent exceptionally quiet or loud input from
+  reaching the target; this is intentionally not an unlimited gain adjustment.
 - Messages still use the existing Markdown-to-text/context-content path, so
   reasoning content remains excluded.
 - Web Audio plays one sentence while the next is synthesized. There is at most
@@ -118,12 +135,14 @@ Real-model tests are opt-in and do not download test fixtures automatically:
 ```powershell
 $env:NEXTCHAT_MELO_TEST_MODEL='absolute path to verified extracted Melo model'
 $env:NEXTCHAT_MELO_TEST_ARCHIVE='absolute path to official model tar.bz2'
+$env:NEXTCHAT_MELO_LOUDNESS_FIXTURES='absolute path to loudness-fixtures.json'
+$env:NEXTCHAT_MELO_PHRASE_FIXTURES='absolute path to phrase fixtures.json'
 cargo test --manifest-path src-tauri/Cargo.toml --release --no-default-features -- --include-ignored --nocapture
 ```
 
-Verified on Windows x64: 47 Jest suites / 300 tests; 16 Rust tests including the
-three real-model tests; TypeScript; desktop packaging; normal Web build (initial
-integration). The trailing-content fix reran TypeScript, Jest, Rust and desktop
+Verified on Windows x64: 47 Jest suites / 302 tests; 23 Rust tests including the
+five real-model tests; TypeScript; desktop packaging; normal Web build (initial
+integration). The trailing-content and loudness fixes reran TypeScript, Jest, Rust and desktop
 packaging. Tests
 cover traversal/links, wrong hashes, stalled-download cancellation, actual
 167 MB local HTTP transfer, atomic installation, synthesis, deletion, idle
@@ -131,6 +150,26 @@ unload, stale requests, pipeline stop/switch/fallback, settings and migration.
 Playback regression tests cover trailing emoji and symbols, a failed middle or
 last sentence, all sentences failing, fatal errors after playback, decode errors,
 empty decoded audio, and cancellation while inference or decoding is pending.
+
+Whole-chunk averages hid volume differences inside chunks. The current experiment
+uses identical native float audio for the old whole-chunk and new phrase processing.
+It measures every callback phrase across each entire passage (20 ms active RMS
+frames, -45 dBFS gate, population standard deviation). Voiced spans below 0.3 s,
+excluding leading/trailing silence, are reported separately with full durations.
+
+| Passage | Phrase RMS range before / after (dB) | Stddev before / after (dB) |
+| --- | ---: | ---: |
+| Mixed Chinese/English | 3.64 / 0.14 | 1.15 / 0.03 |
+| Long mixed reply | 7.31 / 1.25 | 2.19 / 0.29 |
+| Chinese list, questions and exclamations (324 characters) | 9.06 / 0.68 | 1.71 / 0.11 |
+| Very short sentences | 2.77 / 0.002 | 1.38 / 0.001 |
+
+All four passages meet the 2 dB phrase-range criterion for eligible phrases;
+pooled eligible phrases also meet it. Four excluded callbacks have voiced spans
+of 0, 0.22, 0.26 and 0.28 seconds. Very short quiet phrases can remain softer due
+to the 3× gain cap. Whole-text active RMS remains near -29 dBFS. These are signal
+measurements, not an audible listening test or a guarantee for every text.
+Peak values need not match across speech segments. The native batch size remains 1.
 
 An isolated four-thread Rust integration run generated the evaluation short
 Chinese sentence in **0.477 s**, with **RTF 0.188**, near the Python evaluation's

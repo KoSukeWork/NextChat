@@ -29,30 +29,45 @@ export function preprocessMelo(text: string): string {
   );
 }
 
-export function splitMelo(text: string, maxLength = 180): string[] {
+export function splitMelo(text: string, maxLength = 150): string[] {
   const characters = Array.from(preprocessMelo(text).trim());
   const chunks: string[] = [];
-  let buffer = "";
-  let length = 0;
-  for (let index = 0; index < characters.length; index++) {
-    const character = characters[index];
-    buffer += character;
-    length++;
-    // Preserve decimal numbers, versions and domains inside a sentence.
-    const period =
-      character === "." &&
-      !(
-        /[\p{L}\p{N}]/u.test(characters[index - 1] ?? "") &&
-        /[\p{L}\p{N}]/u.test(characters[index + 1] ?? "")
-      );
-    if (/[。！？!?\n，,]/u.test(character) || period || length >= maxLength) {
-      if (buffer.trim()) chunks.push(buffer.trim());
-      buffer = "";
-      length = 0;
+  const limit = Math.max(1, Math.floor(maxLength));
+  let start = 0;
+  while (start < characters.length) {
+    let end = Math.min(start + limit, characters.length);
+    let comma = -1;
+    let readable = 0;
+    for (let index = start; index < end; index++) {
+      const character = characters[index];
+      if (/[\p{L}\p{N}]/u.test(character)) readable++;
+      // Preserve decimal numbers, versions and domains inside a sentence.
+      const period =
+        character === "." &&
+        !(
+          /[\p{L}\p{N}]/u.test(characters[index - 1] ?? "") &&
+          /[\p{L}\p{N}]/u.test(characters[index + 1] ?? "")
+        );
+      const isComma = /[，,]/u.test(character);
+      if (isComma && readable >= 6) comma = index + 1;
+      if (
+        /[。！？!?\n]/u.test(character) ||
+        period ||
+        (chunks.length === 0 && isComma && readable >= 6)
+      ) {
+        end = index + 1;
+        comma = -1;
+        break;
+      }
     }
+    // At the length limit prefer the last comma; otherwise keep the sentence.
+    if (end < characters.length && end === start + limit && comma > start)
+      end = comma;
+    const chunk = characters.slice(start, end).join("").trim();
+    if (/[\p{L}\p{N}]/u.test(chunk)) chunks.push(chunk);
+    start = end;
   }
-  if (buffer.trim()) chunks.push(buffer.trim());
-  return chunks.filter((chunk) => /[\p{L}\p{N}]/u.test(chunk));
+  return chunks;
 }
 
 export class MeloSpeechError extends Error {
