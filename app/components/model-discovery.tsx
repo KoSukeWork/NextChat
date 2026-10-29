@@ -7,6 +7,7 @@ import { getModelProviderInfo } from "../utils/model";
 import Locale from "../locales";
 import { IconButton } from "./button";
 import { List, ListItem, Modal, showToast } from "./ui-lib";
+import { ModelManager } from "./model-manager";
 
 export function ModelDiscovery() {
   const access = useAccessStore();
@@ -63,12 +64,15 @@ export function ModelDiscovery() {
         title={text.Title}
         subTitle={`${provider} · ${text.Saved}: ${saved.length}`}
       >
-        <IconButton
-          text={loading ? text.Loading : text.Title}
-          disabled={loading}
-          onClick={discover}
-          bordered
-        />
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <IconButton
+            text={loading ? text.Loading : text.Title}
+            disabled={loading}
+            onClick={discover}
+            bordered
+          />
+          <ModelManager />
+        </div>
       </ListItem>
       {selection && (
         <div className="modal-mask">

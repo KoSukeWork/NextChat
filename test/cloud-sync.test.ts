@@ -27,6 +27,9 @@ jest.unstable_mockModule("@/app/utils/sync", () => ({
   getLocalAppState: getLocal,
   mergeAppState: merge,
   setLocalAppState: setLocal,
+  getCloudAppState: getLocal,
+  mergeCloudAppState: merge,
+  setCloudAppState: setLocal,
 }));
 jest.unstable_mockModule("@/app/utils", () => ({
   downloadAs: jest.fn(),

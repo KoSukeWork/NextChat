@@ -7,6 +7,10 @@ import {
   GetStoreState,
   mergeAppState,
   setLocalAppState,
+  CloudState,
+  getCloudAppState,
+  mergeCloudAppState,
+  setCloudAppState,
 } from "../utils/sync";
 import { downloadAs, readFromFile } from "../utils";
 import { showToast } from "../components/ui-lib";
@@ -92,8 +96,8 @@ export const useSyncStore = createPersistStore(
     async sync() {
       // Merge into a snapshot; a failed PUT must not mutate live local state.
       const localState = JSON.parse(
-        JSON.stringify(getLocalAppState()),
-      ) as AppState;
+        JSON.stringify(getCloudAppState()),
+      ) as CloudState;
       const provider = get().provider;
       const config = get()[provider];
       const client = this.getClient();
@@ -110,14 +114,14 @@ export const useSyncStore = createPersistStore(
             Array.isArray(parsedRemoteState)
           )
             throw new Error();
-          mergeAppState(localState, parsedRemoteState);
+          mergeCloudAppState(localState, parsedRemoteState);
         } catch {
           throw new SyncError("INVALID_JSON");
         }
       }
 
       await client.set(config.username, JSON.stringify(localState));
-      if (remoteState) setLocalAppState(localState);
+      if (remoteState) setCloudAppState(localState);
       this.markSyncTime();
     },
 

@@ -1124,10 +1124,7 @@ function _Chat() {
       matchCommand.invoke();
       return;
     }
-    if (!chatStore.currentSession().mask.modelConfig.model) {
-      showToast(Locale.ModelDiscovery.ConfigureFirst);
-      return;
-    }
+    if (!chatStore.ensureSessionModel()) return;
     setIsLoading(true);
     chatStore
       .onUserInput(userInput, attachImages)
@@ -1278,6 +1275,7 @@ function _Chat() {
     }
 
     // delete the original messages
+    if (!chatStore.ensureSessionModel()) return;
     deleteMessage(userMessage.id);
     deleteMessage(botMessage?.id);
 

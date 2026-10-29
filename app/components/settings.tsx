@@ -528,11 +528,19 @@ function SyncItems() {
         <ListItem
           title={Locale.Settings.Sync.CloudState}
           subTitle={
-            syncStore.lastProvider
-              ? `${new Date(syncStore.lastSyncTime).toLocaleString()} [${
-                  syncStore.lastProvider
-                }]`
-              : Locale.Settings.Sync.NotSyncYet
+            <>
+              <div>{Locale.Settings.Sync.Scope}</div>
+              <div>
+                {syncStore.lastProvider
+                  ? Locale.Settings.Sync.LastSync(
+                      new Date(syncStore.lastSyncTime).toLocaleString(),
+                      Object.entries(ProviderType).find(
+                        ([, value]) => value === syncStore.lastProvider,
+                      )?.[0] ?? syncStore.lastProvider,
+                    )
+                  : Locale.Settings.Sync.NotSyncYet}
+              </div>
+            </>
           }
         >
           <div style={{ display: "flex" }}>
@@ -1792,7 +1800,8 @@ export function Settings() {
         <List id={SlotID.CustomModel}>
           {accessCodeComponent}
 
-          {!accessStore.hideUserApiKey && (
+          {(clientConfig?.buildMode === "export" ||
+            !accessStore.hideUserApiKey) && (
             <>
               {useCustomConfigComponent}
 

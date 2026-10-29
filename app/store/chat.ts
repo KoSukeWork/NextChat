@@ -34,7 +34,7 @@ import { createPersistStore } from "../utils/store";
 import { estimateTokenLength } from "../utils/token";
 import { ModelConfig, ModelType, useAppConfig } from "./config";
 import { useAccessStore } from "./access";
-import { collectModelsWithDefaultModel } from "../utils/model";
+import { configuredModels, resolveLocalModel } from "../utils/local-models";
 import { createEmptyMask, Mask } from "./mask";
 import { executeMcpAction, getAllTools, isMcpEnabled } from "../mcp/actions";
 import { extractMcpJson, isMcpJson } from "../mcp/utils";
@@ -126,12 +126,7 @@ function getSummarizeModel(
 ): string[] {
   const configStore = useAppConfig.getState();
   const accessStore = useAccessStore.getState();
-  const models = collectModelsWithDefaultModel(
-    configStore.models,
-    [configStore.customModels, accessStore.customModels].join(","),
-    accessStore.defaultModel,
-    accessStore.useCustomConfig ? accessStore.provider : ServiceProvider.OpenAI,
-  );
+  const models = configuredModels(configStore, accessStore);
   const target = currentModel.startsWith("gemini")
     ? GEMINI_SUMMARIZE_MODEL
     : currentModel.startsWith("deepseek-")
@@ -306,6 +301,11 @@ export const useChatStore = createPersistStore(
             },
           };
           session.topic = mask.name;
+          const resolved = resolveLocalModel(
+            session.mask.modelConfig.model,
+            session.mask.modelConfig.providerName,
+          );
+          if (resolved) Object.assign(session.mask.modelConfig, resolved);
         }
 
         set((state) => ({
@@ -391,12 +391,32 @@ export const useChatStore = createPersistStore(
         get().summarizeSession(false, targetSession);
       },
 
+      ensureSessionModel(targetSession?: ChatSession): boolean {
+        const session = targetSession ?? get().currentSession();
+        const current = session.mask.modelConfig;
+        const resolved = resolveLocalModel(current.model, current.providerName);
+        if (!resolved) return false;
+        if (
+          resolved.model !== current.model ||
+          resolved.providerName !== current.providerName
+        ) {
+          get().updateTargetSession(session, (target) => {
+            target.mask = {
+              ...target.mask,
+              modelConfig: { ...current, ...resolved },
+            };
+          });
+        }
+        return true;
+      },
+
       async onUserInput(
         content: string,
         attachImages?: string[],
         isMcpResponse?: boolean,
       ) {
         const session = get().currentSession();
+        if (!get().ensureSessionModel(session)) return;
         const modelConfig = session.mask.modelConfig;
 
         // MCP Response no need to fill template
@@ -662,26 +682,50 @@ export const useChatStore = createPersistStore(
           return;
         }
 
-        // if not config compressModel, then using getSummarizeModel
-        const [model, providerName] = modelConfig.compressModel
+        const messages = stripThinkingFromMessages(session.messages);
+        const shouldGenerateTitle =
+          (config.enableAutoGenerateTitle &&
+            session.topic === DEFAULT_TOPIC &&
+            countMessages(messages) >= 50) ||
+          refreshTitle;
+        const summarizeIndex = Math.max(
+          session.lastSummarizeIndex,
+          session.clearContextIndex ?? 0,
+        );
+        let toBeSummarizedMsgs = messages
+          .filter((msg) => !msg.isError)
+          .slice(summarizeIndex);
+        const historyMsgLength = countMessages(toBeSummarizedMsgs);
+        const shouldSummarize =
+          historyMsgLength > modelConfig.compressMessageLengthThreshold &&
+          modelConfig.sendMemory;
+        if (!shouldGenerateTitle && !shouldSummarize) return;
+
+        // Resolve only when a title or summary request will actually be sent.
+        const [requestedModel, requestedProvider] = modelConfig.compressModel
           ? [modelConfig.compressModel, modelConfig.compressProviderName]
           : getSummarizeModel(
               session.mask.modelConfig.model,
               session.mask.modelConfig.providerName,
             );
+        const resolved = resolveLocalModel(requestedModel, requestedProvider);
+        if (!resolved) return;
+        const { model, providerName } = resolved;
+        if (model !== requestedModel || providerName !== requestedProvider) {
+          get().updateTargetSession(session, (target) => {
+            target.mask = {
+              ...target.mask,
+              modelConfig: {
+                ...modelConfig,
+                compressModel: model,
+                compressProviderName: providerName,
+              },
+            };
+          });
+        }
         const api: ClientApi = getClientApi(providerName as ServiceProvider);
 
-        // remove error messages if any
-        const messages = stripThinkingFromMessages(session.messages);
-
-        // should summarize topic after chating more than 50 words
-        const SUMMARIZE_MIN_LEN = 50;
-        if (
-          (config.enableAutoGenerateTitle &&
-            session.topic === DEFAULT_TOPIC &&
-            countMessages(messages) >= SUMMARIZE_MIN_LEN) ||
-          refreshTitle
-        ) {
+        if (shouldGenerateTitle) {
           const startIndex = Math.max(
             0,
             messages.length - modelConfig.historyMessageCount,
@@ -718,16 +762,6 @@ export const useChatStore = createPersistStore(
             },
           });
         }
-        const summarizeIndex = Math.max(
-          session.lastSummarizeIndex,
-          session.clearContextIndex ?? 0,
-        );
-        let toBeSummarizedMsgs = messages
-          .filter((msg) => !msg.isError)
-          .slice(summarizeIndex);
-
-        const historyMsgLength = countMessages(toBeSummarizedMsgs);
-
         if (historyMsgLength > (modelConfig?.max_tokens || 4000)) {
           const n = toBeSummarizedMsgs.length;
           toBeSummarizedMsgs = toBeSummarizedMsgs.slice(
@@ -749,10 +783,7 @@ export const useChatStore = createPersistStore(
           modelConfig.compressMessageLengthThreshold,
         );
 
-        if (
-          historyMsgLength > modelConfig.compressMessageLengthThreshold &&
-          modelConfig.sendMemory
-        ) {
+        if (shouldSummarize) {
           /** Destruct max_tokens while summarizing
            * this param is just shit
            **/

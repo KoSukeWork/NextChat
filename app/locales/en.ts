@@ -6,6 +6,24 @@ import { SAAS_CHAT_UTM_URL } from "@/app/constant";
 
 const isApp = !!getClientConfig()?.isApp;
 const en: LocaleType = {
+  ModelFallback: {
+    Switched: (from: string, to: string) =>
+      `This chat's model ${from} is unavailable on this device. Switched to ${to}.`,
+  },
+  ModelManager: {
+    Title: "Manage models",
+    Search: "Search models or providers",
+    Empty: "No matching saved models",
+    Delete: "Delete",
+    DeleteSelected: (count: number) => `Delete selected (${count})`,
+    ClearProvider: (count: number) => `Clear provider (${count})`,
+    Default: "Current default model",
+    Confirm: (count: number) => `Delete ${count} saved models?`,
+    DefaultWarning:
+      "This removes the current default model. Existing conversations will keep their original model; choose another default for new conversations.",
+    CustomHint:
+      "Manage saved models from all providers without fetching a list. Custom model names are a separate source; remove them in the Custom model names input.",
+  },
   ModelDiscovery: {
     Placeholder: "gpt-4o,claude-sonnet-4-5@Anthropic,my-model=Display name",
     Title: "Fetch models",
@@ -248,8 +266,12 @@ const en: LocaleType = {
       SubTitle: "Generate a suitable title based on the conversation content",
     },
     Sync: {
+      Scope:
+        "Cloud sync includes only chats, masks, and prompts. API configuration, model lists, MCP configuration, and app settings stay on this device.",
       CloudState: "Last Update",
       NotSyncYet: "Not sync yet",
+      LastSync: (time: string, provider: string) =>
+        `Last sync: ${time} (${provider})`,
       Success: "Sync Success",
       Fail: "Sync Fail",
       CheckSuccess: "Connection check passed",

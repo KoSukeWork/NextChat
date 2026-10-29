@@ -156,6 +156,21 @@ export const useAppConfig = createPersistStore(
       }));
       get().markUpdate();
     },
+
+    removeSavedModels(keys: string[]) {
+      const selected = new Set(keys);
+      const previousTime = get().lastUpdateTime;
+      get().update((state) => {
+        state.models = state.models.filter(
+          (model) =>
+            !selected.has(JSON.stringify([model.provider.id, model.name])),
+        );
+      });
+      // A deletion must also win after importing a future-dated backup or when
+      // two local edits happen within the same millisecond.
+      if (get().lastUpdateTime <= previousTime)
+        set({ lastUpdateTime: previousTime + 1 });
+    },
   }),
   {
     name: StoreKey.Config,

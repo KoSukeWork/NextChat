@@ -150,6 +150,27 @@ const DEFAULT_ACCESS_STATE = {
   visionModels: "",
 };
 
+const SERVER_CONFIG_KEYS = [
+  "needCode",
+  "hideUserApiKey",
+  "hideBalanceQuery",
+  "disableGPT4",
+  "disableFastLink",
+  "customModels",
+  "defaultModel",
+  "visionModels",
+] as const;
+
+function isAbsoluteHttpUrl(value: unknown) {
+  if (typeof value !== "string" || !/^https?:\/\//i.test(value)) return false;
+  try {
+    const url = new URL(value);
+    return !!url.hostname && ["http:", "https:"].includes(url.protocol);
+  } catch {
+    return false;
+  }
+}
+
 export const useAccessStore = createPersistStore(
   { ...DEFAULT_ACCESS_STATE },
 
@@ -280,6 +301,20 @@ export const useAccessStore = createPersistStore(
     merge(persistedState, currentState) {
       const { edgeTTSVoiceName, edgeVoiceName, ...state } = (persistedState ??
         {}) as Record<string, unknown>;
+      // Run on every hydration, including reload after a local file import.
+      // Export builds have no server to refresh these deployment-only flags.
+      if (isApp) {
+        for (const key of SERVER_CONFIG_KEYS)
+          state[key] = DEFAULT_ACCESS_STATE[key];
+        for (const [key, defaultUrl] of Object.entries(DEFAULT_ACCESS_STATE)) {
+          const value =
+            key in state
+              ? state[key]
+              : currentState[key as keyof typeof currentState];
+          if (key.endsWith("Url") && !isAbsoluteHttpUrl(value))
+            state[key] = defaultUrl;
+        }
+      }
       return { ...currentState, ...state };
     },
     migrate(persistedState, version) {

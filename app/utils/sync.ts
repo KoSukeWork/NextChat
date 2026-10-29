@@ -52,6 +52,33 @@ export type AppState = {
   >;
 };
 
+const CloudStoreKeys = [StoreKey.Chat, StoreKey.Mask, StoreKey.Prompt] as const;
+export type CloudState = Pick<AppState, (typeof CloudStoreKeys)[number]>;
+
+export function getCloudAppState(): CloudState {
+  return Object.fromEntries(
+    CloudStoreKeys.map((key) => [key, LocalStateGetters[key]()]),
+  ) as CloudState;
+}
+
+export function setCloudAppState(state: CloudState) {
+  CloudStoreKeys.forEach(<K extends keyof CloudState>(key: K) => {
+    LocalStateSetters[key](state[key]);
+  });
+}
+
+export function mergeCloudAppState(
+  local: CloudState,
+  remote: Partial<AppState>,
+) {
+  CloudStoreKeys.forEach(<K extends keyof CloudState>(key: K) => {
+    if (remote[key] !== undefined) {
+      local[key] = MergeStates[key](local[key] as AppState[K], remote[key]!);
+    }
+  });
+  return local;
+}
+
 type Merger<T extends keyof AppState, U = AppState[T]> = (
   localState: U,
   remoteState: U,
@@ -139,27 +166,25 @@ export function mergeAppState(localState: AppState, remoteState: AppState) {
     const key = k as T;
     const localStoreState = localState[key];
     const remoteStoreState = remoteState[key];
-    MergeStates[key](localStoreState, remoteStoreState);
+    localState[key] = MergeStates[key](localStoreState, remoteStoreState);
   });
 
   return localState;
 }
 
 /**
- * Merge state with `lastUpdateTime`, older state will be override
+ * Newer state wins conflicts; ties prefer local. Preserve keys on either side.
  */
 export function mergeWithUpdate<T extends { lastUpdateTime?: number }>(
   localState: T,
   remoteState: T,
 ) {
-  const localUpdateTime = localState.lastUpdateTime ?? 0;
-  const remoteUpdateTime = localState.lastUpdateTime ?? 1;
-
-  if (localUpdateTime < remoteUpdateTime) {
-    merge(remoteState, localState);
-    return { ...remoteState };
-  } else {
-    merge(localState, remoteState);
-    return { ...localState };
-  }
+  const timestamp = (value: unknown) =>
+    typeof value === "number" && Number.isFinite(value) ? value : 0;
+  const remoteIsNewer =
+    timestamp(remoteState.lastUpdateTime) >
+    timestamp(localState.lastUpdateTime);
+  const older = remoteIsNewer ? localState : remoteState;
+  const newer = remoteIsNewer ? remoteState : localState;
+  return merge(merge({}, older), newer) as T;
 }

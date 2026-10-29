@@ -5,6 +5,24 @@ import { SAAS_CHAT_UTM_URL } from "@/app/constant";
 const isApp = !!getClientConfig()?.isApp;
 
 const cn = {
+  ModelFallback: {
+    Switched: (from: string, to: string) =>
+      `此对话使用的模型 ${from} 在本设备不可用，已切换为 ${to}`,
+  },
+  ModelManager: {
+    Title: "管理模型",
+    Search: "搜索模型或服务商",
+    Empty: "没有匹配的已保存模型",
+    Delete: "删除",
+    DeleteSelected: (count: number) => `删除所选 (${count})`,
+    ClearProvider: (count: number) => `清空此服务商 (${count})`,
+    Default: "当前默认模型",
+    Confirm: (count: number) => `确认删除 ${count} 个已保存模型？`,
+    DefaultWarning:
+      "将删除当前默认模型。已有对话仍会使用原来的模型，新对话请另选默认模型。",
+    CustomHint:
+      "这里管理所有服务商的已保存模型，无需获取列表。自定义模型名是另一来源，请到“自定义模型名”输入框删除。",
+  },
   ModelDiscovery: {
     Placeholder: "gpt-4o,claude-sonnet-4-5@Anthropic,my-model=显示名",
     Title: "获取模型列表",
@@ -240,8 +258,12 @@ const cn = {
       SubTitle: "根据对话内容生成合适的标题",
     },
     Sync: {
+      Scope:
+        "云同步只同步聊天记录、面具和提示词；API 配置、模型列表、MCP 配置和应用设置只保存在本机。",
       CloudState: "云端数据",
       NotSyncYet: "还没有进行过同步",
+      LastSync: (time: string, provider: string) =>
+        `上次同步：${time}（${provider}）`,
       Success: "同步成功",
       Fail: "同步失败",
       CheckSuccess: "检查通过，可以正常同步",
