@@ -12,6 +12,7 @@ import { downloadAs, readFromFile } from "../utils";
 import { showToast } from "../components/ui-lib";
 import Locale from "../locales";
 import { createSyncClient, ProviderType } from "../utils/cloud";
+import { SyncError } from "../utils/cloud/transport";
 
 export interface WebDavConfig {
   server: string;
@@ -89,33 +90,34 @@ export const useSyncStore = createPersistStore(
     },
 
     async sync() {
-      const localState = getLocalAppState();
+      // Merge into a snapshot; a failed PUT must not mutate live local state.
+      const localState = JSON.parse(
+        JSON.stringify(getLocalAppState()),
+      ) as AppState;
       const provider = get().provider;
       const config = get()[provider];
       const client = this.getClient();
 
-      try {
-        const remoteState = await client.get(config.username);
-        if (!remoteState || remoteState === "") {
-          await client.set(config.username, JSON.stringify(localState));
-          console.log(
-            "[Sync] Remote state is empty, using local state instead.",
-          );
-          return;
-        } else {
-          const parsedRemoteState = JSON.parse(
-            await client.get(config.username),
-          ) as AppState;
+      await client.prepare?.();
+      const remoteState = await client.get(config.username);
+      if (remoteState) {
+        let parsedRemoteState: AppState;
+        try {
+          parsedRemoteState = JSON.parse(remoteState);
+          if (
+            !parsedRemoteState ||
+            typeof parsedRemoteState !== "object" ||
+            Array.isArray(parsedRemoteState)
+          )
+            throw new Error();
           mergeAppState(localState, parsedRemoteState);
-          setLocalAppState(localState);
+        } catch {
+          throw new SyncError("INVALID_JSON");
         }
-      } catch (e) {
-        console.log("[Sync] failed to get remote state", e);
-        throw e;
       }
 
       await client.set(config.username, JSON.stringify(localState));
-
+      if (remoteState) setLocalAppState(localState);
       this.markSyncTime();
     },
 

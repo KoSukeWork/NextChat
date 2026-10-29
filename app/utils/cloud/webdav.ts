@@ -1,5 +1,6 @@
 import { STORAGE_KEY } from "@/app/constant";
-import { SyncStore } from "@/app/store/sync";
+import type { SyncStore } from "@/app/store/sync";
+import { assertStatus, cloudRequest, proxyPath, SyncError } from "./transport";
 
 export type WebDAVConfig = SyncStore["webdav"];
 export type WebDavClient = ReturnType<typeof createWebDavClient>;
@@ -8,90 +9,56 @@ export function createWebDavClient(store: SyncStore) {
   const folder = STORAGE_KEY;
   const fileName = `${folder}/backup.json`;
   const config = store.webdav;
-  const proxyUrl =
-    store.useProxy && store.proxyUrl.length > 0 ? store.proxyUrl : undefined;
-
+  const proxy = store.useProxy ? store.proxyUrl : "";
+  const request = (path: string, method: string, body?: string) => {
+    const bytes = new TextEncoder().encode(
+      `${config.username}:${config.password}`,
+    );
+    const auth = btoa(
+      Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""),
+    );
+    return cloudRequest({
+      endpoint: config.endpoint,
+      path,
+      method,
+      body,
+      proxyPath: proxyPath(
+        "/api/webdav/",
+        path,
+        config.endpoint,
+        proxy,
+        method === "MKCOL" ? method : undefined,
+      ),
+      proxyMethod: method === "MKCOL" ? "GET" : undefined,
+      headers: { Authorization: `Basic ${auth}` },
+      credentials: { username: config.username, password: config.password },
+    });
+  };
   return {
+    async prepare() {
+      const res = await request(folder, "MKCOL");
+      if (res.status !== 405) assertStatus(res.status);
+    },
     async check() {
-      try {
-        const res = await fetch(this.path(folder, proxyUrl, "MKCOL"), {
-          method: "GET",
-          headers: this.headers(),
-        });
-        const success = [201, 200, 404, 405, 301, 302, 307, 308].includes(
-          res.status,
-        );
-        console.log(
-          `[WebDav] check ${success ? "success" : "failed"}, ${res.status} ${
-            res.statusText
-          }`,
-        );
-        return success;
-      } catch (e) {
-        console.error("[WebDav] failed to check", e);
+      await this.prepare();
+      // An existing collection (405) still needs an authenticated read check.
+      const res = await request(fileName, "GET");
+      if (res.status !== 404) {
+        assertStatus(res.status);
+        if (res.body.trimStart().startsWith("<"))
+          throw new SyncError("INVALID_JSON");
       }
-
-      return false;
+      return true;
     },
-
-    async get(key: string) {
-      const res = await fetch(this.path(fileName, proxyUrl), {
-        method: "GET",
-        headers: this.headers(),
-      });
-
-      console.log("[WebDav] get key = ", key, res.status, res.statusText);
-
-      if (404 == res.status) {
-        return "";
-      }
-
-      return await res.text();
+    async get(_key: string) {
+      const res = await request(fileName, "GET");
+      if (res.status === 404) return "";
+      assertStatus(res.status);
+      return res.body;
     },
-
-    async set(key: string, value: string) {
-      const res = await fetch(this.path(fileName, proxyUrl), {
-        method: "PUT",
-        headers: this.headers(),
-        body: value,
-      });
-
-      console.log("[WebDav] set key = ", key, res.status, res.statusText);
-    },
-
-    headers() {
-      const auth = btoa(config.username + ":" + config.password);
-
-      return {
-        authorization: `Basic ${auth}`,
-      };
-    },
-    path(path: string, proxyUrl: string = "", proxyMethod: string = "") {
-      if (path.startsWith("/")) {
-        path = path.slice(1);
-      }
-
-      if (proxyUrl.endsWith("/")) {
-        proxyUrl = proxyUrl.slice(0, -1);
-      }
-
-      let url;
-      const pathPrefix = "/api/webdav/";
-
-      try {
-        let u = new URL(proxyUrl + pathPrefix + path);
-        // add query params
-        u.searchParams.append("endpoint", config.endpoint);
-        proxyMethod && u.searchParams.append("proxy_method", proxyMethod);
-        url = u.toString();
-      } catch (e) {
-        url = pathPrefix + path + "?endpoint=" + config.endpoint;
-        if (proxyMethod) {
-          url += "&proxy_method=" + proxyMethod;
-        }
-      }
-
-      return url;
+    async set(_key: string, value: string) {
+      const res = await request(fileName, "PUT", value);
+      assertStatus(res.status);
     },
   };
 }

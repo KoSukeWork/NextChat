@@ -3,6 +3,7 @@
 
 mod mcp;
 mod stream;
+mod sync_http;
 mod zoom;
 mod tts;
 use std::sync::Arc;
@@ -26,6 +27,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             stream::stream_fetch,
+            sync_http::sync_http,
             mcp::mcp_read_config,
             mcp::mcp_write_config,
             mcp::mcp_spawn,

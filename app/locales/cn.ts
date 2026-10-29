@@ -244,6 +244,27 @@ const cn = {
       NotSyncYet: "还没有进行过同步",
       Success: "同步成功",
       Fail: "同步失败",
+      CheckSuccess: "检查通过，可以正常同步",
+      CheckFailed: "检查失败",
+      Errors: {
+        AUTH: "用户名或密码错误。坚果云请使用第三方应用密码，不是登录密码",
+        FORBIDDEN: "没有访问或写入权限",
+        PATH: "服务器路径不存在，请检查地址",
+        BUSY: "请求太频繁或服务暂时不可用，请稍后重试。坚果云有请求频率限制",
+        REDIRECT: "服务器返回重定向，请直接填写最终服务器地址",
+        HTTP: "服务器请求失败",
+        INVALID_JSON: "远程备份不是合法的 JSON 备份",
+        INVALID_ENDPOINT:
+          "服务器地址必须是 http/https 地址，不能包含登录信息、查询参数或片段",
+        NETWORK_DNS: "网络错误：DNS 域名解析失败",
+        NETWORK_TLS: "网络错误：TLS 连接或证书验证失败",
+        NETWORK_TIMEOUT: "网络错误：请求超时",
+        NETWORK_REFUSED: "网络错误：服务器拒绝连接，请确认服务已启动",
+        NETWORK_CONNECT: "网络错误：无法连接服务器，请检查网络或代理",
+        NETWORK_FAILED: "网络请求失败，请检查网络连接、服务器或浏览器跨域代理",
+        REMOTE_ERROR: "远程服务返回了无效结果",
+        UNKNOWN: "同步操作失败，请检查配置后重试",
+      },
 
       Config: {
         Modal: {

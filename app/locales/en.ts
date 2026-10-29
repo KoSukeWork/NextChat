@@ -252,6 +252,32 @@ const en: LocaleType = {
       NotSyncYet: "Not sync yet",
       Success: "Sync Success",
       Fail: "Sync Fail",
+      CheckSuccess: "Connection check passed",
+      CheckFailed: "Connection check failed",
+      Errors: {
+        AUTH: "Incorrect username or password. Jianguoyun requires a third-party app password, not your login password",
+        FORBIDDEN: "Access or write permission denied",
+        PATH: "The server path does not exist; check the endpoint",
+        BUSY: "Too many requests or service temporarily unavailable. Retry later; Jianguoyun has rate limits",
+        REDIRECT:
+          "The server redirected the request; enter the final endpoint directly",
+        HTTP: "Server request failed",
+        INVALID_JSON: "The remote backup is not a valid JSON backup",
+        INVALID_ENDPOINT:
+          "Use an http/https endpoint without embedded credentials, query parameters or fragments",
+        NETWORK_DNS: "Network error: DNS name resolution failed",
+        NETWORK_TLS:
+          "Network error: TLS connection or certificate validation failed",
+        NETWORK_TIMEOUT: "Network error: request timed out",
+        NETWORK_REFUSED:
+          "Network error: connection refused; check that the server is running",
+        NETWORK_CONNECT:
+          "Network error: cannot connect to the server; check the network or proxy",
+        NETWORK_FAILED:
+          "Network request failed; check connectivity, the server or the browser CORS proxy",
+        REMOTE_ERROR: "The remote service returned an invalid result",
+        UNKNOWN: "Sync operation failed; check your configuration and retry",
+      },
 
       Config: {
         Modal: {

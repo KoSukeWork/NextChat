@@ -81,6 +81,8 @@ import { useNavigate } from "react-router-dom";
 import { Avatar, AvatarPicker } from "./emoji";
 import { getClientConfig } from "../config/client";
 import { useSyncStore } from "../store/sync";
+import { syncErrorMessage } from "../utils/cloud/errors";
+import { isDesktopSync } from "../utils/cloud/transport";
 import { nanoid } from "nanoid";
 import { useMaskStore } from "../store/mask";
 import { ProviderType } from "../utils/cloud";
@@ -294,8 +296,20 @@ function CheckButton() {
 
   async function check() {
     setCheckState("checking");
-    const valid = await syncStore.check();
-    setCheckState(valid ? "success" : "failed");
+    try {
+      const valid = await syncStore.check();
+      setCheckState(valid ? "success" : "failed");
+      showToast(
+        valid
+          ? Locale.Settings.Sync.CheckSuccess
+          : `${Locale.Settings.Sync.CheckFailed}: ${Locale.Settings.Sync.Errors.UNKNOWN}`,
+      );
+    } catch (error) {
+      setCheckState("failed");
+      showToast(
+        `${Locale.Settings.Sync.CheckFailed}: ${syncErrorMessage(error)}`,
+      );
+    }
   }
 
   if (!couldCheck) return null;
@@ -363,21 +377,23 @@ function SyncConfigModal(props: { onClose?: () => void }) {
             </select>
           </ListItem>
 
-          <ListItem
-            title={Locale.Settings.Sync.Config.Proxy.Title}
-            subTitle={Locale.Settings.Sync.Config.Proxy.SubTitle}
-          >
-            <input
-              type="checkbox"
-              checked={syncStore.useProxy}
-              onChange={(e) => {
-                syncStore.update(
-                  (config) => (config.useProxy = e.currentTarget.checked),
-                );
-              }}
-            ></input>
-          </ListItem>
-          {syncStore.useProxy ? (
+          {!isDesktopSync() && (
+            <ListItem
+              title={Locale.Settings.Sync.Config.Proxy.Title}
+              subTitle={Locale.Settings.Sync.Config.Proxy.SubTitle}
+            >
+              <input
+                type="checkbox"
+                checked={syncStore.useProxy}
+                onChange={(e) => {
+                  syncStore.update(
+                    (config) => (config.useProxy = e.currentTarget.checked),
+                  );
+                }}
+              ></input>
+            </ListItem>
+          )}
+          {!isDesktopSync() && syncStore.useProxy ? (
             <ListItem
               title={Locale.Settings.Sync.Config.ProxyUrl.Title}
               subTitle={Locale.Settings.Sync.Config.ProxyUrl.SubTitle}
@@ -537,8 +553,9 @@ function SyncItems() {
                     await syncStore.sync();
                     showToast(Locale.Settings.Sync.Success);
                   } catch (e) {
-                    showToast(Locale.Settings.Sync.Fail);
-                    console.error("[Sync]", e);
+                    showToast(
+                      `${Locale.Settings.Sync.Fail}: ${syncErrorMessage(e)}`,
+                    );
                   }
                 }}
               />

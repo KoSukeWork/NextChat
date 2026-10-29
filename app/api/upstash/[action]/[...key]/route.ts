@@ -50,12 +50,12 @@ async function handle(
       authorization: req.headers.get("authorization") ?? "",
     },
     body: shouldNotHaveBody ? null : req.body,
+    redirect: "manual",
     method,
     // @ts-ignore
     duplex: "half",
   };
 
-  console.log("[Upstash Proxy]", targetUrl, fetchOptions);
   const fetchResult = await fetch(targetUrl, fetchOptions);
 
   console.log("[Any Proxy]", targetUrl, {

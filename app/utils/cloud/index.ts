@@ -20,6 +20,7 @@ type SyncClientConfig = {
 };
 
 export type SyncClient = {
+  prepare?: () => Promise<void>;
   get: (key: string) => Promise<string>;
   set: (key: string, value: string) => Promise<void>;
   check: () => Promise<boolean>;

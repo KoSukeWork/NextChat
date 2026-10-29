@@ -1,110 +1,95 @@
 import { STORAGE_KEY } from "@/app/constant";
-import { SyncStore } from "@/app/store/sync";
-import { chunks } from "../format";
+import type { SyncStore } from "@/app/store/sync";
+import { assertStatus, cloudRequest, proxyPath, SyncError } from "./transport";
 
 export type UpstashConfig = SyncStore["upstash"];
 export type UpStashClient = ReturnType<typeof createUpstashClient>;
 
+// Preserve every byte of the JSON backup, including spaces inside strings.
+export function* backupChunks(value: string, limit = 1_000_000) {
+  const bytes = new TextEncoder().encode(value);
+  const decoder = new TextDecoder();
+  for (let start = 0; start < bytes.length; ) {
+    let end = Math.min(start + limit, bytes.length);
+    while (end < bytes.length && (bytes[end] & 0xc0) === 0x80) end--;
+    if (end === start) throw new SyncError("INVALID_JSON");
+    yield decoder.decode(bytes.slice(start, end));
+    start = end;
+  }
+}
+
 export function createUpstashClient(store: SyncStore) {
   const config = store.upstash;
-  const storeKey = config.username.length === 0 ? STORAGE_KEY : config.username;
+  const storeKey = config.username || STORAGE_KEY;
   const chunkCountKey = `${storeKey}-chunk-count`;
   const chunkIndexKey = (i: number) => `${storeKey}-chunk-${i}`;
-
-  const proxyUrl =
-    store.useProxy && store.proxyUrl.length > 0 ? store.proxyUrl : undefined;
-
+  const proxy = store.useProxy ? store.proxyUrl : "";
+  const request = async (action: string, key: string, body?: string) => {
+    const res = await cloudRequest({
+      endpoint: config.endpoint,
+      path: `${action}/${key}`,
+      proxyPath: proxyPath(
+        "/api/upstash/",
+        `${action}/${encodeURIComponent(key)}/`,
+        config.endpoint,
+        proxy,
+      ),
+      method: action === "get" ? "GET" : "POST",
+      body,
+      headers: { Authorization: `Bearer ${config.apiKey}` },
+      credentials: { token: config.apiKey },
+    });
+    assertStatus(res.status);
+    let parsed: { result?: unknown; error?: unknown };
+    try {
+      parsed = JSON.parse(res.body);
+    } catch {
+      throw new SyncError("INVALID_JSON");
+    }
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      !("result" in parsed) ||
+      parsed.error
+    )
+      throw new SyncError("REMOTE_ERROR");
+    return parsed.result;
+  };
   return {
     async check() {
-      try {
-        const res = await fetch(this.path(`get/${storeKey}`, proxyUrl), {
-          method: "GET",
-          headers: this.headers(),
-        });
-        console.log("[Upstash] check", res.status, res.statusText);
-        return [200].includes(res.status);
-      } catch (e) {
-        console.error("[Upstash] failed to check", e);
-      }
-      return false;
+      await request("get", storeKey);
+      return true;
     },
-
     async redisGet(key: string) {
-      const res = await fetch(this.path(`get/${key}`, proxyUrl), {
-        method: "GET",
-        headers: this.headers(),
-      });
-
-      console.log("[Upstash] get key = ", key, res.status, res.statusText);
-      const resJson = (await res.json()) as { result: string };
-
-      return resJson.result;
+      const value = await request("get", key);
+      if (value !== null && typeof value !== "string")
+        throw new SyncError("INVALID_JSON");
+      return value as string | null;
     },
-
     async redisSet(key: string, value: string) {
-      const res = await fetch(this.path(`set/${key}`, proxyUrl), {
-        method: "POST",
-        headers: this.headers(),
-        body: value,
-      });
-
-      console.log("[Upstash] set key = ", key, res.status, res.statusText);
+      await request("set", key, value);
     },
-
     async get() {
-      const chunkCount = Number(await this.redisGet(chunkCountKey));
-      if (!Number.isInteger(chunkCount)) return;
-
-      const chunks = await Promise.all(
-        new Array(chunkCount)
-          .fill(0)
-          .map((_, i) => this.redisGet(chunkIndexKey(i))),
+      const count = await this.redisGet(chunkCountKey);
+      if (count === null) return "";
+      const chunkCount = Number(count);
+      if (!Number.isInteger(chunkCount) || chunkCount < 0 || chunkCount > 10000)
+        throw new SyncError("INVALID_JSON");
+      const values = await Promise.all(
+        Array.from({ length: chunkCount }, (_, i) =>
+          this.redisGet(chunkIndexKey(i)),
+        ),
       );
-      console.log("[Upstash] get full chunks", chunks);
-      return chunks.join("");
+      if (values.some((value) => value === null))
+        throw new SyncError("INVALID_JSON");
+      return values.join("");
     },
-
     async set(_: string, value: string) {
-      // upstash limit the max request size which is 1Mb for “Free” and “Pay as you go”
-      // so we need to split the data to chunks
       let index = 0;
-      for await (const chunk of chunks(value)) {
-        await this.redisSet(chunkIndexKey(index), chunk);
-        index += 1;
+      for (const chunk of backupChunks(value)) {
+        await this.redisSet(chunkIndexKey(index++), chunk);
       }
       await this.redisSet(chunkCountKey, index.toString());
-    },
-
-    headers() {
-      return {
-        Authorization: `Bearer ${config.apiKey}`,
-      };
-    },
-    path(path: string, proxyUrl: string = "") {
-      if (!path.endsWith("/")) {
-        path += "/";
-      }
-      if (path.startsWith("/")) {
-        path = path.slice(1);
-      }
-
-      if (proxyUrl.length > 0 && !proxyUrl.endsWith("/")) {
-        proxyUrl += "/";
-      }
-
-      let url;
-      const pathPrefix = "/api/upstash/";
-
-      try {
-        let u = new URL(proxyUrl + pathPrefix + path);
-        // add query params
-        u.searchParams.append("endpoint", config.endpoint);
-        url = u.toString();
-      } catch (e) {
-        url = pathPrefix + path + "?endpoint=" + config.endpoint;
-      }
-
-      return url;
     },
   };
 }
