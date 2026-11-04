@@ -145,6 +145,7 @@ const en: LocaleType = {
       copyLastMessage: "Copy Last Reply",
       copyLastCode: "Copy Last Code Block",
       showShortcutKey: "Show Shortcuts",
+      search: "Search chat history",
       clearContext: "Clear Context",
     },
   },
@@ -825,6 +826,33 @@ const en: LocaleType = {
     },
     Item: {
       View: "View",
+    },
+    Hint: "Search titles and messages in unarchived chats. Separate keywords with spaces.",
+    MatchCount: (count: number) =>
+      `${count} ${count === 1 ? "match" : "matches"}`,
+    Role: {
+      User: "You",
+      Bot: "Assistant",
+    },
+    More: (count: number) => `Show ${count} more`,
+    TooMany: (limit: number) =>
+      `Too many results. Showing the latest ${limit}. Try narrowing your search.`,
+    Keys: "↑↓ Select · Enter Open · Esc Close",
+  },
+  Archive: {
+    Action: "Archive",
+    Toast: "Chat archived",
+    View: "View",
+    Restore: "Restore",
+    Delete: "Delete",
+    Banner: "This chat is archived. Sending a message restores it.",
+    Entry: (count: number) => `Archived (${count})`,
+    Page: {
+      Title: "Archived Chats",
+      SubTitle: (count: number) => `${count} chats`,
+      Search: "Search archived chat titles or messages",
+      Empty: "No archived chats",
+      NoResult: "No matching archived chats",
     },
   },
   Plugin: {

@@ -50,7 +50,7 @@ export enum Path {
   Sd = "/sd",
   SdNew = "/sd-new",
   Artifacts = "/artifacts",
-  SearchChat = "/search-chat",
+  Archived = "/archived",
   McpMarket = "/mcp-market",
 }
 

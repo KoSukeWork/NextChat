@@ -94,6 +94,11 @@ export interface ChatSession {
   clearContextIndex?: number;
 
   mask: Mask;
+
+  // Archived sessions stay in `sessions`, hidden from the list but still
+  // openable and searchable. The newer archive or restore wins when syncing.
+  archived?: boolean;
+  archiveUpdatedAt?: number;
 }
 
 export const DEFAULT_TOPIC = Locale.Store.DefaultTopic;
@@ -118,6 +123,26 @@ function createEmptySession(): ChatSession {
 
     mask: createEmptyMask(),
   };
+}
+
+// The closest session shown in the list, preferring the ones after `index`.
+function nearestVisibleIndex(sessions: ChatSession[], index: number) {
+  for (let i = index; i < sessions.length; i++) {
+    if (!sessions[i].archived) return i;
+  }
+  for (let i = Math.min(index, sessions.length) - 1; i >= 0; i--) {
+    if (!sessions[i].archived) return i;
+  }
+  return -1;
+}
+
+function setArchived(session: ChatSession, archived: boolean) {
+  session.archived = archived;
+  // Stay ahead of a timestamp written by a device whose clock runs fast.
+  session.archiveUpdatedAt = Math.max(
+    Date.now(),
+    (session.archiveUpdatedAt ?? 0) + 1,
+  );
 }
 
 function getSummarizeModel(
@@ -261,6 +286,56 @@ export const useChatStore = createPersistStore(
         });
       },
 
+      selectSessionById(id: string) {
+        const index = get().sessions.findIndex((s) => s.id === id);
+        if (index < 0) return false;
+        get().selectSession(index);
+        return true;
+      },
+
+      archiveSession(id: string) {
+        const { sessions, currentSessionIndex } = get();
+        const index = sessions.findIndex((s) => s.id === id);
+        const session = sessions[index];
+        if (!session || session.archived || session.messages.length === 0) {
+          return;
+        }
+        const wasCurrent = index === currentSessionIndex;
+
+        get().updateTargetSession(session, (target) =>
+          setArchived(target, true),
+        );
+
+        if (sessions.every((s) => s.archived)) {
+          set(() => ({
+            sessions: [createEmptySession(), ...sessions],
+            currentSessionIndex: wasCurrent ? 0 : currentSessionIndex + 1,
+          }));
+        } else if (wasCurrent) {
+          get().selectSession(nearestVisibleIndex(sessions, index));
+        }
+
+        showToast(
+          Locale.Archive.Toast,
+          {
+            text: Locale.Home.Revert,
+            onClick() {
+              get().unarchiveSession(id);
+              if (wasCurrent) get().selectSessionById(id);
+            },
+          },
+          5000,
+        );
+      },
+
+      unarchiveSession(id: string) {
+        const session = get().sessions.find((s) => s.id === id);
+        if (!session?.archived) return;
+        get().updateTargetSession(session, (target) =>
+          setArchived(target, false),
+        );
+      },
+
       moveSession(from: number, to: number) {
         set((state) => {
           const { sessions, currentSessionIndex: oldIndex } = state;
@@ -315,14 +390,25 @@ export const useChatStore = createPersistStore(
       },
 
       nextSession(delta: number) {
-        const n = get().sessions.length;
+        const { sessions, currentSessionIndex: i } = get();
+        const visible = sessions.flatMap((s, index) =>
+          s.archived ? [] : [index],
+        );
+        const n = visible.length;
+        if (n === 0) return;
         const limit = (x: number) => (x + n) % n;
-        const i = get().currentSessionIndex;
-        get().selectSession(limit(i + delta));
+        const position = visible.indexOf(i);
+        if (position >= 0) {
+          get().selectSession(visible[limit(position + delta)]);
+          return;
+        }
+        // Viewing an archived session: move to its neighbour in that direction.
+        const next = visible.findIndex((index) => index > i);
+        const after = next < 0 ? n : next;
+        get().selectSession(visible[limit(delta > 0 ? after : after - 1)]);
       },
 
       deleteSession(index: number) {
-        const deletingLastSession = get().sessions.length === 1;
         const deletedSession = get().sessions.at(index);
 
         if (!deletedSession) return;
@@ -336,9 +422,11 @@ export const useChatStore = createPersistStore(
           sessions.length - 1,
         );
 
-        if (deletingLastSession) {
-          nextIndex = 0;
-          sessions.push(createEmptySession());
+        if (sessions.every((s) => s.archived)) {
+          nextIndex = index === currentIndex ? 0 : nextIndex + 1;
+          sessions.unshift(createEmptySession());
+        } else if (index === currentIndex) {
+          nextIndex = nearestVisibleIndex(sessions, nextIndex);
         }
 
         // for undo delete action
@@ -418,6 +506,11 @@ export const useChatStore = createPersistStore(
         const session = get().currentSession();
         if (!get().ensureSessionModel(session)) return;
         const modelConfig = session.mask.modelConfig;
+
+        // Continuing an archived chat brings it back to the list.
+        if (session.archived && !isMcpResponse) {
+          get().unarchiveSession(session.id);
+        }
 
         // MCP Response no need to fill template
         let mContent: string | MultimodalContent[] = isMcpResponse
@@ -890,6 +983,23 @@ export const useChatStore = createPersistStore(
   {
     name: StoreKey.Chat,
     version: 3.3,
+    // Start on a chat from the list, not on an archived one left open last time.
+    merge(persistedState, currentState) {
+      const state = {
+        ...currentState,
+        ...(persistedState as typeof currentState),
+      };
+      const index = state.currentSessionIndex;
+      if (!state.sessions[index]?.archived) return state;
+      const next = nearestVisibleIndex(state.sessions, index);
+      return next >= 0
+        ? { ...state, currentSessionIndex: next }
+        : {
+            ...state,
+            sessions: [createEmptySession(), ...state.sessions],
+            currentSessionIndex: 0,
+          };
+    },
     migrate(persistedState, version) {
       const state = persistedState as any;
       const newState = JSON.parse(

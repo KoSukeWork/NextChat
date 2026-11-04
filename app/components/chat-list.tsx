@@ -1,3 +1,4 @@
+import ArchiveIcon from "../icons/archive.svg";
 import DeleteIcon from "../icons/delete.svg";
 
 import styles from "./home.module.scss";
@@ -23,6 +24,7 @@ import clsx from "clsx";
 export function ChatItem(props: {
   onClick?: () => void;
   onDelete?: () => void;
+  onArchive?: () => void;
   title: string;
   count: number;
   time: string;
@@ -86,6 +88,20 @@ export function ChatItem(props: {
             </>
           )}
 
+          {props.onArchive && (
+            <div
+              className={styles["chat-item-archive"]}
+              title={Locale.Archive.Action}
+              onClickCapture={(e) => {
+                props.onArchive?.();
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+            >
+              <ArchiveIcon />
+            </div>
+          )}
+
           <div
             className={styles["chat-item-delete"]}
             onClickCapture={(e) => {
@@ -115,6 +131,12 @@ export function ChatList(props: { narrow?: boolean }) {
   const navigate = useNavigate();
   const isMobileScreen = useMobileScreen();
 
+  // Archived sessions keep their place in `sessions`, so the list works with
+  // positions among the visible rows and the store with real indexes.
+  const visible = sessions.flatMap((session, index) =>
+    session.archived ? [] : [{ session, index }],
+  );
+
   const onDragEnd: OnDragEndResponder = (result) => {
     const { destination, source } = result;
     if (!destination) {
@@ -128,7 +150,7 @@ export function ChatList(props: { narrow?: boolean }) {
       return;
     }
 
-    moveSession(source.index, destination.index);
+    moveSession(visible[source.index].index, visible[destination.index].index);
   };
 
   return (
@@ -140,14 +162,14 @@ export function ChatList(props: { narrow?: boolean }) {
             ref={provided.innerRef}
             {...provided.droppableProps}
           >
-            {sessions.map((item, i) => (
+            {visible.map(({ session: item, index: i }, position) => (
               <ChatItem
                 title={item.topic}
                 time={new Date(item.lastUpdate).toLocaleString()}
                 count={item.messages.length}
                 key={item.id}
                 id={item.id}
-                index={i}
+                index={position}
                 selected={i === selectedIndex}
                 onClick={() => {
                   navigate(Path.Chat);
@@ -161,6 +183,11 @@ export function ChatList(props: { narrow?: boolean }) {
                     chatStore.deleteSession(i);
                   }
                 }}
+                onArchive={
+                  item.messages.length > 0
+                    ? () => chatStore.archiveSession(item.id)
+                    : undefined
+                }
                 narrow={props.narrow}
                 mask={item.mask}
               />

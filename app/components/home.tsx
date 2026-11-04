@@ -23,6 +23,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import { SideBar } from "./sidebar";
+import { GlobalSearch } from "./global-search";
 import { useAppConfig } from "../store/config";
 import { AuthPage } from "./auth";
 import { getClientConfig } from "../config/client";
@@ -64,8 +65,8 @@ const PluginPage = dynamic(async () => (await import("./plugin")).PluginPage, {
   loading: () => <Loading noLogo />,
 });
 
-const SearchChat = dynamic(
-  async () => (await import("./search-chat")).SearchChatPage,
+const ArchivedChats = dynamic(
+  async () => (await import("./archived-chats")).ArchivedChatsPage,
   {
     loading: () => <Loading noLogo />,
   },
@@ -176,9 +177,12 @@ function Screen() {
 
   if (isArtifact) {
     return (
-      <Routes>
-        <Route path="/artifacts/:id" element={<Artifacts />} />
-      </Routes>
+      <>
+        <Routes>
+          <Route path="/artifacts/:id" element={<Artifacts />} />
+        </Routes>
+        <GlobalSearch />
+      </>
     );
   }
   const renderContent = () => {
@@ -198,7 +202,7 @@ function Screen() {
             <Route path={Path.NewChat} element={<NewChat />} />
             <Route path={Path.Masks} element={<MaskPage />} />
             <Route path={Path.Plugins} element={<PluginPage />} />
-            <Route path={Path.SearchChat} element={<SearchChat />} />
+            <Route path={Path.Archived} element={<ArchivedChats />} />
             <Route path={Path.Chat} element={<Chat />} />
             <Route path={Path.Settings} element={<Settings />} />
             <Route path={Path.McpMarket} element={<McpMarketPage />} />
@@ -216,6 +220,7 @@ function Screen() {
       })}
     >
       {renderContent()}
+      <GlobalSearch />
     </div>
   );
 }

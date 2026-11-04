@@ -1,0 +1,17 @@
+.header {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.snippet {
+  margin-top: 6px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.header mark {
+  color: inherit;
+  background-color: rgba(29, 147, 171, 0.3);
+  border-radius: 2px;
+}

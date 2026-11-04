@@ -205,6 +205,28 @@
   animation: slide-in ease 0.3s;
 }
 
+.chat-item-archive {
+  position: absolute;
+  top: 0;
+  right: 22px;
+  transition: all ease 0.3s;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.chat-item:hover > .chat-item-archive {
+  opacity: 0.5;
+  transform: translateX(-4px);
+}
+
+.chat-item:hover > .chat-item-archive:hover {
+  opacity: 1;
+}
+
+.chat-item:hover > .chat-item-title {
+  width: calc(100% - 40px);
+}
+
 .chat-item-delete {
   position: absolute;
   top: 0;
@@ -239,7 +261,16 @@
   white-space: nowrap;
 }
 
+.sidebar-search {
+  width: 100%;
+  margin-bottom: 20px;
+}
+
 .narrow-sidebar {
+  .chat-item-archive {
+    display: none;
+  }
+
   .sidebar-title,
   .sidebar-sub-title {
     display: none;
@@ -333,6 +364,115 @@
 
 .sidebar-action:not(:last-child) {
   margin-right: 15px;
+}
+
+// Compact the chat sidebar without changing the shared SD sidebar.
+.chat-sidebar {
+  padding: 10px 12px;
+
+  .sidebar-header {
+    padding: 2px 0 8px;
+    min-height: 24px;
+  }
+
+  .sidebar-title {
+    font-size: 16px;
+    line-height: 24px;
+  }
+
+  .sidebar-logo svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .sidebar-header-bar {
+    gap: 6px;
+    margin-bottom: 8px;
+
+    .sidebar-bar-button {
+      min-width: 0;
+      min-height: 36px;
+      padding: 7px 5px;
+
+      &:not(:last-child) {
+        margin: 0;
+      }
+    }
+  }
+
+  .sidebar-search {
+    min-height: 36px;
+    margin-bottom: 8px;
+    padding: 7px;
+  }
+
+  .sidebar-body {
+    min-height: 0;
+  }
+
+  .chat-item {
+    box-sizing: border-box;
+    min-height: 52px;
+    padding: 7px 10px;
+    margin-bottom: 5px;
+  }
+
+  .chat-item-info {
+    flex-wrap: wrap;
+    gap: 2px 6px;
+    margin-top: 4px;
+  }
+
+  .chat-item-count {
+    overflow: visible;
+    flex-shrink: 0;
+  }
+
+  .chat-item-date {
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .sidebar-tail {
+    padding-top: 8px;
+  }
+
+  .sidebar-actions {
+    align-items: center;
+  }
+
+  .sidebar-action:not(:last-child) {
+    margin-right: 6px;
+  }
+}
+
+.chat-sidebar.narrow-sidebar {
+  .sidebar-header-bar {
+    gap: 6px;
+  }
+
+  .chat-item {
+    min-height: 46px;
+    padding: 0;
+  }
+
+  .sidebar-tail .sidebar-actions {
+    flex-direction: column;
+
+    .sidebar-action {
+      margin: 6px 0 0;
+    }
+  }
+}
+
+@media only screen and (max-width: 600px) {
+  .chat-sidebar {
+    .sidebar-header-bar .sidebar-bar-button,
+    .sidebar-search {
+      min-height: 44px;
+    }
+  }
 }
 
 .loading-content {

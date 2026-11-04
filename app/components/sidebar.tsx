@@ -32,11 +32,13 @@ import dynamic from "next/dynamic";
 import { Selector, showConfirm } from "./ui-lib";
 import clsx from "clsx";
 import { isMcpEnabled } from "../mcp/actions";
+import { useGlobalSearch } from "./global-search";
+import ArchiveIcon from "../icons/archive.svg";
+import SearchIcon from "../icons/search.svg";
 
 const DISCOVERY = [
   { name: Locale.Plugin.Name, path: Path.Plugins },
   { name: "Stable Diffusion", path: Path.Sd },
-  { name: Locale.SearchChat.Page.Title, path: Path.SearchChat },
 ];
 
 const ChatList = dynamic(async () => (await import("./chat-list")).ChatList, {
@@ -189,7 +191,9 @@ export function SideBarHeader(props: {
           <div className={styles["sidebar-title"]} data-tauri-drag-region>
             {title}
           </div>
-          <div className={styles["sidebar-sub-title"]}>{subTitle}</div>
+          {subTitle && (
+            <div className={styles["sidebar-sub-title"]}>{subTitle}</div>
+          )}
         </div>
         <div className={clsx(styles["sidebar-logo"], "no-dark")}>{logo}</div>
       </div>
@@ -231,7 +235,14 @@ export function SideBar(props: { className?: string }) {
   const navigate = useNavigate();
   const config = useAppConfig();
   const chatStore = useChatStore();
+  const isMobileScreen = useMobileScreen();
+  const hideNewChatLabel =
+    shouldNarrow || (!isMobileScreen && config.sidebarWidth < 280);
   const [mcpEnabled, setMcpEnabled] = useState(false);
+  const archivedCount = chatStore.sessions.filter((s) => s.archived).length;
+  const searchShortcut = navigator.platform.toUpperCase().includes("MAC")
+    ? "⌘K"
+    : "Ctrl+K";
 
   useEffect(() => {
     // 检查 MCP 是否启用
@@ -247,11 +258,10 @@ export function SideBar(props: { className?: string }) {
     <SideBarContainer
       onDragStart={onDragStart}
       shouldNarrow={shouldNarrow}
-      {...props}
+      className={clsx(props.className, styles["chat-sidebar"])}
     >
       <SideBarHeader
         title="NextChat"
-        subTitle="Build your own AI assistant."
         logo={<NextChatIcon />}
         shouldNarrow={shouldNarrow}
       >
@@ -288,6 +298,18 @@ export function SideBar(props: { className?: string }) {
             shadow
           />
         </div>
+        <IconButton
+          icon={<SearchIcon />}
+          text={
+            shouldNarrow
+              ? undefined
+              : `${Locale.Chat.ShortcutKey.search} (${searchShortcut})`
+          }
+          title={Locale.Chat.ShortcutKey.search}
+          className={styles["sidebar-search"]}
+          onClick={() => useGlobalSearch.getState().setOpen(true)}
+          shadow
+        />
         {showDiscoverySelector && (
           <Selector
             items={[
@@ -337,6 +359,17 @@ export function SideBar(props: { className?: string }) {
               </Link>
             </div>
             <div className={styles["sidebar-action"]}>
+              <IconButton
+                aria={Locale.Archive.Entry(archivedCount)}
+                title={Locale.Archive.Entry(archivedCount)}
+                icon={<ArchiveIcon />}
+                onClick={() =>
+                  navigate(Path.Archived, { state: { fromHome: true } })
+                }
+                shadow
+              />
+            </div>
+            <div className={styles["sidebar-action"]}>
               <a href={REPO_URL} target="_blank" rel="noopener noreferrer">
                 <IconButton
                   aria={Locale.Export.MessageFromChatGPT}
@@ -350,7 +383,9 @@ export function SideBar(props: { className?: string }) {
         secondaryAction={
           <IconButton
             icon={<AddIcon />}
-            text={shouldNarrow ? undefined : Locale.Home.NewChat}
+            text={hideNewChatLabel ? undefined : Locale.Home.NewChat}
+            aria={Locale.Home.NewChat}
+            title={Locale.Home.NewChat}
             onClick={() => {
               if (config.dontShowMaskSplashScreen) {
                 chatStore.newSession();

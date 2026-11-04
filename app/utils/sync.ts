@@ -91,17 +91,21 @@ type StateMerger = {
 // we merge remote state to local state
 const MergeStates: StateMerger = {
   [StoreKey.Chat]: (localState, remoteState) => {
+    const currentSessionId =
+      localState.sessions[localState.currentSessionIndex]?.id;
+    const archiveTime = ({ archiveUpdatedAt: time }: ChatSession) =>
+      typeof time === "number" && Number.isFinite(time) ? time : 0;
+
     // merge sessions
     const localSessions: Record<string, ChatSession> = {};
     localState.sessions.forEach((s) => (localSessions[s.id] = s));
 
     remoteState.sessions.forEach((remoteSession) => {
-      // skip empty chats
-      if (remoteSession.messages.length === 0) return;
-
       const localSession = localSessions[remoteSession.id];
       if (!localSession) {
-        // if remote session is new, just merge it
+        // Do not import new, empty chats. Existing chats can still carry a
+        // newer archive/restore operation after their messages were cleared.
+        if (remoteSession.messages.length === 0) return;
         localState.sessions.push(remoteSession);
       } else {
         // if both have the same session id, merge the messages
@@ -116,6 +120,12 @@ const MergeStates: StateMerger = {
         localSession.messages.sort(
           (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
         );
+
+        // the latest archive or restore wins, whichever device made it
+        if (archiveTime(remoteSession) > archiveTime(localSession)) {
+          localSession.archived = !!remoteSession.archived;
+          localSession.archiveUpdatedAt = remoteSession.archiveUpdatedAt;
+        }
       }
     });
 
@@ -124,6 +134,12 @@ const MergeStates: StateMerger = {
       (a, b) =>
         new Date(b.lastUpdate).getTime() - new Date(a.lastUpdate).getTime(),
     );
+
+    // sorting moves sessions around, so stay on the session the user had open
+    const currentIndex = localState.sessions.findIndex(
+      (s) => s.id === currentSessionId,
+    );
+    if (currentIndex >= 0) localState.currentSessionIndex = currentIndex;
 
     return localState;
   },

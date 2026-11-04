@@ -288,6 +288,31 @@
   height: 100%;
 }
 
+.chat-archived-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 20px;
+  font-size: 13px;
+  border-bottom: var(--border-in-light);
+  background-color: var(--second);
+}
+
+.chat-message-jump .chat-message-item {
+  animation: chat-message-jump 2s ease;
+}
+
+@keyframes chat-message-jump {
+  0%,
+  60% {
+    box-shadow: 0 0 0 2px var(--primary);
+  }
+  100% {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+
 .chat-body {
   flex: 1;
   overflow: auto;

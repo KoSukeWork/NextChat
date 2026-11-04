@@ -1,8 +1,8 @@
 import { getUnauthorizedMessage } from "@/app/utils/auth-message";
+import { useScrollToBottom } from "../utils/use-scroll-to-bottom";
 import { useDebouncedCallback } from "use-debounce";
 import React, {
   Fragment,
-  RefObject,
   useCallback,
   useEffect,
   useMemo,
@@ -16,6 +16,7 @@ import RenameIcon from "../icons/rename.svg";
 import EditIcon from "../icons/rename.svg";
 import ExportIcon from "../icons/share.svg";
 import ReturnIcon from "../icons/return.svg";
+import ArchiveIcon from "../icons/archive.svg";
 import CopyIcon from "../icons/copy.svg";
 import SpeakIcon from "../icons/speak.svg";
 import SpeakStopIcon from "../icons/speak-stop.svg";
@@ -101,6 +102,7 @@ import {
   showToast,
 } from "./ui-lib";
 import { useNavigate } from "react-router-dom";
+import { useSearchJump } from "../store/search-jump";
 import {
   CHAT_PAGE_SIZE,
   Path,
@@ -448,47 +450,6 @@ export function ChatAction(props: {
       </div>
     </div>
   );
-}
-
-function useScrollToBottom(
-  scrollRef: RefObject<HTMLDivElement>,
-  detach: boolean = false,
-  messages: ChatMessage[],
-) {
-  // for auto-scroll
-  const [autoScroll, setAutoScroll] = useState(true);
-  const scrollDomToBottom = useCallback(() => {
-    const dom = scrollRef.current;
-    if (dom) {
-      requestAnimationFrame(() => {
-        setAutoScroll(true);
-        dom.scrollTo(0, dom.scrollHeight);
-      });
-    }
-  }, [scrollRef]);
-
-  // auto scroll
-  useEffect(() => {
-    if (autoScroll && !detach) {
-      scrollDomToBottom();
-    }
-  });
-
-  // auto scroll when messages length changes
-  const lastMessagesLength = useRef(messages.length);
-  useEffect(() => {
-    if (messages.length > lastMessagesLength.current && !detach) {
-      scrollDomToBottom();
-    }
-    lastMessagesLength.current = messages.length;
-  }, [messages.length, detach, scrollDomToBottom]);
-
-  return {
-    scrollRef,
-    autoScroll,
-    setAutoScroll,
-    scrollDomToBottom,
-  };
 }
 
 export function ChatActions(props: {
@@ -953,6 +914,10 @@ export function ShortcutKeyModal(props: { onClose: () => void }) {
       keys: isMac ? ["⌘", "/"] : ["Ctrl", "/"],
     },
     {
+      title: Locale.Chat.ShortcutKey.search,
+      keys: isMac ? ["⌘", "K"] : ["Ctrl", "K"],
+    },
+    {
       title: Locale.Chat.ShortcutKey.clearContext,
       keys: isMac
         ? ["⌘", "Shift", "backspace"]
@@ -1005,6 +970,11 @@ function _Chat() {
   const chatStore = useChatStore();
   const session = chatStore.currentSession();
   const config = useAppConfig();
+  const jumpRequest = useSearchJump((state) => state.request);
+  const jumpToMessageId =
+    jumpRequest?.sessionId === session.id ? jumpRequest.messageId : undefined;
+  const [scrollTargetId, setScrollTargetId] = useState<string>();
+  const [highlightMessageId, setHighlightMessageId] = useState<string>();
   const fontSize = config.fontSize;
   const fontFamily = config.fontFamily;
 
@@ -1036,11 +1006,13 @@ function _Chat() {
 
   // if user is typing, should auto scroll to bottom
   // if user is not typing, should auto scroll to bottom only if already at bottom
-  const { setAutoScroll, scrollDomToBottom } = useScrollToBottom(
-    scrollRef,
-    (isScrolledToBottom || isAttachWithTop) && !isTyping,
-    session.messages,
-  );
+  const { setAutoScroll, scrollDomToBottom, cancelPendingScroll } =
+    useScrollToBottom(
+      scrollRef,
+      (isScrolledToBottom || isAttachWithTop) && !isTyping,
+      session.messages,
+      !!jumpToMessageId || !!scrollTargetId,
+    );
   const [hitBottom, setHitBottom] = useState(true);
   const isMobileScreen = useMobileScreen();
   const navigate = useNavigate();
@@ -1469,6 +1441,39 @@ function _Chat() {
     return renderMessages.slice(msgRenderIndex, endRenderIndex);
   }, [msgRenderIndex, renderMessages]);
 
+  // Jump to a message opened from the global search.
+  useEffect(() => {
+    if (!jumpToMessageId) return;
+    cancelPendingScroll();
+    // Consume the request so going back or reloading does not jump again.
+    useSearchJump.getState().consume(jumpRequest!);
+    const index = session.messages.findIndex((m) => m.id === jumpToMessageId);
+    if (index < 0) return;
+    setAutoScroll(false);
+    // Only part of the chat is rendered: put the message mid-window.
+    setMsgRenderIndex(context.length + index - CHAT_PAGE_SIZE);
+    setScrollTargetId(jumpToMessageId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpRequest, session.id]);
+
+  useEffect(() => {
+    if (!scrollTargetId) return;
+    const element = Array.from(
+      scrollRef.current?.querySelectorAll<HTMLElement>("[data-message-id]") ??
+        [],
+    ).find((item) => item.dataset.messageId === scrollTargetId);
+    if (!element) return;
+    element.scrollIntoView({ block: "center" });
+    setScrollTargetId(undefined);
+    setHighlightMessageId(scrollTargetId);
+  }, [scrollTargetId, messages]);
+
+  useEffect(() => {
+    if (!highlightMessageId) return;
+    const timer = setTimeout(() => setHighlightMessageId(undefined), 2000);
+    return () => clearTimeout(timer);
+  }, [highlightMessageId]);
+
   const onChatBodyScroll = (e: HTMLElement) => {
     const bottomHeight = e.scrollTop + e.clientHeight;
     const edgeThreshold = e.clientHeight;
@@ -1492,6 +1497,7 @@ function _Chat() {
   };
 
   function scrollToBottom() {
+    if (jumpToMessageId || scrollTargetId) return;
     setMsgRenderIndex(renderMessages.length - CHAT_PAGE_SIZE);
     scrollDomToBottom();
   }
@@ -1814,6 +1820,17 @@ function _Chat() {
                 }}
               />
             </div>
+            {session.messages.length > 0 && !session.archived && (
+              <div className="window-action-button">
+                <IconButton
+                  icon={<ArchiveIcon />}
+                  bordered
+                  title={Locale.Archive.Action}
+                  aria={Locale.Archive.Action}
+                  onClick={() => chatStore.archiveSession(session.id)}
+                />
+              </div>
+            )}
             {showMaxIcon && (
               <div className="window-action-button">
                 <IconButton
@@ -1837,6 +1854,17 @@ function _Chat() {
             setShowModal={setShowPromptModal}
           />
         </div>
+        {session.archived && (
+          <div className={styles["chat-archived-banner"]}>
+            <span>{Locale.Archive.Banner}</span>
+            <IconButton
+              icon={<ReturnIcon />}
+              text={Locale.Archive.Restore}
+              bordered
+              onClick={() => chatStore.unarchiveSession(session.id)}
+            />
+          </div>
+        )}
         <div className={styles["chat-main"]}>
           <div className={styles["chat-body-container"]}>
             <div
@@ -1854,7 +1882,7 @@ function _Chat() {
                 // .filter((m) => !m.isMcpResponse)
                 .map((message, i) => {
                   const isUser = message.role === "user";
-                  const isContext = i < context.length;
+                  const isContext = i + msgRenderIndex < context.length;
                   const showActions =
                     i > 0 &&
                     !(message.preview || message.content.length === 0) &&
@@ -1867,11 +1895,16 @@ function _Chat() {
                   return (
                     <Fragment key={message.id}>
                       <div
-                        className={
+                        data-message-id={message.id}
+                        className={clsx(
                           isUser
                             ? styles["chat-message-user"]
-                            : styles["chat-message"]
-                        }
+                            : styles["chat-message"],
+                          {
+                            [styles["chat-message-jump"]]:
+                              message.id === highlightMessageId,
+                          },
+                        )}
                       >
                         <div className={styles["chat-message-container"]}>
                           <div className={styles["chat-message-header"]}>

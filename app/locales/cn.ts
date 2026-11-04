@@ -138,6 +138,7 @@ const cn = {
       copyLastMessage: "复制最后一个回复",
       copyLastCode: "复制最后一个代码块",
       showShortcutKey: "显示快捷方式",
+      search: "搜索聊天记录",
       clearContext: "清除上下文",
     },
   },
@@ -796,6 +797,33 @@ const cn = {
     },
     Item: {
       View: "查看",
+    },
+    Hint: "搜索未归档对话的标题和消息，多个关键词用空格分开",
+    MatchCount: (count: number) => `${count} 条匹配`,
+    Role: {
+      User: "我",
+      Bot: "助手",
+    },
+    More: (count: number) => `展开其余 ${count} 条`,
+    TooMany: (limit: number) =>
+      `结果太多，只显示最新的 ${limit} 条，请缩小搜索范围`,
+    Keys: "↑↓ 选择 · Enter 打开 · Esc 关闭",
+  },
+
+  Archive: {
+    Action: "归档",
+    Toast: "已归档",
+    View: "查看",
+    Restore: "恢复",
+    Delete: "删除",
+    Banner: "此对话已归档，发送消息会自动恢复",
+    Entry: (count: number) => `已归档 (${count})`,
+    Page: {
+      Title: "已归档的对话",
+      SubTitle: (count: number) => `共 ${count} 个对话`,
+      Search: "搜索归档对话的标题或消息",
+      Empty: "没有已归档的对话",
+      NoResult: "没有找到匹配的归档对话",
     },
   },
   Plugin: {
