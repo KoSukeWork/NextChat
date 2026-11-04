@@ -487,6 +487,7 @@ export function Selector<T>(props: {
   onClose?: () => void;
   multiple?: boolean;
   searchPlaceholder?: string;
+  layout?: "model";
 }) {
   const [query, setQuery] = useState("");
   const [selectedValues, setSelectedValues] = useState<T[]>(
@@ -513,7 +514,12 @@ export function Selector<T>(props: {
   };
 
   return (
-    <div className={styles["selector"]} onClick={() => props.onClose?.()}>
+    <div
+      className={clsx(styles["selector"], {
+        [styles["selector-model"]]: props.layout === "model",
+      })}
+      onClick={() => props.onClose?.()}
+    >
       <div className={styles["selector-content"]}>
         {props.searchPlaceholder && (
           <input
@@ -534,6 +540,16 @@ export function Selector<T>(props: {
             )
             .map((item, i) => {
               const selected = selectedValues.includes(item.value);
+              const selectedDot = selected ? (
+                <div
+                  style={{
+                    height: 10,
+                    width: 10,
+                    backgroundColor: "var(--primary)",
+                    borderRadius: 10,
+                  }}
+                ></div>
+              ) : null;
               return (
                 <ListItem
                   className={clsx(styles["selector-item"], {
@@ -551,17 +567,12 @@ export function Selector<T>(props: {
                     }
                   }}
                 >
-                  {selected ? (
-                    <div
-                      style={{
-                        height: 10,
-                        width: 10,
-                        backgroundColor: "var(--primary)",
-                        borderRadius: 10,
-                      }}
-                    ></div>
+                  {props.layout === "model" ? (
+                    <div className={styles["selector-model-indicator"]}>
+                      {selectedDot}
+                    </div>
                   ) : (
-                    <></>
+                    selectedDot ?? <></>
                   )}
                 </ListItem>
               );

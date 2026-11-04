@@ -460,14 +460,16 @@ function ChatInputOptions() {
 
       {showModelSelector && (
         <Selector
+          layout="model"
           searchPlaceholder={Locale.ModelDiscovery.Search}
           defaultSelectedValue={JSON.stringify([
             currentEndpointId,
             currentModel,
           ])}
           items={models.map((model) => ({
-            title: `${model.displayName} (${model.endpointName})`,
-            searchText: model.name,
+            title: model.displayName,
+            subTitle: model.endpointName,
+            searchText: `${model.displayName} (${model.endpointName})  ${model.name}`,
             value: JSON.stringify([model.endpointId, model.name]),
           }))}
           onClose={() => setShowModelSelector(false)}

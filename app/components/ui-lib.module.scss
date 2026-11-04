@@ -348,3 +348,36 @@
     color: var(--black);
   }
 }
+
+.selector-model {
+  .selector-content {
+    width: min(500px, calc(100vw - 32px));
+    min-width: 0;
+  }
+
+  .selector-item {
+    gap: 12px;
+
+    .list-header {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+
+    .list-icon {
+      flex-shrink: 0;
+    }
+
+    .list-item-title {
+      flex: 1 1 0;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+  }
+
+  .selector-model-indicator {
+    flex: 0 0 10px;
+    width: 10px;
+    height: 10px;
+  }
+}
