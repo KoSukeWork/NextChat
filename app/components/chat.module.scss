@@ -658,6 +658,12 @@
   z-index: 1;
 }
 
+.chat-message > .chat-message-container > .chat-message-action-date {
+  text-align: left;
+  padding-left: 0;
+  padding-right: 0;
+}
+
 .chat-message-user > .chat-message-container > .chat-message-item {
   background-color: var(--second);
 
