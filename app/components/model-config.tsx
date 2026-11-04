@@ -1,25 +1,26 @@
-import { ServiceProvider } from "@/app/constant";
 import { ModalConfigValidator, ModelConfig } from "../store";
 
 import Locale from "../locales";
 import { InputRange } from "./input-range";
 import { ListItem, Select } from "./ui-lib";
 import { useAllModels } from "../utils/hooks";
-import { groupBy } from "lodash-es";
 import styles from "./model-config.module.scss";
-import { getModelProvider } from "../utils/model";
 
 export function ModelConfigList(props: {
   modelConfig: ModelConfig;
   updateConfig: (updater: (config: ModelConfig) => void) => void;
 }) {
   const allModels = useAllModels();
-  const groupModels = groupBy(
-    allModels.filter((v) => v.available),
-    "provider.providerName",
-  );
-  const value = `${props.modelConfig.model}@${props.modelConfig?.providerName}`;
-  const compressModelValue = `${props.modelConfig.compressModel}@${props.modelConfig?.compressProviderName}`;
+  const value = JSON.stringify([
+    props.modelConfig.endpointId,
+    props.modelConfig.model,
+  ]);
+  const compressModelValue = props.modelConfig.compressModel
+    ? JSON.stringify([
+        props.modelConfig.compressEndpointId,
+        props.modelConfig.compressModel,
+      ])
+    : "";
 
   return (
     <>
@@ -29,26 +30,23 @@ export function ModelConfigList(props: {
           value={value}
           align="left"
           onChange={(e) => {
-            const [model, providerName] = getModelProvider(
-              e.currentTarget.value,
-            );
+            const [endpointId, model] = JSON.parse(e.currentTarget.value);
             props.updateConfig((config) => {
               config.model = ModalConfigValidator.model(model);
-              config.providerName = providerName as ServiceProvider;
+              config.endpointId = endpointId;
             });
           }}
         >
-          {Object.keys(groupModels).length === 0 && (
-            <option value="">{Locale.ModelDiscovery.Unconfigured}</option>
+          {!allModels.length && (
+            <option value={value}>{Locale.ModelDiscovery.Unconfigured}</option>
           )}
-          {Object.keys(groupModels).map((providerName, index) => (
-            <optgroup label={providerName} key={index}>
-              {groupModels[providerName].map((v, i) => (
-                <option value={`${v.name}@${v.provider?.providerName}`} key={i}>
-                  {v.displayName}
-                </option>
-              ))}
-            </optgroup>
+          {allModels.map((item) => (
+            <option
+              value={JSON.stringify([item.endpointId, item.name])}
+              key={JSON.stringify([item.endpointId, item.name])}
+            >
+              {item.displayName} ({item.endpointName})
+            </option>
           ))}
         </Select>
       </ListItem>
@@ -113,7 +111,7 @@ export function ModelConfigList(props: {
         ></input>
       </ListItem>
 
-      {props.modelConfig?.providerName == ServiceProvider.Google ? null : (
+      {
         <>
           <ListItem
             title={Locale.Settings.PresencePenalty.Title}
@@ -193,7 +191,7 @@ export function ModelConfigList(props: {
             ></input>
           </ListItem>
         </>
-      )}
+      }
       <ListItem
         title={Locale.Settings.HistoryCount.Title}
         subTitle={Locale.Settings.HistoryCount.SubTitle}
@@ -253,22 +251,24 @@ export function ModelConfigList(props: {
           aria-label={Locale.Settings.CompressModel.Title}
           value={compressModelValue}
           onChange={(e) => {
-            const [model, providerName] = getModelProvider(
-              e.currentTarget.value,
-            );
+            const [endpointId, model] = e.currentTarget.value
+              ? JSON.parse(e.currentTarget.value)
+              : ["", ""];
             props.updateConfig((config) => {
               config.compressModel = ModalConfigValidator.model(model);
-              config.compressProviderName = providerName as ServiceProvider;
+              config.compressEndpointId = endpointId;
             });
           }}
         >
-          {allModels
-            .filter((v) => v.available)
-            .map((v, i) => (
-              <option value={`${v.name}@${v.provider?.providerName}`} key={i}>
-                {v.displayName}({v.provider?.providerName})
-              </option>
-            ))}
+          <option value="">—</option>
+          {allModels.map((item) => (
+            <option
+              value={JSON.stringify([item.endpointId, item.name])}
+              key={JSON.stringify([item.endpointId, item.name])}
+            >
+              {item.displayName} ({item.endpointName})
+            </option>
+          ))}
         </Select>
       </ListItem>
     </>

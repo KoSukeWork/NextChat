@@ -9,20 +9,6 @@ const cn = {
     Switched: (from: string, to: string) =>
       `此对话使用的模型 ${from} 在本设备不可用，已切换为 ${to}`,
   },
-  ModelManager: {
-    Title: "管理模型",
-    Search: "搜索模型或服务商",
-    Empty: "没有匹配的已保存模型",
-    Delete: "删除",
-    DeleteSelected: (count: number) => `删除所选 (${count})`,
-    ClearProvider: (count: number) => `清空此服务商 (${count})`,
-    Default: "当前默认模型",
-    Confirm: (count: number) => `确认删除 ${count} 个已保存模型？`,
-    DefaultWarning:
-      "将删除当前默认模型。已有对话仍会使用原来的模型，新对话请另选默认模型。",
-    CustomHint:
-      "这里管理所有服务商的已保存模型，无需获取列表。自定义模型名是另一来源，请到“自定义模型名”输入框删除。",
-  },
   ModelDiscovery: {
     Placeholder: "gpt-4o,claude-sonnet-4-5@Anthropic,my-model=显示名",
     Title: "获取模型列表",
@@ -67,6 +53,35 @@ const cn = {
     Action: "置顶",
     Undo: "取消置顶",
     Pinned: "已置顶",
+  },
+  EndpointConfig: {
+    Title: "接口配置",
+    Add: "添加接口",
+    Edit: "编辑接口",
+    Delete: "删除",
+    Save: "保存",
+    Name: "名称",
+    Protocol: "协议",
+    BaseUrl: "基础地址",
+    ApiKey: "API Key",
+    RequestUrl: "请求地址",
+    Models: "模型列表",
+    ModelName: "模型名称",
+    DisplayName: "显示名称（可选）",
+    AddModel: "添加模型",
+    FetchModels: "获取模型",
+    AddSelected: "添加所选模型",
+    DeleteSelected: "删除所选模型",
+    NoModels: "暂无模型",
+    Invalid: "请填写接口名称和有效的 HTTP(S) 基础地址",
+    Remove: (name: string, count: number, isDefault: boolean) =>
+      `删除接口“${name}”？将同时移除 ${count} 个模型。${
+        isDefault ? "其中包含默认模型。" : ""
+      }`,
+    Unmigrated: (names: string) =>
+      `以下旧接口无法自动迁移：${names}。原配置仍保留在本机。`,
+    OpenSettings: "前往设置",
+    LegacyImport: "旧备份中的接口配置已忽略；聊天、面具和提示词仍可导入。",
   },
   Chat: {
     Thinking: { Title: "思考过程", Active: "思考中…", Done: "已思考" },
@@ -368,253 +383,11 @@ const cn = {
       SubTitle: "当未压缩的历史消息超过该值时，将进行压缩",
     },
 
-    Usage: {
-      Title: "余额查询",
-      SubTitle(used: any, total: any) {
-        return `本月已使用 $${used}，订阅总额 $${total}`;
-      },
-      IsChecking: "正在检查…",
-      Check: "重新检查",
-      NoAccess: "输入 API Key 或访问密码查看余额",
-    },
-
     Access: {
-      SaasStart: {
-        Title: "使用 NextChat AI",
-        Label: "（性价比最高的方案）",
-        SubTitle: "由 NextChat 官方维护, 零配置开箱即用，支持最新大模型",
-        ChatNow: "立刻对话",
-      },
       AccessCode: {
         Title: "访问密码",
         SubTitle: "管理员已开启加密访问",
         Placeholder: "请输入访问密码",
-      },
-      CustomEndpoint: {
-        Title: "自定义接口",
-        SubTitle: "是否使用自定义 Azure 或 OpenAI 服务",
-      },
-      Provider: {
-        Title: "模型服务商",
-        SubTitle: "切换不同的服务商",
-      },
-      OpenAI: {
-        ApiKey: {
-          Title: "API Key",
-          SubTitle: "使用自定义 OpenAI Key 绕过密码访问限制",
-          Placeholder: "OpenAI API Key",
-        },
-
-        Endpoint: {
-          Title: "接口地址",
-          SubTitle: "除默认地址外，必须包含 http(s)://",
-        },
-      },
-      Azure: {
-        ApiKey: {
-          Title: "接口密钥",
-          SubTitle: "使用自定义 Azure Key 绕过密码访问限制",
-          Placeholder: "Azure API Key",
-        },
-
-        Endpoint: {
-          Title: "接口地址",
-          SubTitle: "样例：",
-        },
-
-        ApiVerion: {
-          Title: "接口版本 (azure api version)",
-          SubTitle: "选择指定的部分版本",
-        },
-      },
-      Anthropic: {
-        ApiKey: {
-          Title: "接口密钥",
-          SubTitle: "使用自定义 Anthropic Key 绕过密码访问限制",
-          Placeholder: "Anthropic API Key",
-        },
-
-        Endpoint: {
-          Title: "接口地址",
-          SubTitle: "样例：",
-        },
-
-        ApiVerion: {
-          Title: "接口版本 (claude api version)",
-          SubTitle: "选择一个特定的 API 版本输入",
-        },
-      },
-      Google: {
-        ApiKey: {
-          Title: "API 密钥",
-          SubTitle: "从 Google AI 获取您的 API 密钥",
-          Placeholder: "Google AI API KEY",
-        },
-
-        Endpoint: {
-          Title: "终端地址",
-          SubTitle: "示例：",
-        },
-
-        ApiVersion: {
-          Title: "API 版本（仅适用于 gemini-pro）",
-          SubTitle: "选择一个特定的 API 版本",
-        },
-        GoogleSafetySettings: {
-          Title: "Google 安全过滤级别",
-          SubTitle: "设置内容过滤级别",
-        },
-      },
-      Baidu: {
-        ApiKey: {
-          Title: "API Key",
-          SubTitle: "使用自定义 Baidu API Key",
-          Placeholder: "Baidu API Key",
-        },
-        SecretKey: {
-          Title: "Secret Key",
-          SubTitle: "使用自定义 Baidu Secret Key",
-          Placeholder: "Baidu Secret Key",
-        },
-        Endpoint: {
-          Title: "接口地址",
-          SubTitle: "不支持自定义前往.env配置",
-        },
-      },
-      Tencent: {
-        ApiKey: {
-          Title: "API Key",
-          SubTitle: "使用自定义腾讯云API Key",
-          Placeholder: "Tencent API Key",
-        },
-        SecretKey: {
-          Title: "Secret Key",
-          SubTitle: "使用自定义腾讯云Secret Key",
-          Placeholder: "Tencent Secret Key",
-        },
-        Endpoint: {
-          Title: "接口地址",
-          SubTitle: "不支持自定义前往.env配置",
-        },
-      },
-      ByteDance: {
-        ApiKey: {
-          Title: "接口密钥",
-          SubTitle: "使用自定义 ByteDance API Key",
-          Placeholder: "ByteDance API Key",
-        },
-        Endpoint: {
-          Title: "接口地址",
-          SubTitle: "样例：",
-        },
-      },
-      Alibaba: {
-        ApiKey: {
-          Title: "接口密钥",
-          SubTitle: "使用自定义阿里云API Key",
-          Placeholder: "Alibaba Cloud API Key",
-        },
-        Endpoint: {
-          Title: "接口地址",
-          SubTitle: "样例：",
-        },
-      },
-      Moonshot: {
-        ApiKey: {
-          Title: "接口密钥",
-          SubTitle: "使用自定义月之暗面API Key",
-          Placeholder: "Moonshot API Key",
-        },
-        Endpoint: {
-          Title: "接口地址",
-          SubTitle: "样例：",
-        },
-      },
-      DeepSeek: {
-        ApiKey: {
-          Title: "接口密钥",
-          SubTitle: "使用自定义DeepSeek API Key",
-          Placeholder: "DeepSeek API Key",
-        },
-        Endpoint: {
-          Title: "接口地址",
-          SubTitle: "样例：",
-        },
-      },
-      XAI: {
-        ApiKey: {
-          Title: "接口密钥",
-          SubTitle: "使用自定义XAI API Key",
-          Placeholder: "XAI API Key",
-        },
-        Endpoint: {
-          Title: "接口地址",
-          SubTitle: "样例：",
-        },
-      },
-      ChatGLM: {
-        ApiKey: {
-          Title: "接口密钥",
-          SubTitle: "使用自定义 ChatGLM API Key",
-          Placeholder: "ChatGLM API Key",
-        },
-        Endpoint: {
-          Title: "接口地址",
-          SubTitle: "样例：",
-        },
-      },
-      SiliconFlow: {
-        ApiKey: {
-          Title: "接口密钥",
-          SubTitle: "使用自定义硅基流动 API Key",
-          Placeholder: "硅基流动 API Key",
-        },
-        Endpoint: {
-          Title: "接口地址",
-          SubTitle: "样例：",
-        },
-      },
-      Stability: {
-        ApiKey: {
-          Title: "接口密钥",
-          SubTitle: "使用自定义 Stability API Key",
-          Placeholder: "Stability API Key",
-        },
-        Endpoint: {
-          Title: "接口地址",
-          SubTitle: "样例：",
-        },
-      },
-      Iflytek: {
-        ApiKey: {
-          Title: "ApiKey",
-          SubTitle: "从讯飞星火控制台获取的 APIKey",
-          Placeholder: "APIKey",
-        },
-        ApiSecret: {
-          Title: "ApiSecret",
-          SubTitle: "从讯飞星火控制台获取的 APISecret",
-          Placeholder: "APISecret",
-        },
-        Endpoint: {
-          Title: "接口地址",
-          SubTitle: "样例：",
-        },
-      },
-      CustomModel: {
-        Title: "自定义模型名",
-        SubTitle: "增加自定义模型可选项，使用英文逗号隔开",
-      },
-      AI302: {
-        ApiKey: {
-          Title: "接口密钥",
-          SubTitle: "使用自定义302.AI API Key",
-          Placeholder: "302.AI API Key",
-        },
-        Endpoint: {
-          Title: "接口地址",
-          SubTitle: "样例：",
-        },
       },
     },
 
@@ -717,39 +490,6 @@ const cn = {
       Speed: {
         Title: "速度",
         SubTitle: "生成语音的速度",
-      },
-    },
-    Realtime: {
-      Enable: {
-        Title: "实时聊天",
-        SubTitle: "开启实时聊天功能",
-      },
-      Provider: {
-        Title: "模型服务商",
-        SubTitle: "切换不同的服务商",
-      },
-      Model: {
-        Title: "模型",
-        SubTitle: "选择一个模型",
-      },
-      ApiKey: {
-        Title: "API Key",
-        SubTitle: "API Key",
-        Placeholder: "API Key",
-      },
-      Azure: {
-        Endpoint: {
-          Title: "接口地址",
-          SubTitle: "接口地址",
-        },
-        Deployment: {
-          Title: "部署名称",
-          SubTitle: "部署名称",
-        },
-      },
-      Temperature: {
-        Title: "随机性 (temperature)",
-        SubTitle: "值越大，回复越随机",
       },
     },
   },
@@ -954,61 +694,6 @@ const cn = {
     Messages: "消息",
     Topic: "主题",
     Time: "时间",
-  },
-  SdPanel: {
-    Prompt: "画面提示",
-    NegativePrompt: "否定提示",
-    PleaseInput: (name: string) => `请输入${name}`,
-    AspectRatio: "横纵比",
-    ImageStyle: "图像风格",
-    OutFormat: "输出格式",
-    AIModel: "AI模型",
-    ModelVersion: "模型版本",
-    Submit: "提交生成",
-    ParamIsRequired: (name: string) => `${name}不能为空`,
-    Styles: {
-      D3Model: "3D模型",
-      AnalogFilm: "模拟电影",
-      Anime: "动漫",
-      Cinematic: "电影风格",
-      ComicBook: "漫画书",
-      DigitalArt: "数字艺术",
-      Enhance: "增强",
-      FantasyArt: "幻想艺术",
-      Isometric: "等角",
-      LineArt: "线描",
-      LowPoly: "低多边形",
-      ModelingCompound: "建模材料",
-      NeonPunk: "霓虹朋克",
-      Origami: "折纸",
-      Photographic: "摄影",
-      PixelArt: "像素艺术",
-      TileTexture: "贴图",
-    },
-  },
-  Sd: {
-    SubTitle: (count: number) => `共 ${count} 条绘画`,
-    Actions: {
-      Params: "查看参数",
-      Copy: "复制提示词",
-      Delete: "删除",
-      Retry: "重试",
-      ReturnHome: "返回首页",
-      History: "查看历史",
-    },
-    EmptyRecord: "暂无绘画记录",
-    Status: {
-      Name: "状态",
-      Success: "成功",
-      Error: "失败",
-      Wait: "等待中",
-      Running: "运行中",
-    },
-    Danger: {
-      Delete: "确认删除？",
-    },
-    GenerateParams: "生成参数",
-    Detail: "详情",
   },
 };
 

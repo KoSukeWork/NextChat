@@ -31,7 +31,7 @@
 [MacOS-image]: https://img.shields.io/badge/-MacOS-black?logo=apple
 [Linux-image]: https://img.shields.io/badge/-Linux-333?logo=ubuntu
 
-[<img src="https://zeabur.com/button.svg" alt="Deploy on Zeabur" height="30">](https://zeabur.com/templates/ZBUEFA) [<img src="https://vercel.com/button" alt="Deploy on Vercel" height="30">](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FChatGPTNextWeb%2FChatGPT-Next-Web&env=OPENAI_API_KEY&env=CODE&project-name=nextchat&repository-name=NextChat) [<img src="https://gitpod.io/button/open-in-gitpod.svg" alt="Open in Gitpod" height="30">](https://gitpod.io/#https://github.com/ChatGPTNextWeb/NextChat)
+[<img src="https://zeabur.com/button.svg" alt="Deploy on Zeabur" height="30">](https://zeabur.com/templates/ZBUEFA) [<img src="https://vercel.com/button" alt="Deploy on Vercel" height="30">](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FChatGPTNextWeb%2FChatGPT-Next-Web&env=CODE&project-name=nextchat&repository-name=NextChat) [<img src="https://gitpod.io/button/open-in-gitpod.svg" alt="Open in Gitpod" height="30">](https://gitpod.io/#https://github.com/ChatGPTNextWeb/NextChat)
 
 [<img src="https://github.com/user-attachments/assets/903482d4-3e87-4134-9af1-f2588fa90659" height="50" width="" >](https://monica.im/?utm=nxcrp)
 
@@ -117,9 +117,7 @@
 - 🚀 v2.15.8 실시간 채팅 지원 [#5672](https://github.com/ChatGPTNextWeb/ChatGPT-Next-Web/issues/5672)
 - 🚀 v2.15.4 Tauri 기반 LLM API 호출 기능 추가 → 보안 강화 [#5379](https://github.com/ChatGPTNextWeb/ChatGPT-Next-Web/issues/5379)
 - 🚀 v2.15.0 플러그인 기능 추가 → [NextChat-Awesome-Plugins](https://github.com/ChatGPTNextWeb/NextChat-Awesome-Plugins)
-- 🚀 v2.14.0 아티팩트 및 Stable Diffusion 기능 추가
 - 🚀 v2.10.1 Google Gemini Pro 모델 지원
-- 🚀 v2.9.11 Azure Endpoint 사용 가능
 - 🚀 v2.8 모든 플랫폼에서 실행 가능한 클라이언트 출시
 - 🚀 v2.7 대화 내용을 이미지로, 또는 ShareGPT로 공유 가능
 - 🚀 v2.0 릴리즈: 프롬프트 템플릿 생성 및 아이디어 구현 가능! → [ChatGPT Prompt Engineering Tips](https://www.allabtai.com/prompt-engineering-tips-zero-one-and-few-shot-prompting/)
@@ -128,7 +126,7 @@
 
 1. [OpenAI API 키](https://platform.openai.com/account/api-keys)를 발급받습니다.
 2. 
-   [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FYidadaa%2FChatGPT-Next-Web&env=OPENAI_API_KEY&env=CODE&project-name=chatgpt-next-web&repository-name=ChatGPT-Next-Web) 버튼을 클릭해 Vercel에 배포합니다. `CODE`는 페이지 비밀번호라는 점을 기억하세요.
+   [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FYidadaa%2FChatGPT-Next-Web&env=CODE&project-name=chatgpt-next-web&repository-name=ChatGPT-Next-Web) 버튼을 클릭해 Vercel에 배포합니다. `CODE`는 페이지 비밀번호라는 점을 기억하세요.
 
 3. Enjoy :)
 
@@ -180,207 +178,9 @@ code1,code2,code3
 
 ## 환경 변수 (Environment Variables)
 
-### `CODE` (선택 사항)
+설정의 인터페이스 구성에서 OpenAI Chat, OpenAI Responses, Anthropic Messages 또는 Gemini 프로토콜과 기본 URL, API 키, 모델을 등록하세요. 인터페이스 설정은 기기에 저장되며 로컬 내보내기에는 포함되지만 클라우드 동기화에는 포함되지 않습니다.
 
-접속 비밀번호. 쉼표로 구분합니다.
-
-### `OPENAI_API_KEY` (필수)
-
-당신의 OpenAI API 키, 여러 개를 사용하려면 쉼표로 연결합니다.
-
-### `BASE_URL` (선택 사항)
-
-> 기본값: `https://api.openai.com`
-
-> 예시: `http://your-openai-proxy.com`
-
-OpenAI API 요청의 기본 URL을 재정의합니다.
-
-### `OPENAI_ORG_ID` (선택 사항)
-
-OpenAI organization ID를 지정합니다.
-
-### `AZURE_URL` (선택 사항)
-
-> 예시: https://{azure-resource-url}/openai
-
-Azure 배포 URL입니다.
-
-### `AZURE_API_KEY` (선택 사항)
-
-Azure API 키입니다.
-
-### `AZURE_API_VERSION` (선택 사항)
-
-Azure API 버전입니다. [Azure 문서](https://learn.microsoft.com/en-us/azure/ai-services/openai/reference#chat-completions)에서 확인할 수 있습니다.
-
-### `GOOGLE_API_KEY` (선택 사항)
-
-Google Gemini Pro API 키입니다.
-
-### `GOOGLE_URL` (선택 사항)
-
-Google Gemini Pro API URL입니다.
-
-### `ANTHROPIC_API_KEY` (선택 사항)
-
-Anthropic Claude API 키입니다.
-
-### `ANTHROPIC_API_VERSION` (선택 사항)
-
-Anthropic Claude API 버전입니다.
-
-### `ANTHROPIC_URL` (선택 사항)
-
-Anthropic Claude API URL입니다.
-
-### `BAIDU_API_KEY` (선택 사항)
-
-Baidu API 키입니다.
-
-### `BAIDU_SECRET_KEY` (선택 사항)
-
-Baidu Secret 키입니다.
-
-### `BAIDU_URL` (선택 사항)
-
-Baidu API URL입니다.
-
-### `BYTEDANCE_API_KEY` (선택 사항)
-
-ByteDance API 키입니다.
-
-### `BYTEDANCE_URL` (선택 사항)
-
-ByteDance API URL입니다.
-
-### `ALIBABA_API_KEY` (선택 사항)
-
-Alibaba Cloud API 키입니다.
-
-### `ALIBABA_URL` (선택 사항)
-
-Alibaba Cloud API URL입니다.
-
-### `IFLYTEK_URL` (선택 사항)
-
-iflytek API URL입니다.
-
-### `IFLYTEK_API_KEY` (선택 사항)
-
-iflytek API 키입니다.
-
-### `IFLYTEK_API_SECRET` (선택 사항)
-
-iflytek API 시크릿입니다.
-
-### `CHATGLM_API_KEY` (선택 사항)
-
-ChatGLM API 키입니다.
-
-### `CHATGLM_URL` (선택 사항)
-
-ChatGLM API URL입니다.
-
-### `DEEPSEEK_API_KEY` (선택 사항)
-
-DeepSeek API 키입니다.
-
-### `DEEPSEEK_URL` (선택 사항)
-
-DeepSeek API URL입니다.
-
-### `HIDE_USER_API_KEY` (선택 사항)
-
-> 기본값: 비어 있음
-
-사용자가 자신의 API 키를 입력하지 못하게 하려면 이 값을 1로 설정하세요.
-
-### `DISABLE_GPT4` (선택 사항)
-
-> 기본값: 비어 있음
-
-사용자가 GPT-4를 사용하지 못하게 하려면 이 값을 1로 설정하세요.
-
-### `ENABLE_BALANCE_QUERY` (선택 사항)
-
-> 기본값: 비어 있음
-
-사용자가 쿼리 잔액을 조회할 수 있도록 하려면 이 값을 1로 설정하세요.
-
-### `DISABLE_FAST_LINK` (선택 사항)
-
-> 기본값: 비어 있음
-
-URL에서 설정을 파싱하는 기능을 비활성화하려면 이 값을 1로 설정하세요.
-
-### `CUSTOM_MODELS` (선택 사항)
-
-> 기본값: 비어 있음  
-> 예시: `+llama,+claude-2,-gpt-3.5-turbo,gpt-4-1106-preview=gpt-4-turbo`  
-이는 `llama`, `claude-2`를 모델 리스트에 추가하고, `gpt-3.5-turbo`를 제거하며, `gpt-4-1106-preview`를 `gpt-4-turbo`로 표시합니다.
-
-사용자 지정 모델 제어 시 `+`는 추가, `-`는 제거, `이름=표시이름`은 모델명 커스터마이징을 의미합니다. 쉼표로 구분하세요.
-
-- `-all`은 기본 모델을 모두 비활성화  
-- `+all`은 기본 모델을 모두 활성화
-
-Azure 용법 예시: `modelName@Azure=deploymentName` → 배포 이름을 커스터마이징 가능  
-> 예시: `+gpt-3.5-turbo@Azure=gpt35` → 리스트에 `gpt35(Azure)` 표시됨  
-> Azure 모델만 사용할 경우: `-all,+gpt-3.5-turbo@Azure=gpt35`
-
-ByteDance 용법 예시: `modelName@bytedance=deploymentName`  
-> 예시: `+Doubao-lite-4k@bytedance=ep-xxxxx-xxx` → `Doubao-lite-4k(ByteDance)`로 표시됨
-
-### `DEFAULT_MODEL` (선택 사항)
-
-기본 모델을 변경합니다.
-
-### `VISION_MODELS` (선택 사항)
-
-> 기본값: 비어 있음  
-> 예시: `gpt-4-vision,claude-3-opus,my-custom-model`  
-위의 모델들에 시각 기능을 부여합니다 (기본적으로 `"vision"`, `"claude-3"`, `"gemini-1.5"` 키워드를 포함한 모델은 자동 인식됨). 기본 모델 외에도 모델을 추가할 수 있습니다. 쉼표로 구분하세요.
-
-### `WHITE_WEBDAV_ENDPOINTS` (선택 사항)
-
-접속 허용할 WebDAV 서비스 주소를 늘리고자 할 때 사용합니다.
-
-- 각 주소는 완전한 endpoint 여야 함: `https://xxxx/yyy`  
-- 여러 주소는 `,`로 구분
-
-### `DEFAULT_INPUT_TEMPLATE` (선택 사항)
-
-설정 메뉴의 사용자 입력 전처리 구성 항목 초기화 시 사용할 기본 템플릿을 설정합니다.
-
-### `STABILITY_API_KEY` (선택 사항)
-
-Stability API 키입니다.
-
-### `STABILITY_URL` (선택 사항)
-
-Stability API URL을 커스터마이징합니다.
-
-### `ENABLE_MCP` (선택 사항)
-
-MCP (Model Context Protocol) 기능을 활성화합니다. 보안을 위해 MCP를 사용할 때는
-`CODE`도 설정해야 하며 모든 MCP Server Action이 이 접근 코드를 확인합니다.
-
-### `SILICONFLOW_API_KEY` (선택 사항)
-
-SiliconFlow API 키입니다.
-
-### `SILICONFLOW_URL` (선택 사항)
-
-SiliconFlow API URL입니다.
-
-### `AI302_API_KEY` (선택 사항)
-
-302.AI API 키입니다.
-
-### `AI302_URL` (선택 사항)
-
-302.AI API URL입니다.
+선택적 서버 설정은 `.env.template`을 참고하세요. `CODE`는 웹 접근 코드이며 `ENABLE_MCP=true`에도 `CODE`가 필요합니다. 추가 WebDAV 전달 대상은 `WHITE_WEBDAV_ENDPOINTS`로 지정합니다.
 
 ## 요구 사항 (Requirements)
 
@@ -390,14 +190,7 @@ NodeJS >= 18, Docker >= 20
 
 [![Gitpod에서 열기](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/Yidadaa/ChatGPT-Next-Web)
 
-개발을 시작하기 전에 프로젝트 루트에 `.env.local` 파일을 만들고, 아래와 같이 API 키를 입력하세요:
-
-```
-OPENAI_API_KEY=<여기에 API 키 입력>
-
-# OpenAI 서비스를 사용할 수 없는 경우 아래 BASE_URL 사용
-BASE_URL=https://chatgpt1.nextweb.fun/api/proxy
-```
+설정의 인터페이스 구성에서 OpenAI Chat, OpenAI Responses, Anthropic Messages 또는 Gemini 프로토콜과 기본 URL, API 키, 모델을 등록하세요. 인터페이스 설정은 기기에 저장되며 로컬 내보내기에는 포함되지만 클라우드 동기화에는 포함되지 않습니다.
 
 ### 로컬 개발 실행
 
@@ -417,7 +210,6 @@ yarn dev
 docker pull yidadaa/chatgpt-next-web
 
 docker run -d -p 3000:3000 \
-   -e OPENAI_API_KEY=sk-xxxx \
    -e CODE=your-password \
    yidadaa/chatgpt-next-web
 ```
@@ -426,7 +218,6 @@ docker run -d -p 3000:3000 \
 
 ```shell
 docker run -d -p 3000:3000 \
-   -e OPENAI_API_KEY=sk-xxxx \
    -e CODE=your-password \
    -e PROXY_URL=http://localhost:7890 \
    yidadaa/chatgpt-next-web
@@ -442,7 +233,6 @@ MCP를 활성화하려면:
 
 ```
 docker run -d -p 3000:3000 \
-   -e OPENAI_API_KEY=sk-xxxx \
    -e CODE=your-password \
    -e ENABLE_MCP=true \
    yidadaa/chatgpt-next-web

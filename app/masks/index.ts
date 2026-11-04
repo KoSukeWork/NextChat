@@ -1,6 +1,7 @@
 import { Mask } from "../store/mask";
 
 import { type BuiltinMask } from "./typing";
+import { stripBuiltinModelSelection } from "../utils/legacy-endpoint-migration";
 export { type BuiltinMask } from "./typing";
 
 export const BUILTIN_MASK_ID = 100000;
@@ -13,7 +14,7 @@ export const BUILTIN_MASK_STORE = {
     return this.masks[id] as Mask | undefined;
   },
   add(m: BuiltinMask) {
-    const { model, providerName, ...modelConfig } = m.modelConfig;
+    const modelConfig = stripBuiltinModelSelection(m.modelConfig);
     const mask = { ...m, modelConfig, id: this.buildinId++, builtin: true };
     this.masks[mask.id] = mask;
     return mask;

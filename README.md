@@ -29,7 +29,7 @@ English / [简体中文](./README_CN.md)
 [MacOS-image]: https://img.shields.io/badge/-MacOS-black?logo=apple
 [Linux-image]: https://img.shields.io/badge/-Linux-333?logo=ubuntu
 
-[<img src="https://zeabur.com/button.svg" alt="Deploy on Zeabur" height="30">](https://zeabur.com/templates/ZBUEFA) [<img src="https://vercel.com/button" alt="Deploy on Vercel" height="30">](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FChatGPTNextWeb%2FChatGPT-Next-Web&env=OPENAI_API_KEY&env=CODE&project-name=nextchat&repository-name=NextChat) [<img src="https://gitpod.io/button/open-in-gitpod.svg" alt="Open in Gitpod" height="30">](https://gitpod.io/#https://github.com/ChatGPTNextWeb/NextChat) [<img src="https://oss.opendeploy.dev/static/deploy-with-your-agent.svg" alt="Deploy with your agent" height="30">](https://opendeploy.dev/github/ChatGPTNextWeb/NextChat)
+[<img src="https://zeabur.com/button.svg" alt="Deploy on Zeabur" height="30">](https://zeabur.com/templates/ZBUEFA) [<img src="https://vercel.com/button" alt="Deploy on Vercel" height="30">](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FChatGPTNextWeb%2FChatGPT-Next-Web&env=CODE&project-name=nextchat&repository-name=NextChat) [<img src="https://gitpod.io/button/open-in-gitpod.svg" alt="Open in Gitpod" height="30">](https://gitpod.io/#https://github.com/ChatGPTNextWeb/NextChat) [<img src="https://oss.opendeploy.dev/static/deploy-with-your-agent.svg" alt="Deploy with your agent" height="30">](https://opendeploy.dev/github/ChatGPTNextWeb/NextChat)
 
 [<img src="https://github.com/user-attachments/assets/903482d4-3e87-4134-9af1-f2588fa90659" height="50" width="" >](https://monica.im/?utm=nxcrp)
 
@@ -108,26 +108,23 @@ For enterprise inquiries, please contact: **business@nextchat.club**
 - [x] Artifacts: Easily preview, copy and share generated content/webpages through a separate window [#5092](https://github.com/ChatGPTNextWeb/ChatGPT-Next-Web/pull/5092)
 - [x] Plugins: support network search, calculator, any other apis etc. [#165](https://github.com/Yidadaa/ChatGPT-Next-Web/issues/165) [#5353](https://github.com/ChatGPTNextWeb/ChatGPT-Next-Web/issues/5353)
   - [x] network search, calculator, any other apis etc. [#165](https://github.com/Yidadaa/ChatGPT-Next-Web/issues/165) [#5353](https://github.com/ChatGPTNextWeb/ChatGPT-Next-Web/issues/5353)
-- [x] Supports Realtime Chat [#5672](https://github.com/ChatGPTNextWeb/ChatGPT-Next-Web/issues/5672)
 - [ ] local knowledge base
 
 ## What's New
 
-- 🚀 v2.15.8 Now supports Realtime Chat [#5672](https://github.com/ChatGPTNextWeb/ChatGPT-Next-Web/issues/5672)
 - 🚀 v2.15.4 The Application supports using Tauri fetch LLM API, MORE SECURITY! [#5379](https://github.com/ChatGPTNextWeb/ChatGPT-Next-Web/issues/5379)
 - 🚀 v2.15.0 Now supports Plugins! Read this: [NextChat-Awesome-Plugins](https://github.com/ChatGPTNextWeb/NextChat-Awesome-Plugins)
 - 🚀 v2.14.0 Now supports Artifacts & SD
 - 🚀 v2.10.1 support Google Gemini Pro model.
-- 🚀 v2.9.11 you can use azure endpoint now.
 - 🚀 v2.8 now we have a client that runs across all platforms!
 - 🚀 v2.7 let's share conversations as image, or share to ShareGPT!
 - 🚀 v2.0 is released, now you can create prompt templates, turn your ideas into reality! Read this: [ChatGPT Prompt Engineering Tips: Zero, One and Few Shot Prompting](https://www.allabtai.com/prompt-engineering-tips-zero-one-and-few-shot-prompting/).
 
 ## Get Started
 
-1. Get [OpenAI API Key](https://platform.openai.com/account/api-keys);
+1. Obtain an API key for the endpoint you want to use;
 2. Click
-   [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FYidadaa%2FChatGPT-Next-Web&env=OPENAI_API_KEY&env=CODE&project-name=chatgpt-next-web&repository-name=ChatGPT-Next-Web), remember that `CODE` is your page password;
+   [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FYidadaa%2FChatGPT-Next-Web&env=CODE&project-name=chatgpt-next-web&repository-name=ChatGPT-Next-Web), remember that `CODE` is your page password;
 3. Enjoy :)
 
 ## FAQ
@@ -172,209 +169,9 @@ After adding or modifying this environment variable, please redeploy the project
 
 ## Environment Variables
 
-### `CODE` (optional)
+Configure endpoints in Settings: choose OpenAI Chat, OpenAI Responses, Anthropic Messages, or Gemini, then enter the base URL, API key, and models. Endpoint settings stay on this device and are included in local exports, not cloud sync.
 
-Access password, separated by comma.
-
-### `OPENAI_API_KEY` (required)
-
-Your openai api key, join multiple api keys with comma.
-
-### `BASE_URL` (optional)
-
-> Default: `https://api.openai.com`
-
-> Examples: `http://your-openai-proxy.com`
-
-Override openai api request base url.
-
-### `OPENAI_ORG_ID` (optional)
-
-Specify OpenAI organization ID.
-
-### `AZURE_URL` (optional)
-
-> Example: https://{azure-resource-url}/openai
-
-Azure deploy url.
-
-### `AZURE_API_KEY` (optional)
-
-Azure Api Key.
-
-### `AZURE_API_VERSION` (optional)
-
-Azure Api Version, find it at [Azure Documentation](https://learn.microsoft.com/en-us/azure/ai-services/openai/reference#chat-completions).
-
-### `GOOGLE_API_KEY` (optional)
-
-Google Gemini Pro Api Key.
-
-### `GOOGLE_URL` (optional)
-
-Google Gemini Pro Api Url.
-
-### `ANTHROPIC_API_KEY` (optional)
-
-anthropic claude Api Key.
-
-### `ANTHROPIC_API_VERSION` (optional)
-
-anthropic claude Api version.
-
-### `ANTHROPIC_URL` (optional)
-
-anthropic claude Api Url.
-
-### `BAIDU_API_KEY` (optional)
-
-Baidu Api Key.
-
-### `BAIDU_SECRET_KEY` (optional)
-
-Baidu Secret Key.
-
-### `BAIDU_URL` (optional)
-
-Baidu Api Url.
-
-### `BYTEDANCE_API_KEY` (optional)
-
-ByteDance Api Key.
-
-### `BYTEDANCE_URL` (optional)
-
-ByteDance Api Url.
-
-### `ALIBABA_API_KEY` (optional)
-
-Alibaba Cloud Api Key.
-
-### `ALIBABA_URL` (optional)
-
-Alibaba Cloud Api Url.
-
-### `IFLYTEK_URL` (Optional)
-
-iflytek Api Url.
-
-### `IFLYTEK_API_KEY` (Optional)
-
-iflytek Api Key.
-
-### `IFLYTEK_API_SECRET` (Optional)
-
-iflytek Api Secret.
-
-### `CHATGLM_API_KEY` (optional)
-
-ChatGLM Api Key.
-
-### `CHATGLM_URL` (optional)
-
-ChatGLM Api Url.
-
-### `DEEPSEEK_API_KEY` (optional)
-
-DeepSeek Api Key.
-
-### `DEEPSEEK_URL` (optional)
-
-DeepSeek Api Url.
-
-### `HIDE_USER_API_KEY` (optional)
-
-> Default: Empty
-
-If you do not want users to input their own API key, set this value to 1.
-
-### `DISABLE_GPT4` (optional)
-
-> Default: Empty
-
-If you do not want users to use GPT-4, set this value to 1.
-
-### `ENABLE_BALANCE_QUERY` (optional)
-
-> Default: Empty
-
-If you do want users to query balance, set this value to 1.
-
-### `DISABLE_FAST_LINK` (optional)
-
-> Default: Empty
-
-If you want to disable parse settings from url, set this to 1.
-
-### `CUSTOM_MODELS` (optional)
-
-> Default: Empty
-> Example: `+llama,+claude-2,-gpt-3.5-turbo,gpt-4-1106-preview=gpt-4-turbo` means add `llama, claude-2` to model list, and remove `gpt-3.5-turbo` from list, and display `gpt-4-1106-preview` as `gpt-4-turbo`.
-
-To control custom models, use `+` to add a custom model, use `-` to hide a model, use `name=displayName` to customize model name, separated by comma.
-
-User `-all` to disable all default models, `+all` to enable all default models.
-
-For Azure: use `modelName@Azure=deploymentName` to customize model name and deployment name.
-
-> Example: `+gpt-3.5-turbo@Azure=gpt35` will show option `gpt35(Azure)` in model list.
-> If you only can use Azure model, `-all,+gpt-3.5-turbo@Azure=gpt35` will `gpt35(Azure)` the only option in model list.
-
-For ByteDance: use `modelName@bytedance=deploymentName` to customize model name and deployment name.
-
-> Example: `+Doubao-lite-4k@bytedance=ep-xxxxx-xxx` will show option `Doubao-lite-4k(ByteDance)` in model list.
-
-### `DEFAULT_MODEL` （optional）
-
-Change default model
-
-### `VISION_MODELS` (optional)
-
-> Default: Empty
-> Example: `gpt-4-vision,claude-3-opus,my-custom-model` means add vision capabilities to these models in addition to the default pattern matches (which detect models containing keywords like "vision", "claude-3", "gemini-1.5", etc).
-
-Add additional models to have vision capabilities, beyond the default pattern matching. Multiple models should be separated by commas.
-
-### `WHITE_WEBDAV_ENDPOINTS` (optional)
-
-You can use this option if you want to increase the number of webdav service addresses you are allowed to access, as required by the format：
-
-- Each address must be a complete endpoint
-  > `https://xxxx/yyy`
-- Multiple addresses are connected by ', '
-
-### `DEFAULT_INPUT_TEMPLATE` (optional)
-
-Customize the default template used to initialize the User Input Preprocessing configuration item in Settings.
-
-### `STABILITY_API_KEY` (optional)
-
-Stability API key.
-
-### `STABILITY_URL` (optional)
-
-Customize Stability API url.
-
-### `ENABLE_MCP` (optional)
-
-Enable MCP（Model Context Protocol）Feature. For security, MCP also requires
-`CODE` to be configured; all MCP server actions verify that access code.
-
-### `SILICONFLOW_API_KEY` (optional)
-
-SiliconFlow API Key.
-
-### `SILICONFLOW_URL` (optional)
-
-SiliconFlow API URL.
-
-### `AI302_API_KEY` (optional)
-
-302.AI API Key.
-
-### `AI302_URL` (optional)
-
-302.AI API URL.
+Optional server settings are listed in `.env.template`. `CODE` protects web access; `ENABLE_MCP=true` also requires `CODE`. `WHITE_WEBDAV_ENDPOINTS` controls additional WebDAV relay destinations.
 
 ## Requirements
 
@@ -384,14 +181,7 @@ NodeJS >= 18, Docker >= 20
 
 [![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/Yidadaa/ChatGPT-Next-Web)
 
-Before starting development, you must create a new `.env.local` file at project root, and place your api key into it:
-
-```
-OPENAI_API_KEY=<your api key here>
-
-# if you are not able to access openai service, use this BASE_URL
-BASE_URL=https://chatgpt1.nextweb.fun/api/proxy
-```
+Configure endpoints in Settings: choose OpenAI Chat, OpenAI Responses, Anthropic Messages, or Gemini, then enter the base URL, API key, and models. Endpoint settings stay on this device and are included in local exports, not cloud sync.
 
 ### Local Development
 
@@ -411,7 +201,6 @@ yarn dev
 docker pull yidadaa/chatgpt-next-web
 
 docker run -d -p 3000:3000 \
-   -e OPENAI_API_KEY=sk-xxxx \
    -e CODE=your-password \
    yidadaa/chatgpt-next-web
 ```
@@ -420,7 +209,6 @@ You can start service behind a proxy:
 
 ```shell
 docker run -d -p 3000:3000 \
-   -e OPENAI_API_KEY=sk-xxxx \
    -e CODE=your-password \
    -e PROXY_URL=http://localhost:7890 \
    yidadaa/chatgpt-next-web
@@ -436,7 +224,6 @@ If enable MCP, use：
 
 ```
 docker run -d -p 3000:3000 \
-   -e OPENAI_API_KEY=sk-xxxx \
    -e CODE=your-password \
    -e ENABLE_MCP=true \
    yidadaa/chatgpt-next-web

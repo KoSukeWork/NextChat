@@ -7,7 +7,7 @@
 
 [NextChatAI](https://nextchat.club?utm_source=readme) / [企業版](#企業版) / [デモ](https://chat-gpt-next-web.vercel.app/) / [フィードバック](https://github.com/Yidadaa/ChatGPT-Next-Web/issues) / [Discordに参加](https://discord.gg/zrhvHCr79N)
 
-[<img src="https://vercel.com/button" alt="Zeaburでデプロイ" height="30">](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FChatGPTNextWeb%2FChatGPT-Next-Web&env=OPENAI_API_KEY&env=CODE&project-name=nextchat&repository-name=NextChat) [<img src="https://zeabur.com/button.svg" alt="Zeaburでデプロイ" height="30">](https://zeabur.com/templates/ZBUEFA) [<img src="https://gitpod.io/button/open-in-gitpod.svg" alt="Gitpodで開く" height="30">](https://gitpod.io/#https://github.com/Yidadaa/ChatGPT-Next-Web)
+[<img src="https://vercel.com/button" alt="Zeaburでデプロイ" height="30">](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FChatGPTNextWeb%2FChatGPT-Next-Web&env=CODE&project-name=nextchat&repository-name=NextChat) [<img src="https://zeabur.com/button.svg" alt="Zeaburでデプロイ" height="30">](https://zeabur.com/templates/ZBUEFA) [<img src="https://gitpod.io/button/open-in-gitpod.svg" alt="Gitpodで開く" height="30">](https://gitpod.io/#https://github.com/Yidadaa/ChatGPT-Next-Web)
 
 </div>
 
@@ -35,9 +35,9 @@
 
 ## 始めに
 
-1. [OpenAI API Key](https://platform.openai.com/account/api-keys)を準備する;
+1. 利用する接続先の API キーを準備する;
 2. 右側のボタンをクリックしてデプロイを開始：
-   [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FYidadaa%2FChatGPT-Next-Web&env=OPENAI_API_KEY&env=CODE&env=GOOGLE_API_KEY&project-name=chatgpt-next-web&repository-name=ChatGPT-Next-Web) 、GitHubアカウントで直接ログインし、環境変数ページにAPI Keyと[ページアクセスパスワード](#設定ページアクセスパスワード) CODEを入力してください;
+   [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FYidadaa%2FChatGPT-Next-Web&env=CODE&project-name=chatgpt-next-web&repository-name=ChatGPT-Next-Web) 、GitHubアカウントで直接ログインし、環境変数ページに[ページアクセスパスワード](#設定ページアクセスパスワード) CODEを入力してください;
 3. デプロイが完了したら、すぐに使用を開始できます;
 4. （オプション）[カスタムドメインをバインド](https://vercel.com/docs/concepts/projects/domains/add-a-domain)：Vercelが割り当てたドメインDNSは一部の地域で汚染されているため、カスタムドメインをバインドすると直接接続できます。
 
@@ -89,156 +89,9 @@ code1,code2,code3
 
 ## 環境変数
 
-> 本プロジェクトのほとんどの設定は環境変数で行います。チュートリアル：[Vercel の環境変数を変更する方法](./docs/vercel-ja.md)。
+設定の「接口配置」で OpenAI Chat、OpenAI Responses、Anthropic Messages、Gemini のプロトコル、基本 URL、API キーとモデルを登録します。接続設定は端末内に保存され、ローカルエクスポートには含まれますが、クラウド同期には含まれません。
 
-### `OPENAI_API_KEY` （必須）
-
-OpenAI の API キー。OpenAI アカウントページで申請したキーをカンマで区切って複数設定できます。これにより、ランダムにキーが選択されます。
-
-### `CODE` （オプション）
-
-アクセスパスワード。カンマで区切って複数設定可能。
-
-**警告**：この項目を設定しないと、誰でもデプロイしたウェブサイトを利用でき、トークンが急速に消耗する可能性があるため、設定をお勧めします。
-
-### `BASE_URL` （オプション）
-
-> デフォルト: `https://api.openai.com`
-
-> 例: `http://your-openai-proxy.com`
-
-OpenAI API のプロキシ URL。手動で OpenAI API のプロキシを設定している場合はこのオプションを設定してください。
-
-> SSL 証明書の問題がある場合は、`BASE_URL` のプロトコルを http に設定してください。
-
-### `OPENAI_ORG_ID` （オプション）
-
-OpenAI の組織 ID を指定します。
-
-### `AZURE_URL` （オプション）
-
-> 形式: https://{azure-resource-url}/openai/deployments/{deploy-name}
-> `CUSTOM_MODELS` で `displayName` 形式で {deploy-name} を設定した場合、`AZURE_URL` から {deploy-name} を省略できます。
-
-Azure のデプロイ URL。
-
-### `AZURE_API_KEY` （オプション）
-
-Azure の API キー。
-
-### `AZURE_API_VERSION` （オプション）
-
-Azure API バージョン。[Azure ドキュメント](https://learn.microsoft.com/en-us/azure/ai-services/openai/reference#chat-completions)で確認できます。
-
-### `GOOGLE_API_KEY` (オプション)
-
-Google Gemini Pro API キー。
-
-### `GOOGLE_URL` (オプション)
-
-Google Gemini Pro API の URL。
-
-### `ANTHROPIC_API_KEY` (オプション)
-
-Anthropic Claude API キー。
-
-### `ANTHROPIC_API_VERSION` (オプション)
-
-Anthropic Claude API バージョン。
-
-### `ANTHROPIC_URL` (オプション)
-
-Anthropic Claude API の URL。
-
-### `BAIDU_API_KEY` (オプション)
-
-Baidu API キー。
-
-### `BAIDU_SECRET_KEY` (オプション)
-
-Baidu シークレットキー。
-
-### `BAIDU_URL` (オプション)
-
-Baidu API の URL。
-
-### `BYTEDANCE_API_KEY` (オプション)
-
-ByteDance API キー。
-
-### `BYTEDANCE_URL` (オプション)
-
-ByteDance API の URL。
-
-### `ALIBABA_API_KEY` (オプション)
-
-アリババ（千问）API キー。
-
-### `ALIBABA_URL` (オプション)
-
-アリババ（千问）API の URL。
-
-### `HIDE_USER_API_KEY` （オプション）
-
-ユーザーが API キーを入力できないようにしたい場合は、この環境変数を 1 に設定します。
-
-### `DISABLE_GPT4` （オプション）
-
-ユーザーが GPT-4 を使用できないようにしたい場合は、この環境変数を 1 に設定します。
-
-### `ENABLE_BALANCE_QUERY` （オプション）
-
-バランスクエリ機能を有効にしたい場合は、この環境変数を 1 に設定します。
-
-### `DISABLE_FAST_LINK` （オプション）
-
-リンクからのプリセット設定解析を無効にしたい場合は、この環境変数を 1 に設定します。
-
-### `WHITE_WEBDAV_ENDPOINTS` (オプション)
-
-アクセス許可を与える WebDAV サービスのアドレスを追加したい場合、このオプションを使用します。フォーマット要件：
-
-- 各アドレスは完全なエンドポイントでなければなりません。
-  > `https://xxxx/xxx`
-- 複数のアドレスは `,` で接続します。
-
-### `CUSTOM_MODELS` （オプション）
-
-> 例：`+qwen-7b-chat,+glm-6b,-gpt-3.5-turbo,gpt-4-1106-preview=gpt-4-turbo` は `qwen-7b-chat` と `glm-6b` をモデルリストに追加し、`gpt-3.5-turbo` を削除し、`gpt-4-1106-preview` のモデル名を `gpt-4-turbo` として表示します。
-> すべてのモデルを無効にし、特定のモデルを有効にしたい場合は、`-all,+gpt-3.5-turbo` を使用します。これは `gpt-3.5-turbo` のみを有効にすることを意味します。
-
-モデルリストを管理します。`+` でモデルを追加し、`-` でモデルを非表示にし、`モデル名=表示名` でモデルの表示名をカスタマイズし、カンマで区切ります。
-
-Azure モードでは、`modelName@Azure=deploymentName` 形式でモデル名とデプロイ名（deploy-name）を設定できます。
-
-> 例：`+gpt-3.5-turbo@Azure=gpt35` この設定でモデルリストに `gpt35(Azure)` のオプションが表示されます。
-
-ByteDance モードでは、`modelName@bytedance=deploymentName` 形式でモデル名とデプロイ名（deploy-name）を設定できます。
-
-> 例: `+Doubao-lite-4k@bytedance=ep-xxxxx-xxx` この設定でモデルリストに `Doubao-lite-4k(ByteDance)` のオプションが表示されます。
-
-### `DEFAULT_MODEL` （オプション）
-
-デフォルトのモデルを変更します。
-
-### `VISION_MODELS` (オプション)
-
-> デフォルト：空
-> 例：`gpt-4-vision,claude-3-opus,my-custom-model` は、これらのモデルにビジョン機能を追加します。これはデフォルトのパターンマッチング（"vision"、"claude-3"、"gemini-1.5"などのキーワードを含むモデルを検出）に加えて適用されます。
-
-デフォルトのパターンマッチングに加えて、追加のモデルにビジョン機能を付与します。複数のモデルはカンマで区切ります。
-
-### `DEFAULT_INPUT_TEMPLATE` （オプション）
-
-『設定』の『ユーザー入力前処理』の初期設定に使用するテンプレートをカスタマイズします。
-
-### `AI302_API_KEY` （オプション）
-
-302.AI API キー.
-
-### `AI302_URL` （オプション）
-
-302.AI API の URL.
+任意のサーバー設定は `.env.template` を参照してください。`CODE` は Web 版のアクセスコードです。`ENABLE_MCP=true` にも `CODE` が必要です。追加の WebDAV 転送先は `WHITE_WEBDAV_ENDPOINTS` に指定します。
 
 ## 開発
 
@@ -246,11 +99,7 @@ ByteDance モードでは、`modelName@bytedance=deploymentName` 形式でモデ
 
 [![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/Yidadaa/ChatGPT-Next-Web)
 
-コードを書く前に、プロジェクトのルートディレクトリに `.env.local` ファイルを新規作成し、環境変数を記入します：
-
-```
-OPENAI_API_KEY=<your api key here>
-```
+設定の「接口配置」で OpenAI Chat、OpenAI Responses、Anthropic Messages、Gemini のプロトコル、基本 URL、API キーとモデルを登録します。接続設定は端末内に保存され、ローカルエクスポートには含まれますが、クラウド同期には含まれません。
 
 ### ローカル開発
 
@@ -270,7 +119,6 @@ OPENAI_API_KEY=<your api key here>
 docker pull yidadaa/chatgpt-next-web
 
 docker run -d -p 3000:3000 \
-   -e OPENAI_API_KEY=sk-xxxx \
    -e CODE=ページアクセスパスワード \
    yidadaa/chatgpt-next-web
 ```
@@ -279,7 +127,6 @@ docker run -d -p 3000:3000 \
 
 ```shell
 docker run -d -p 3000:3000 \
-   -e OPENAI_API_KEY=sk-xxxx \
    -e CODE=ページアクセスパスワード \
    --net=host \
    -e PROXY_URL=http://127.0.0.1:7890 \

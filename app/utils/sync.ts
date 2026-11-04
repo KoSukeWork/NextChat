@@ -57,6 +57,22 @@ export type AppState = {
   >;
 };
 
+/** Old exports can restore content, but must not replace local endpoint settings. */
+export function prepareImportedState(local: AppState, remote: AppState) {
+  const config = remote[StoreKey.Config];
+  const legacyApiSettings = !!config && !Array.isArray(config.endpoints);
+  return {
+    legacyApiSettings,
+    state: legacyApiSettings
+      ? {
+          ...remote,
+          [StoreKey.Config]: local[StoreKey.Config],
+          [StoreKey.Access]: local[StoreKey.Access],
+        }
+      : remote,
+  };
+}
+
 const CloudStoreKeys = [StoreKey.Chat, StoreKey.Mask, StoreKey.Prompt] as const;
 export type CloudState = Pick<AppState, (typeof CloudStoreKeys)[number]>;
 
@@ -276,6 +292,7 @@ export function mergeAppState(
 ) {
   Object.keys(localState).forEach(<T extends keyof AppState>(k: string) => {
     const key = k as T;
+    if (remoteState[key] === undefined) return;
     if (key === StoreKey.Chat && options?.restoreDeletedSessions) {
       mergeChatStates(
         localState[StoreKey.Chat],

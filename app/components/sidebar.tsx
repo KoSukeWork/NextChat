@@ -36,10 +36,7 @@ import { useGlobalSearch } from "./global-search";
 import ArchiveIcon from "../icons/archive.svg";
 import SearchIcon from "../icons/search.svg";
 
-const DISCOVERY = [
-  { name: Locale.Plugin.Name, path: Path.Plugins },
-  { name: "Stable Diffusion", path: Path.Sd },
-];
+const DISCOVERY = [{ name: Locale.Plugin.Name, path: Path.Plugins }];
 
 const ChatList = dynamic(async () => (await import("./chat-list")).ChatList, {
   loading: () => null,

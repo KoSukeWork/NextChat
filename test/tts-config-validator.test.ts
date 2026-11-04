@@ -32,13 +32,11 @@ test("legacy settings migrate without retaining cloud engine/model/voice/speed",
     pitch: 1,
   });
   const options = configStore.persist.getOptions();
-  const realtimeConfig = configStore.getState().realtimeConfig;
   const migrated = await options.migrate!(
-    { ttsConfig: legacy, realtimeConfig },
+    { ttsConfig: legacy, modelConfig: { ...configStore.getState().modelConfig } },
     4.2,
   );
   expect((migrated as any).ttsConfig).toEqual(migrateTTSConfig(legacy));
-  expect((migrated as any).realtimeConfig).toBe(realtimeConfig);
   expect(
     options.merge!({ ttsConfig: legacy }, configStore.getState()).ttsConfig,
   ).toEqual(migrateTTSConfig(legacy));
@@ -57,7 +55,7 @@ test("legacy settings migrate without retaining cloud engine/model/voice/speed",
 
 test("4.4 migration defaults old local settings to system and preserves valid Melo selection", async () => {
   const options = configStore.persist.getOptions();
-  expect(options.version).toBe(4.4);
+  expect(options.version).toBe(4.5);
   const migrated = await options.migrate!(
     { ttsConfig: { enable: true, rate: 1.1 } },
     4.3,
@@ -75,7 +73,7 @@ test("4.4 migration defaults old local settings to system and preserves valid Me
   ).toBe("melo");
 });
 
-test("access migration and merge discard obsolete Edge settings without affecting credentials", async () => {
+test("access migration drops obsolete settings after backing up credentials", async () => {
   const options = accessStore.persist.getOptions();
   const legacy = {
     edgeTTSVoiceName: "remote",
@@ -83,9 +81,9 @@ test("access migration and merge discard obsolete Edge settings without affectin
     openaiApiKey: "test-only",
   };
   const migrated = await options.migrate!(legacy, 2);
-  expect(migrated).toEqual({ openaiApiKey: "test-only" });
+  expect(migrated).toEqual({ accessCode: "", needCode: false });
   const merged = options.merge!(legacy, accessStore.getState());
   expect(merged).not.toHaveProperty("edgeTTSVoiceName");
   expect(merged).not.toHaveProperty("edgeVoiceName");
-  expect(merged.openaiApiKey).toBe("test-only");
+  expect(merged).not.toHaveProperty("openaiApiKey");
 });

@@ -40,7 +40,7 @@ import { toBlob, toPng } from "html-to-image";
 import { prettyObject } from "../utils/format";
 import { EXPORT_MESSAGE_CLASS_NAME } from "../constant";
 import { getClientConfig } from "../config/client";
-import { type ClientApi, getClientApi } from "../client/api";
+import { ClientApi } from "../client/api";
 import { getMessageTextContent } from "../utils";
 import { MaskAvatar } from "./mask";
 import clsx from "clsx";
@@ -321,11 +321,10 @@ export function PreviewActions(props: {
 }) {
   const [loading, setLoading] = useState(false);
   const [shouldExport, setShouldExport] = useState(false);
-  const config = useAppConfig();
   const onRenderMsgs = (msgs: ChatMessage[]) => {
     setShouldExport(false);
 
-    const api: ClientApi = getClientApi(config.modelConfig.providerName);
+    const api = new ClientApi();
 
     api
       .share(msgs)

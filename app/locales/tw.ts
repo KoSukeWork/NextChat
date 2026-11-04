@@ -286,115 +286,11 @@ const tw = {
       SubTitle: "當未壓縮的歷史訊息超過該值時，將進行壓縮",
     },
 
-    Usage: {
-      Title: "帳戶餘額",
-      SubTitle(used: any, total: any) {
-        return `本月已使用 $${used}，訂閱總額 $${total}`;
-      },
-      IsChecking: "正在檢查…",
-      Check: "重新檢查",
-      NoAccess: "輸入 API Key 檢視餘額",
-    },
-
     Access: {
-      SaasStart: {
-        Title: "使用 NextChat AI",
-        Label: "(性價比最高的方案)",
-        SubTitle:
-          "由 NextChat 官方維護，無須設定開箱即用，支援最新的大型語言模型",
-        ChatNow: "立刻開始對話",
-      },
-
       AccessCode: {
         Title: "存取密碼",
         SubTitle: "管理員已開啟加密存取",
         Placeholder: "請輸入存取密碼",
-      },
-      CustomEndpoint: {
-        Title: "自訂 API 端點 (Endpoint)",
-        SubTitle: "是否使用自訂 Azure 或 OpenAI 服務",
-      },
-      Provider: {
-        Title: "模型供應商",
-        SubTitle: "切換不同的服務供應商",
-      },
-      OpenAI: {
-        ApiKey: {
-          Title: "API Key",
-          SubTitle: "使用自訂 OpenAI Key 繞過密碼存取限制",
-          Placeholder: "OpenAI API Key",
-        },
-
-        Endpoint: {
-          Title: "API 端點 (Endpoint) 位址",
-          SubTitle: "除預設位址外，必須包含 http(s)://",
-        },
-      },
-      Azure: {
-        ApiKey: {
-          Title: "API 金鑰",
-          SubTitle: "使用自訂 Azure Key 繞過密碼存取限制",
-          Placeholder: "Azure API Key",
-        },
-
-        Endpoint: {
-          Title: "API 端點 (Endpoint) 位址",
-          SubTitle: "範例：",
-        },
-
-        ApiVerion: {
-          Title: "API 版本 (azure api version)",
-          SubTitle: "指定一個特定的 API 版本",
-        },
-      },
-      Anthropic: {
-        ApiKey: {
-          Title: "API 金鑰",
-          SubTitle: "從 Anthropic AI 取得您的 API 金鑰",
-          Placeholder: "Anthropic API Key",
-        },
-
-        Endpoint: {
-          Title: "端點位址",
-          SubTitle: "範例：",
-        },
-
-        ApiVerion: {
-          Title: "API 版本 (claude api version)",
-          SubTitle: "指定一個特定的 API 版本",
-        },
-      },
-      Google: {
-        ApiKey: {
-          Title: "API 金鑰",
-          SubTitle: "從 Google AI 取得您的 API 金鑰",
-          Placeholder: "輸入您的 Google AI Studio API 金鑰",
-        },
-
-        Endpoint: {
-          Title: "端點位址",
-          SubTitle: "範例：",
-        },
-
-        ApiVersion: {
-          Title: "API 版本（僅適用於 gemini-pro）",
-          SubTitle: "選擇一個特定的 API 版本",
-        },
-      },
-      AI302: {
-        ApiKey: {
-          Title: "API 金鑰",
-          SubTitle: "使用自訂 302.AI API 金鑰",
-          Placeholder: "302.AI API 金鑰",
-        },
-        Endpoint: {
-          Title: "端點位址",
-          SubTitle: "範例：",
-        },
-      },
-      CustomModel: {
-        Title: "自訂模型名稱",
-        SubTitle: "增加自訂模型可選擇項目，使用英文逗號隔開",
       },
     },
 

@@ -14,7 +14,7 @@ import dynamic from "next/dynamic";
 import { Path, SlotID } from "../constant";
 import { ErrorBoundary } from "./error";
 
-import { getISOLang, getLang } from "../locales";
+import Locale, { getISOLang, getLang } from "../locales";
 
 import {
   HashRouter as Router,
@@ -31,6 +31,7 @@ import { useAccessStore } from "../store";
 import clsx from "clsx";
 import { initializeMcpSystem, isMcpEnabled } from "../mcp/actions";
 import { useDesktopZoom } from "../utils/use-desktop-zoom";
+import { showToast } from "./ui-lib";
 
 export function Loading(props: { noLogo?: boolean }) {
   return (
@@ -71,10 +72,6 @@ const ArchivedChats = dynamic(
     loading: () => <Loading noLogo />,
   },
 );
-
-const Sd = dynamic(async () => (await import("./sd")).Sd, {
-  loading: () => <Loading noLogo />,
-});
 
 const McpMarketPage = dynamic(
   async () => (await import("./mcp-market")).McpMarketPage,
@@ -164,8 +161,6 @@ function Screen() {
   const isArtifact = location.pathname.includes(Path.Artifacts);
   const isHome = location.pathname === Path.Home;
   const isAuth = location.pathname === Path.Auth;
-  const isSd = location.pathname === Path.Sd;
-  const isSdNew = location.pathname === Path.SdNew;
 
   const isMobileScreen = useMobileScreen();
   const shouldTightBorder =
@@ -187,8 +182,6 @@ function Screen() {
   }
   const renderContent = () => {
     if (isAuth) return <AuthPage />;
-    if (isSd) return <Sd />;
-    if (isSdNew) return <Sd />;
     return (
       <>
         <SideBar
@@ -229,6 +222,26 @@ export function Home() {
   useDesktopZoom();
   useSwitchTheme();
   useHtmlLang();
+  const migrationWarnings = useAppConfig((state) => state.unmigratedEndpoints);
+  const configHydrated = useAppConfig((state) => state._hasHydrated);
+
+  useEffect(() => {
+    if (!configHydrated) return;
+    if (migrationWarnings.length) {
+      showToast(
+        Locale.EndpointConfig.Unmigrated(migrationWarnings.join(", ")),
+        undefined,
+        10000,
+      );
+      useAppConfig.getState().update((state) => {
+        state.unmigratedEndpoints = [];
+      });
+    }
+    if (sessionStorage.getItem("legacy-endpoint-import")) {
+      sessionStorage.removeItem("legacy-endpoint-import");
+      showToast(Locale.EndpointConfig.LegacyImport, undefined, 10000);
+    }
+  }, [configHydrated, migrationWarnings]);
 
   useEffect(() => {
     console.log("[Config] got config from build time", getClientConfig());

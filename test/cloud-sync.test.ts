@@ -30,6 +30,10 @@ jest.unstable_mockModule("@/app/utils/sync", () => ({
   getCloudAppState: getLocal,
   mergeCloudAppState: merge,
   setCloudAppState: setLocal,
+  prepareImportedState: (_local: any, state: any) => ({
+    state,
+    legacyApiSettings: false,
+  }),
 }));
 jest.unstable_mockModule("@/app/utils", () => ({
   downloadAs: jest.fn(),

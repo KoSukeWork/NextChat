@@ -35,10 +35,14 @@ export function createPersistStore<T extends object, M>(
   persistOptions: SecondParam<typeof persist<T & M & MakeUpdater<T>>>,
 ) {
   persistOptions.storage = createJSONStorage(() => indexedDBStorage);
-  const oldOonRehydrateStorage = persistOptions?.onRehydrateStorage;
+  const oldOnRehydrateStorage = persistOptions?.onRehydrateStorage;
   persistOptions.onRehydrateStorage = (state) => {
-    oldOonRehydrateStorage?.(state);
-    return () => state.setHasHydrated(true);
+    const onFinish = oldOnRehydrateStorage?.(state);
+    return (restored, error) => {
+      onFinish?.(restored, error);
+      // Do not persist defaults over the user's data when migration failed.
+      if (!error) (restored ?? state).setHasHydrated(true);
+    };
   };
 
   return create(

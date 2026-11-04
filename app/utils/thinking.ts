@@ -278,7 +278,7 @@ export function normalizeThinking(content: string, reasoning = ""): string {
 }
 
 // Full response envelopes cover OpenAI-compatible, Alibaba, Anthropic, Gemini,
-// Baidu and Tencent. The adapter's fallback preserves provider-specific outputs.
+// The adapter's fallback preserves alternative reasoning formats.
 export function normalizeThinkingResponse(
   response: any,
   fallback: string | { text?: string }[] | undefined,

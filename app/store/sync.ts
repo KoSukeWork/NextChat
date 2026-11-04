@@ -11,6 +11,7 @@ import {
   getCloudAppState,
   mergeCloudAppState,
   setCloudAppState,
+  prepareImportedState,
 } from "../utils/sync";
 import { downloadAs, readFromFile } from "../utils";
 import { showToast } from "../components/ui-lib";
@@ -78,10 +79,14 @@ export const useSyncStore = createPersistStore(
       try {
         const remoteState = JSON.parse(rawContent) as AppState;
         const localState = getLocalAppState();
-        mergeAppState(localState, remoteState, {
+        const { state: importedState, legacyApiSettings } =
+          prepareImportedState(localState, remoteState);
+        mergeAppState(localState, importedState, {
           restoreDeletedSessions: true,
         });
         setLocalAppState(localState);
+        if (legacyApiSettings)
+          sessionStorage.setItem("legacy-endpoint-import", "1");
         location.reload();
       } catch (e) {
         console.error("[Import]", e);

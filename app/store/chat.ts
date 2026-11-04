@@ -1,32 +1,23 @@
 import { stripThinking, stripThinkingFromMessages } from "../utils/thinking";
 import {
   getMessageTextContentForContext,
-  isDalle3,
   safeLocalStorage,
   trimTopic,
 } from "../utils";
 
 import { indexedDBStorage } from "@/app/utils/indexedDB-storage";
 import { nanoid } from "nanoid";
-import type {
-  ClientApi,
-  MultimodalContent,
-  RequestMessage,
-} from "../client/api";
-import { getClientApi } from "../client/api";
+import type { MultimodalContent, RequestMessage } from "../client/api";
+import { getClientApi } from "../client/endpoint-client";
 import { ChatControllerPool } from "../client/controller";
 import { showToast } from "../components/ui-lib";
 import {
   DEFAULT_INPUT_TEMPLATE,
   DEFAULT_SYSTEM_TEMPLATE,
-  GEMINI_SUMMARIZE_MODEL,
-  DEEPSEEK_SUMMARIZE_MODEL,
   KnowledgeCutOffDate,
   MCP_SYSTEM_TEMPLATE,
   MCP_TOOLS_TEMPLATE,
-  ServiceProvider,
   StoreKey,
-  SUMMARIZE_MODEL,
 } from "../constant";
 import Locale, { getLang } from "../locales";
 import { prettyObject } from "../utils/format";
@@ -34,7 +25,7 @@ import { createPersistStore } from "../utils/store";
 import { estimateTokenLength } from "../utils/token";
 import { ModelConfig, ModelType, useAppConfig } from "./config";
 import { useAccessStore } from "./access";
-import { configuredModels, resolveLocalModel } from "../utils/local-models";
+import { resolveConfiguredModel } from "../utils/endpoint-resolution";
 import {
   deletionTimestamp,
   restoredTimestamp,
@@ -153,29 +144,6 @@ function setArchived(session: ChatSession, archived: boolean) {
   );
 }
 
-function getSummarizeModel(
-  currentModel: string,
-  providerName: string,
-): string[] {
-  const configStore = useAppConfig.getState();
-  const accessStore = useAccessStore.getState();
-  const models = configuredModels(configStore, accessStore);
-  const target = currentModel.startsWith("gemini")
-    ? GEMINI_SUMMARIZE_MODEL
-    : currentModel.startsWith("deepseek-")
-    ? DEEPSEEK_SUMMARIZE_MODEL
-    : /^(gpt|chatgpt)/.test(currentModel)
-    ? SUMMARIZE_MODEL
-    : currentModel;
-  const model = models.find(
-    (m) =>
-      m.name === target &&
-      m.available &&
-      m.provider?.providerName === providerName,
-  );
-  return model ? [model.name, providerName] : [currentModel, providerName];
-}
-
 function countMessages(msgs: ChatMessage[]) {
   return msgs.reduce(
     (pre, cur) =>
@@ -188,7 +156,11 @@ function fillTemplateWith(input: string, modelConfig: ModelConfig) {
   const cutoff =
     KnowledgeCutOffDate[modelConfig.model] ?? KnowledgeCutOffDate.default;
   const vars = {
-    ServiceProvider: modelConfig.providerName,
+    endpoint:
+      useAppConfig
+        .getState()
+        .endpoints.find((item) => item.id === modelConfig.endpointId)?.name ??
+      "",
     cutoff,
     model: modelConfig.model,
     time: new Date().toString(),
@@ -413,9 +385,9 @@ export const useChatStore = createPersistStore(
             },
           };
           session.topic = mask.name;
-          const resolved = resolveLocalModel(
+          const resolved = resolveConfiguredModel(
             session.mask.modelConfig.model,
-            session.mask.modelConfig.providerName,
+            session.mask.modelConfig.endpointId,
           );
           if (resolved) Object.assign(session.mask.modelConfig, resolved);
         }
@@ -572,11 +544,14 @@ export const useChatStore = createPersistStore(
       ensureSessionModel(targetSession?: ChatSession): boolean {
         const session = targetSession ?? get().currentSession();
         const current = session.mask.modelConfig;
-        const resolved = resolveLocalModel(current.model, current.providerName);
+        const resolved = resolveConfiguredModel(
+          current.model,
+          current.endpointId,
+        );
         if (!resolved) return false;
         if (
           resolved.model !== current.model ||
-          resolved.providerName !== current.providerName
+          resolved.endpointId !== current.endpointId
         ) {
           get().updateTargetSession(session, (target) => {
             target.mask = {
@@ -647,7 +622,7 @@ export const useChatStore = createPersistStore(
           session.lastUpdate = restoredTimestamp(session);
         });
 
-        const api: ClientApi = getClientApi(modelConfig.providerName);
+        const api = getClientApi(modelConfig.endpointId);
         // make request
         api.llm.chat({
           messages: sendMessages,
@@ -861,11 +836,6 @@ export const useChatStore = createPersistStore(
         const config = useAppConfig.getState();
         const session = targetSession;
         const modelConfig = session.mask.modelConfig;
-        // skip summarize when using dalle3?
-        if (isDalle3(modelConfig.model)) {
-          return;
-        }
-
         const messages = stripThinkingFromMessages(session.messages);
         const shouldGenerateTitle =
           (config.enableAutoGenerateTitle &&
@@ -886,28 +856,33 @@ export const useChatStore = createPersistStore(
         if (!shouldGenerateTitle && !shouldSummarize) return;
 
         // Resolve only when a title or summary request will actually be sent.
-        const [requestedModel, requestedProvider] = modelConfig.compressModel
-          ? [modelConfig.compressModel, modelConfig.compressProviderName]
-          : getSummarizeModel(
-              session.mask.modelConfig.model,
-              session.mask.modelConfig.providerName,
-            );
-        const resolved = resolveLocalModel(requestedModel, requestedProvider);
+        const usingCompressionModel = !!modelConfig.compressModel;
+        const requestedModel = usingCompressionModel
+          ? modelConfig.compressModel
+          : modelConfig.model;
+        const requestedEndpoint = usingCompressionModel
+          ? modelConfig.compressEndpointId
+          : modelConfig.endpointId;
+        const resolved = resolveConfiguredModel(
+          requestedModel,
+          requestedEndpoint,
+        );
         if (!resolved) return;
-        const { model, providerName } = resolved;
-        if (model !== requestedModel || providerName !== requestedProvider) {
+        const { model, endpointId } = resolved;
+        if (model !== requestedModel || endpointId !== requestedEndpoint) {
           get().updateTargetSession(session, (target) => {
             target.mask = {
               ...target.mask,
               modelConfig: {
                 ...modelConfig,
-                compressModel: model,
-                compressProviderName: providerName,
+                ...(usingCompressionModel
+                  ? { compressModel: model, compressEndpointId: endpointId }
+                  : { model, endpointId }),
               },
             };
           });
         }
-        const api: ClientApi = getClientApi(providerName as ServiceProvider);
+        const api = getClientApi(endpointId);
 
         if (shouldGenerateTitle) {
           const startIndex = Math.max(
@@ -930,7 +905,7 @@ export const useChatStore = createPersistStore(
             config: {
               model,
               stream: false,
-              providerName,
+              endpointId,
             },
             onFinish(message, responseRes) {
               if (responseRes?.status === 200) {
@@ -984,7 +959,7 @@ export const useChatStore = createPersistStore(
               ...modelcfg,
               stream: true,
               model,
-              providerName,
+              endpointId,
             },
             onUpdate(message) {
               session.memoryPrompt = stripThinking(message);
@@ -1142,8 +1117,8 @@ export const useChatStore = createPersistStore(
         newState.sessions.forEach((s) => {
           const config = useAppConfig.getState();
           s.mask.modelConfig.compressModel = config.modelConfig.compressModel;
-          s.mask.modelConfig.compressProviderName =
-            config.modelConfig.compressProviderName;
+          s.mask.modelConfig.compressEndpointId =
+            config.modelConfig.compressEndpointId;
         });
       }
       // revert default summarize model for every session
@@ -1151,7 +1126,7 @@ export const useChatStore = createPersistStore(
         newState.sessions.forEach((s) => {
           const config = useAppConfig.getState();
           s.mask.modelConfig.compressModel = "";
-          s.mask.modelConfig.compressProviderName = "";
+          s.mask.modelConfig.compressEndpointId = "";
         });
       }
 

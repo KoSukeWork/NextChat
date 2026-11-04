@@ -10,20 +10,6 @@ const en: LocaleType = {
     Switched: (from: string, to: string) =>
       `This chat's model ${from} is unavailable on this device. Switched to ${to}.`,
   },
-  ModelManager: {
-    Title: "Manage models",
-    Search: "Search models or providers",
-    Empty: "No matching saved models",
-    Delete: "Delete",
-    DeleteSelected: (count: number) => `Delete selected (${count})`,
-    ClearProvider: (count: number) => `Clear provider (${count})`,
-    Default: "Current default model",
-    Confirm: (count: number) => `Delete ${count} saved models?`,
-    DefaultWarning:
-      "This removes the current default model. Existing conversations will keep their original model; choose another default for new conversations.",
-    CustomHint:
-      "Manage saved models from all providers without fetching a list. Custom model names are a separate source; remove them in the Custom model names input.",
-  },
   ModelDiscovery: {
     Placeholder: "gpt-4o,claude-sonnet-4-5@Anthropic,my-model=Display name",
     Title: "Fetch models",
@@ -70,6 +56,36 @@ const en: LocaleType = {
     Action: "Pin chat",
     Undo: "Unpin chat",
     Pinned: "Pinned",
+  },
+  EndpointConfig: {
+    Title: "API endpoints",
+    Add: "Add endpoint",
+    Edit: "Edit endpoint",
+    Delete: "Delete",
+    Save: "Save",
+    Name: "Name",
+    Protocol: "Protocol",
+    BaseUrl: "Base URL",
+    ApiKey: "API key",
+    RequestUrl: "Request URL",
+    Models: "Models",
+    ModelName: "Model name",
+    DisplayName: "Display name (optional)",
+    AddModel: "Add model",
+    FetchModels: "Fetch models",
+    AddSelected: "Add selected models",
+    DeleteSelected: "Delete selected models",
+    NoModels: "No models yet",
+    Invalid: "Enter a name and a valid HTTP(S) base URL",
+    Remove: (name: string, count: number, isDefault: boolean) =>
+      `Delete endpoint “${name}” and its ${count} models?${
+        isDefault ? " This includes the default model." : ""
+      }`,
+    Unmigrated: (names: string) =>
+      `These old endpoints could not be migrated: ${names}. Their original settings remain on this device.`,
+    OpenSettings: "Open settings",
+    LegacyImport:
+      "API settings in the old backup were ignored; chats, masks, and prompts can still be imported.",
   },
   Chat: {
     Thinking: {
@@ -382,255 +398,11 @@ const en: LocaleType = {
       SubTitle:
         "Will compress if uncompressed messages length exceeds the value",
     },
-
-    Usage: {
-      Title: "Account Balance",
-      SubTitle(used: any, total: any) {
-        return `Used this month $${used}, subscription $${total}`;
-      },
-      IsChecking: "Checking...",
-      Check: "Check",
-      NoAccess: "Enter API Key to check balance",
-    },
     Access: {
-      SaasStart: {
-        Title: "Use NextChat AI",
-        Label: " (Most Cost-Effective Option)",
-        SubTitle:
-          "Maintained by NextChat, zero setup needed, unlock the latest models",
-        ChatNow: "Start Now",
-      },
       AccessCode: {
         Title: "Access Code",
         SubTitle: "Access control Enabled",
         Placeholder: "Enter Code",
-      },
-      CustomEndpoint: {
-        Title: "Custom Endpoint",
-        SubTitle: "Use custom Azure or OpenAI service",
-      },
-      Provider: {
-        Title: "Model Provider",
-        SubTitle: "Select Azure or OpenAI",
-      },
-      OpenAI: {
-        ApiKey: {
-          Title: "OpenAI API Key",
-          SubTitle: "User custom OpenAI Api Key",
-          Placeholder: "sk-xxx",
-        },
-
-        Endpoint: {
-          Title: "OpenAI Endpoint",
-          SubTitle: "Must start with http(s):// or use /api/openai as default",
-        },
-      },
-      Azure: {
-        ApiKey: {
-          Title: "Azure Api Key",
-          SubTitle: "Check your api key from Azure console",
-          Placeholder: "Azure Api Key",
-        },
-
-        Endpoint: {
-          Title: "Azure Endpoint",
-          SubTitle: "Example: ",
-        },
-
-        ApiVerion: {
-          Title: "Azure Api Version",
-          SubTitle: "Check your api version from azure console",
-        },
-      },
-      Anthropic: {
-        ApiKey: {
-          Title: "Anthropic API Key",
-          SubTitle:
-            "Use a custom Anthropic Key to bypass password access restrictions",
-          Placeholder: "Anthropic API Key",
-        },
-
-        Endpoint: {
-          Title: "Endpoint Address",
-          SubTitle: "Example: ",
-        },
-
-        ApiVerion: {
-          Title: "API Version (claude api version)",
-          SubTitle: "Select and input a specific API version",
-        },
-      },
-      Baidu: {
-        ApiKey: {
-          Title: "Baidu API Key",
-          SubTitle: "Use a custom Baidu API Key",
-          Placeholder: "Baidu API Key",
-        },
-        SecretKey: {
-          Title: "Baidu Secret Key",
-          SubTitle: "Use a custom Baidu Secret Key",
-          Placeholder: "Baidu Secret Key",
-        },
-        Endpoint: {
-          Title: "Endpoint Address",
-          SubTitle: "not supported, configure in .env",
-        },
-      },
-      Tencent: {
-        ApiKey: {
-          Title: "Tencent API Key",
-          SubTitle: "Use a custom Tencent API Key",
-          Placeholder: "Tencent API Key",
-        },
-        SecretKey: {
-          Title: "Tencent Secret Key",
-          SubTitle: "Use a custom Tencent Secret Key",
-          Placeholder: "Tencent Secret Key",
-        },
-        Endpoint: {
-          Title: "Endpoint Address",
-          SubTitle: "not supported, configure in .env",
-        },
-      },
-      ByteDance: {
-        ApiKey: {
-          Title: "ByteDance API Key",
-          SubTitle: "Use a custom ByteDance API Key",
-          Placeholder: "ByteDance API Key",
-        },
-        Endpoint: {
-          Title: "Endpoint Address",
-          SubTitle: "Example: ",
-        },
-      },
-      Alibaba: {
-        ApiKey: {
-          Title: "Alibaba API Key",
-          SubTitle: "Use a custom Alibaba Cloud API Key",
-          Placeholder: "Alibaba Cloud API Key",
-        },
-        Endpoint: {
-          Title: "Endpoint Address",
-          SubTitle: "Example: ",
-        },
-      },
-      Moonshot: {
-        ApiKey: {
-          Title: "Moonshot API Key",
-          SubTitle: "Use a custom Moonshot API Key",
-          Placeholder: "Moonshot API Key",
-        },
-        Endpoint: {
-          Title: "Endpoint Address",
-          SubTitle: "Example: ",
-        },
-      },
-      DeepSeek: {
-        ApiKey: {
-          Title: "DeepSeek API Key",
-          SubTitle: "Use a custom DeepSeek API Key",
-          Placeholder: "DeepSeek API Key",
-        },
-        Endpoint: {
-          Title: "Endpoint Address",
-          SubTitle: "Example: ",
-        },
-      },
-      XAI: {
-        ApiKey: {
-          Title: "XAI API Key",
-          SubTitle: "Use a custom XAI API Key",
-          Placeholder: "XAI API Key",
-        },
-        Endpoint: {
-          Title: "Endpoint Address",
-          SubTitle: "Example: ",
-        },
-      },
-      ChatGLM: {
-        ApiKey: {
-          Title: "ChatGLM API Key",
-          SubTitle: "Use a custom ChatGLM API Key",
-          Placeholder: "ChatGLM API Key",
-        },
-        Endpoint: {
-          Title: "Endpoint Address",
-          SubTitle: "Example: ",
-        },
-      },
-      SiliconFlow: {
-        ApiKey: {
-          Title: "SiliconFlow API Key",
-          SubTitle: "Use a custom SiliconFlow API Key",
-          Placeholder: "SiliconFlow API Key",
-        },
-        Endpoint: {
-          Title: "Endpoint Address",
-          SubTitle: "Example: ",
-        },
-      },
-      Stability: {
-        ApiKey: {
-          Title: "Stability API Key",
-          SubTitle: "Use a custom Stability API Key",
-          Placeholder: "Stability API Key",
-        },
-        Endpoint: {
-          Title: "Endpoint Address",
-          SubTitle: "Example: ",
-        },
-      },
-      Iflytek: {
-        ApiKey: {
-          Title: "Iflytek API Key",
-          SubTitle: "Use a Iflytek API Key",
-          Placeholder: "Iflytek API Key",
-        },
-        ApiSecret: {
-          Title: "Iflytek API Secret",
-          SubTitle: "Use a Iflytek API Secret",
-          Placeholder: "Iflytek API Secret",
-        },
-        Endpoint: {
-          Title: "Endpoint Address",
-          SubTitle: "Example: ",
-        },
-      },
-      CustomModel: {
-        Title: "Custom Models",
-        SubTitle: "Custom model options, seperated by comma",
-      },
-      Google: {
-        ApiKey: {
-          Title: "API Key",
-          SubTitle: "Obtain your API Key from Google AI",
-          Placeholder: "Google AI API Key",
-        },
-
-        Endpoint: {
-          Title: "Endpoint Address",
-          SubTitle: "Example: ",
-        },
-
-        ApiVersion: {
-          Title: "API Version (specific to gemini-pro)",
-          SubTitle: "Select a specific API version",
-        },
-        GoogleSafetySettings: {
-          Title: "Google Safety Settings",
-          SubTitle: "Select a safety filtering level",
-        },
-      },
-      AI302: {
-        ApiKey: {
-          Title: "302.AI API Key",
-          SubTitle: "Use a custom 302.AI API Key",
-          Placeholder: "302.AI API Key",
-        },
-        Endpoint: {
-          Title: "Endpoint Address",
-          SubTitle: "Example: ",
-        },
       },
     },
 
@@ -746,39 +518,6 @@ const en: LocaleType = {
         SubTitle: "The speed of the generated audio",
       },
       Engine: "TTS Engine",
-    },
-    Realtime: {
-      Enable: {
-        Title: "Realtime Chat",
-        SubTitle: "Enable realtime chat feature",
-      },
-      Provider: {
-        Title: "Model Provider",
-        SubTitle: "Switch between different providers",
-      },
-      Model: {
-        Title: "Model",
-        SubTitle: "Select a model",
-      },
-      ApiKey: {
-        Title: "API Key",
-        SubTitle: "API Key",
-        Placeholder: "API Key",
-      },
-      Azure: {
-        Endpoint: {
-          Title: "Endpoint",
-          SubTitle: "Endpoint",
-        },
-        Deployment: {
-          Title: "Deployment Name",
-          SubTitle: "Deployment Name",
-        },
-      },
-      Temperature: {
-        Title: "Randomness (temperature)",
-        SubTitle: "Higher values result in more random responses",
-      },
     },
   },
   Store: {
@@ -984,61 +723,6 @@ const en: LocaleType = {
   URLCommand: {
     Code: "Detected access code from url, confirm to apply? ",
     Settings: "Detected settings from url, confirm to apply?",
-  },
-  SdPanel: {
-    Prompt: "Prompt",
-    NegativePrompt: "Negative Prompt",
-    PleaseInput: (name: string) => `Please input ${name}`,
-    AspectRatio: "Aspect Ratio",
-    ImageStyle: "Image Style",
-    OutFormat: "Output Format",
-    AIModel: "AI Model",
-    ModelVersion: "Model Version",
-    Submit: "Submit",
-    ParamIsRequired: (name: string) => `${name} is required`,
-    Styles: {
-      D3Model: "3d-model",
-      AnalogFilm: "analog-film",
-      Anime: "anime",
-      Cinematic: "cinematic",
-      ComicBook: "comic-book",
-      DigitalArt: "digital-art",
-      Enhance: "enhance",
-      FantasyArt: "fantasy-art",
-      Isometric: "isometric",
-      LineArt: "line-art",
-      LowPoly: "low-poly",
-      ModelingCompound: "modeling-compound",
-      NeonPunk: "neon-punk",
-      Origami: "origami",
-      Photographic: "photographic",
-      PixelArt: "pixel-art",
-      TileTexture: "tile-texture",
-    },
-  },
-  Sd: {
-    SubTitle: (count: number) => `${count} images`,
-    Actions: {
-      Params: "See Params",
-      Copy: "Copy Prompt",
-      Delete: "Delete",
-      Retry: "Retry",
-      ReturnHome: "Return Home",
-      History: "History",
-    },
-    EmptyRecord: "No images yet",
-    Status: {
-      Name: "Status",
-      Success: "Success",
-      Error: "Error",
-      Wait: "Waiting",
-      Running: "Running",
-    },
-    Danger: {
-      Delete: "Confirm to delete?",
-    },
-    GenerateParams: "Generate Params",
-    Detail: "Detail",
   },
 };
 

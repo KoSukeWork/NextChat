@@ -15,7 +15,6 @@ const { useSyncStore } = await import("../app/store/sync");
 const { getLocalAppState, mergeAppState, mergeWithUpdate } = await import(
   "../app/utils/sync"
 );
-const { discoveredModels } = await import("../app/client/models");
 const { StoreKey } = await import("../app/constant");
 const { ProviderType } = await import("../app/utils/cloud");
 
@@ -72,11 +71,20 @@ test("Config/Access use newer state; chat/mask/prompt retain dedicated merges", 
     remote = clone(local);
   local[StoreKey.Config].lastUpdateTime = 20;
   remote[StoreKey.Config].lastUpdateTime = 10;
-  local[StoreKey.Config].models = [];
-  remote[StoreKey.Config].models = discoveredModels(["old"], "OpenAI");
+  local[StoreKey.Config].endpoints = [];
+  remote[StoreKey.Config].endpoints = [
+    {
+      id: "old",
+      name: "old",
+      protocol: "openai-chat",
+      baseUrl: "https://old.example",
+      apiKey: "old-key",
+      models: [{ name: "old" }],
+    },
+  ];
   local[StoreKey.Access].lastUpdateTime = 10;
   remote[StoreKey.Access].lastUpdateTime = 20;
-  remote[StoreKey.Access].openaiUrl = "https://new.example";
+  remote[StoreKey.Access].accessCode = "new-code";
   local[StoreKey.Prompt].prompts = { shared: { title: "local" } } as any;
   remote[StoreKey.Prompt].prompts = {
     shared: { title: "remote" },
@@ -100,8 +108,8 @@ test("Config/Access use newer state; chat/mask/prompt retain dedicated merges", 
   local[StoreKey.Chat].sessions = [];
   remote[StoreKey.Chat].sessions = [session];
   mergeAppState(local, remote);
-  expect(local[StoreKey.Config].models).toEqual([]);
-  expect(local[StoreKey.Access].openaiUrl).toBe("https://new.example");
+  expect(local[StoreKey.Config].endpoints).toEqual([]);
+  expect(local[StoreKey.Access].accessCode).toBe("new-code");
   expect(local[StoreKey.Prompt].prompts.shared.title).toBe("local");
   expect(local[StoreKey.Prompt].prompts.added.title).toBe("added");
   expect(local[StoreKey.Mask].masks.shared.name).toBe("local");
@@ -114,13 +122,22 @@ test("Config/Access use newer state; chat/mask/prompt retain dedicated merges", 
 test("delete saved models then sync twice never resurrects the older remote list", async () => {
   Object.assign(global, { TextEncoder, TextDecoder });
   const old = Object.getOwnPropertyDescriptor(window, "__TAURI__");
-  const models = discoveredModels(["keep", "delete"], "OpenAI");
-  useAppConfig.setState({ models, lastUpdateTime: Date.now() + 10000 });
+  const endpoints = [
+    {
+      id: "local",
+      name: "local",
+      protocol: "openai-chat" as const,
+      baseUrl: "https://local.example",
+      apiKey: "secret",
+      models: [{ name: "keep" }, { name: "delete" }],
+    },
+  ];
+  useAppConfig.setState({ endpoints, lastUpdateTime: Date.now() - 10000 });
   let backup = JSON.stringify(getLocalAppState());
   const remoteTime = useAppConfig.getState().lastUpdateTime;
-  useAppConfig
-    .getState()
-    .removeSavedModels([JSON.stringify([models[1].provider.id, "delete"])]);
+  useAppConfig.getState().update((state) => {
+    state.endpoints[0].models = [{ name: "keep" }];
+  });
   expect(useAppConfig.getState().lastUpdateTime).toBeGreaterThan(remoteTime);
   const invoke = jest.fn(async (_command: string, args: any) => {
     if (args.request.method === "MKCOL") return { status: 405, body: "" };
@@ -143,7 +160,9 @@ test("delete saved models then sync twice never resurrects the older remote list
   try {
     await useSyncStore.getState().sync();
     await useSyncStore.getState().sync();
-    expect(useAppConfig.getState().models.map((m) => m.name)).toEqual(["keep"]);
+    expect(
+      useAppConfig.getState().endpoints[0].models.map((m) => m.name),
+    ).toEqual(["keep"]);
     expect(JSON.parse(backup)).not.toHaveProperty(StoreKey.Config);
     expect(JSON.parse(backup)).not.toHaveProperty(StoreKey.Access);
     expect(

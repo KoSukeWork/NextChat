@@ -280,117 +280,11 @@ const sk: PartialLocaleType = {
       SubTitle:
         "Bude komprimované, ak dĺžka nekomprimovaných správ presiahne túto hodnotu",
     },
-
-    Usage: {
-      Title: "Stav účtu",
-      SubTitle(used: any, total: any) {
-        return `Tento mesiac použité ${used}, predplatné ${total}`;
-      },
-      IsChecking: "Kontroluje sa...",
-      Check: "Skontrolovať",
-      NoAccess: "Zadajte API kľúč na skontrolovanie zostatku",
-    },
     Access: {
-      SaasStart: {
-        Title: "Použite NextChat AI",
-        Label: "(Najvýhodnejšie riešenie)",
-        SubTitle:
-          "Oficiálne udržiavané NextChat, pripravené na použitie bez konfigurácie, podporuje najnovšie veľké modely",
-        ChatNow: "Chatovať teraz",
-      },
-
       AccessCode: {
         Title: "Prístupový kód",
         SubTitle: "Povolený prístupový kód",
         Placeholder: "Zadajte kód",
-      },
-      CustomEndpoint: {
-        Title: "Vlastný koncový bod",
-        SubTitle: "Použiť vlastnú službu Azure alebo OpenAI",
-      },
-      Provider: {
-        Title: "Poskytovateľ modelu",
-        SubTitle: "Vyberte Azure alebo OpenAI",
-      },
-      OpenAI: {
-        ApiKey: {
-          Title: "API kľúč OpenAI",
-          SubTitle: "Použiť vlastný API kľúč OpenAI",
-          Placeholder: "sk-xxx",
-        },
-
-        Endpoint: {
-          Title: "Koncový bod OpenAI",
-          SubTitle:
-            "Musí začínať http(s):// alebo použiť /api/openai ako predvolený",
-        },
-      },
-      Azure: {
-        ApiKey: {
-          Title: "API kľúč Azure",
-          SubTitle: "Skontrolujte svoj API kľúč v Azure konzole",
-          Placeholder: "API kľúč Azure",
-        },
-
-        Endpoint: {
-          Title: "Koncový bod Azure",
-          SubTitle: "Príklad: ",
-        },
-
-        ApiVerion: {
-          Title: "Verzia API Azure",
-          SubTitle: "Skontrolujte svoju verziu API v Azure konzole",
-        },
-      },
-      Anthropic: {
-        ApiKey: {
-          Title: "API kľúč Anthropic",
-          SubTitle: "Skontrolujte svoj API kľúč v Anthropic konzole",
-          Placeholder: "API kľúč Anthropic",
-        },
-
-        Endpoint: {
-          Title: "Adresa koncového bodu",
-          SubTitle: "Príklad:",
-        },
-
-        ApiVerion: {
-          Title: "Verzia API (claude verzia API)",
-          SubTitle: "Vyberte špecifickú verziu časti",
-        },
-      },
-      CustomModel: {
-        Title: "Vlastné modely",
-        SubTitle: "Možnosti vlastného modelu, oddelené čiarkou",
-      },
-      Google: {
-        ApiKey: {
-          Title: "API kľúč",
-          SubTitle:
-            "Obísť obmedzenia prístupu heslom pomocou vlastného API kľúča Google AI Studio",
-          Placeholder: "API kľúč Google AI Studio",
-        },
-
-        Endpoint: {
-          Title: "Adresa koncového bodu",
-          SubTitle: "Príklad:",
-        },
-
-        ApiVersion: {
-          Title: "Verzia API (gemini-pro verzia API)",
-          SubTitle: "Vyberte špecifickú verziu časti",
-        },
-      },
-      AI302: {
-        ApiKey: {
-          Title: "API kľúč",
-          SubTitle: "Použiť vlastný API kľúč 302.AI",
-          Placeholder: "302.AI API kľúč",
-        },
-        Endpoint: {
-          Title: "Adresa koncového bodu",
-          SubTitle: "Príklad:",
-        },
       },
     },
 

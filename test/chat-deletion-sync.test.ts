@@ -15,9 +15,9 @@ jest.unstable_mockModule("@/app/components/ui-lib", () => ({
   showToast: toast,
 }));
 await import("../app/client/api");
-const { ChatGPTApi } = await import("../app/client/platforms/openai");
-jest.spyOn(ChatGPTApi.prototype, "chat").mockImplementation(async () => {});
-const { useChatStore, useAppConfig, useAccessStore } = await import(
+const { EndpointClient } = await import("../app/client/endpoint-client");
+jest.spyOn(EndpointClient.prototype, "chat").mockImplementation(async () => {});
+const { useChatStore, useAppConfig } = await import(
   "../app/store"
 );
 const { createEmptyMask } = await import("../app/store/mask");
@@ -28,8 +28,7 @@ const {
   mergeCloudAppState,
   mergeAppState,
 } = await import("../app/utils/sync");
-const { discoveredModels } = await import("../app/client/models");
-const { StoreKey, ServiceProvider } = await import("../app/constant");
+const { StoreKey } = await import("../app/constant");
 const { ProviderType } = await import("../app/utils/cloud");
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const session = (id: string, extra: Record<string, unknown> = {}) => ({
@@ -68,14 +67,13 @@ beforeEach(() => {
   toast.mockClear();
   useChatStore.setState({ deletedSessions: {} });
   useAppConfig.setState({
-    models: discoveredModels(["home"], "OpenAI"),
+    endpoints: [{ id: "home-endpoint", name: "Home", protocol: "openai-chat", baseUrl: "https://example.test", apiKey: "", models: [{ name: "home" }] }],
     modelConfig: {
       ...useAppConfig.getState().modelConfig,
       model: "home",
-      providerName: ServiceProvider.OpenAI,
+      endpointId: "home-endpoint",
     },
   });
-  useAccessStore.setState({ customModels: "", defaultModel: "" });
 });
 afterEach(() => {
   if (originalTauri) Object.defineProperty(window, "__TAURI__", originalTauri);

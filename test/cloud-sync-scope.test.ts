@@ -19,10 +19,19 @@ const { useAppConfig, useAccessStore, useChatStore } = await import(
 const { useSyncStore } = await import("../app/store/sync");
 const { useMaskStore, createEmptyMask } = await import("../app/store/mask");
 const { usePromptStore } = await import("../app/store/prompt");
-const { getLocalAppState } = await import("../app/utils/sync");
-const { StoreKey, ServiceProvider } = await import("../app/constant");
+const { getLocalAppState, mergeAppState, prepareImportedState } = await import(
+  "../app/utils/sync"
+);
+const { StoreKey } = await import("../app/constant");
 const { ProviderType } = await import("../app/utils/cloud");
-const { discoveredModels } = await import("../app/client/models");
+const endpoint = (id: string) => ({
+  id,
+  name: id,
+  protocol: "openai-chat" as const,
+  baseUrl: `https://${id}.example`,
+  apiKey: `${id}-secret`,
+  models: [{ name: `${id}-model` }],
+});
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 const originalTauri = Object.getOwnPropertyDescriptor(window, "__TAURI__");
 afterEach(() => {
@@ -35,17 +44,16 @@ test.each([ProviderType.WebDAV, ProviderType.UpStash])(
   async (provider) => {
     Object.assign(global, { TextEncoder, TextDecoder });
     useAppConfig.setState({
-      models: discoveredModels(["home-model"], "OpenAI"),
+      endpoints: [endpoint("home")],
       modelConfig: {
         ...useAppConfig.getState().modelConfig,
         model: "home-model",
-        providerName: ServiceProvider.OpenAI,
+        endpointId: "home",
       },
       lastUpdateTime: 1,
     });
     useAccessStore.setState({
-      openaiApiKey: "home-secret",
-      openaiUrl: "https://home.example",
+      accessCode: "home-code",
       lastUpdateTime: 1,
     });
     useChatStore.getState().newSession();
@@ -55,12 +63,9 @@ test.each([ProviderType.WebDAV, ProviderType.UpStash])(
     (remote as any)[StoreKey.Mcp] = {
       servers: { private: { command: "private-command" } },
     };
-    remote[StoreKey.Access].openaiApiKey = "office-secret";
+    remote[StoreKey.Access].accessCode = "office-code";
     remote[StoreKey.Access].lastUpdateTime = Date.now() + 1000;
-    remote[StoreKey.Config].models = discoveredModels(
-      ["office-model"],
-      "OpenAI",
-    );
+    remote[StoreKey.Config].endpoints = [endpoint("office")];
     remote[StoreKey.Config].modelConfig.model = "office-model";
     remote[StoreKey.Config].lastUpdateTime = Date.now() + 1000;
     const session = clone(useChatStore.getState().currentSession());
@@ -165,7 +170,49 @@ test("local export still downloads the complete five-store backup", async () => 
       StoreKey.Access,
     ].sort(),
   );
-  expect(content[StoreKey.Access].openaiApiKey).toBe(
-    useAccessStore.getState().openaiApiKey,
+  expect(content[StoreKey.Config].endpoints).toEqual(
+    useAppConfig.getState().endpoints,
   );
+});
+
+test("legacy import restores content while leaving endpoint and access settings intact", () => {
+  const local = clone(getLocalAppState());
+  local[StoreKey.Config].endpoints = [endpoint("home")];
+  local[StoreKey.Access].accessCode = "local-code";
+  const remote = clone(local);
+  (remote as any)[StoreKey.Config] = {
+    models: [{ name: "obsolete" }],
+    lastUpdateTime: Date.now() + 1000,
+  };
+  (remote as any)[StoreKey.Access] = {
+    openaiApiKey: "obsolete-secret",
+    lastUpdateTime: Date.now() + 1000,
+  };
+  const importedSession = clone(useChatStore.getState().currentSession());
+  importedSession.id = "legacy-import";
+  importedSession.messages = [
+    {
+      id: "legacy-message",
+      role: "user",
+      content: "hello",
+      date: "2026-10-29",
+    },
+  ];
+  remote[StoreKey.Chat].sessions = [importedSession];
+  remote[StoreKey.Mask].masks = {
+    legacy: { ...createEmptyMask(), id: "legacy", name: "legacy mask" },
+  };
+  remote[StoreKey.Prompt].prompts = {
+    legacy: { id: "legacy", title: "legacy prompt", content: "text" },
+  } as any;
+  const prepared = prepareImportedState(local, remote);
+  expect(prepared.legacyApiSettings).toBe(true);
+  mergeAppState(local, prepared.state, { restoreDeletedSessions: true });
+  expect(local[StoreKey.Config].endpoints).toEqual([endpoint("home")]);
+  expect(local[StoreKey.Access].accessCode).toBe("local-code");
+  expect(
+    local[StoreKey.Chat].sessions.some((item) => item.id === "legacy-import"),
+  ).toBe(true);
+  expect(local[StoreKey.Mask].masks.legacy.name).toBe("legacy mask");
+  expect(local[StoreKey.Prompt].prompts.legacy.title).toBe("legacy prompt");
 });

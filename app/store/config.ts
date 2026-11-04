@@ -1,11 +1,8 @@
-import { LLMModel } from "../client/api";
-import { DalleQuality, DalleStyle, ModelSize } from "../typing";
 import { getClientConfig } from "../config/client";
 import {
   DEFAULT_INPUT_TEMPLATE,
   DEFAULT_SIDEBAR_WIDTH,
   StoreKey,
-  ServiceProvider,
 } from "../constant";
 import { createPersistStore } from "../utils/store";
 import { normalizeZoom } from "../utils/zoom";
@@ -14,7 +11,13 @@ import {
   migrateTTSConfig,
   speechValue,
 } from "../utils/local-tts";
-import type { Voice } from "rt-client";
+import type { Endpoint } from "../utils/endpoints";
+import { indexedDBStorage } from "../utils/indexedDB-storage";
+import {
+  LEGACY_ACCESS_BACKUP,
+  LEGACY_CONFIG_BACKUP,
+  migrateLegacyConfig,
+} from "../utils/legacy-endpoint-migration";
 
 export type ModelType = string;
 
@@ -57,12 +60,12 @@ export const DEFAULT_CONFIG = {
   dontShowMaskSplashScreen: false, // dont show splash screen when create chat
   hideBuiltinMasks: false, // dont add builtin masks
 
-  customModels: "",
-  models: [] as LLMModel[],
+  endpoints: [] as Endpoint[],
+  unmigratedEndpoints: [] as string[],
 
   modelConfig: {
     model: "" as ModelType,
-    providerName: "OpenAI" as ServiceProvider,
+    endpointId: "",
     temperature: 0.5,
     top_p: 1,
     max_tokens: 4000,
@@ -72,35 +75,18 @@ export const DEFAULT_CONFIG = {
     historyMessageCount: 4,
     compressMessageLengthThreshold: 1000,
     compressModel: "",
-    compressProviderName: "",
+    compressEndpointId: "",
     enableInjectSystemPrompts: true,
     template: config?.template ?? DEFAULT_INPUT_TEMPLATE,
-    size: "1024x1024" as ModelSize,
-    quality: "standard" as DalleQuality,
-    style: "vivid" as DalleStyle,
   },
 
   ttsConfig: { ...DEFAULT_LOCAL_TTS },
-
-  realtimeConfig: {
-    enable: false,
-    provider: "OpenAI" as ServiceProvider,
-    model: "gpt-4o-realtime-preview-2024-10-01",
-    apiKey: "",
-    azure: {
-      endpoint: "",
-      deployment: "",
-    },
-    temperature: 0.9,
-    voice: "alloy" as Voice,
-  },
 };
 
 export type ChatConfig = typeof DEFAULT_CONFIG;
 
 export type ModelConfig = ChatConfig["modelConfig"];
 export type TTSConfig = ChatConfig["ttsConfig"];
-export type RealtimeConfig = ChatConfig["realtimeConfig"];
 
 export function limitNumber(
   x: number,
@@ -140,41 +126,14 @@ export const ModalConfigValidator = {
 
 export const useAppConfig = createPersistStore(
   { ...DEFAULT_CONFIG },
-  (set, get) => ({
+  (set) => ({
     reset() {
       set(() => ({ ...DEFAULT_CONFIG }));
-    },
-
-    setProviderModels(providerId: string, models: LLMModel[]) {
-      set((state) => ({
-        models: [
-          ...state.models.filter((model) => model.provider.id !== providerId),
-          ...models
-            .filter((model) => model.provider.id === providerId)
-            .map((model) => ({ ...model, available: true })),
-        ],
-      }));
-      get().markUpdate();
-    },
-
-    removeSavedModels(keys: string[]) {
-      const selected = new Set(keys);
-      const previousTime = get().lastUpdateTime;
-      get().update((state) => {
-        state.models = state.models.filter(
-          (model) =>
-            !selected.has(JSON.stringify([model.provider.id, model.name])),
-        );
-      });
-      // A deletion must also win after importing a future-dated backup or when
-      // two local edits happen within the same millisecond.
-      if (get().lastUpdateTime <= previousTime)
-        set({ lastUpdateTime: previousTime + 1 });
     },
   }),
   {
     name: StoreKey.Config,
-    version: 4.4,
+    version: 4.5,
 
     merge(persistedState, currentState) {
       const state = persistedState as ChatConfig | undefined;
@@ -182,14 +141,29 @@ export const useAppConfig = createPersistStore(
       return {
         ...currentState,
         ...state,
-        models: state.models ?? [],
+        endpoints: state.endpoints ?? [],
+        unmigratedEndpoints: state.unmigratedEndpoints ?? [],
+        modelConfig: { ...currentState.modelConfig, ...state.modelConfig },
         zoom: normalizeZoom(state.zoom),
         ttsConfig: migrateTTSConfig(state.ttsConfig),
       };
     },
 
-    migrate(persistedState, version) {
-      const state = persistedState as ChatConfig;
+    async migrate(persistedState, version) {
+      // Migration works on a copy, preserving the exact old state on failure.
+      let state = JSON.parse(JSON.stringify(persistedState ?? {}));
+      if (
+        version < 4.5 &&
+        !(await indexedDBStorage.getItem(LEGACY_CONFIG_BACKUP))
+      ) {
+        await indexedDBStorage.setItem(
+          LEGACY_CONFIG_BACKUP,
+          JSON.stringify({ state: { ...state, _hasHydrated: true }, version }),
+        );
+        if (!(await indexedDBStorage.getItem(LEGACY_CONFIG_BACKUP)))
+          throw new Error("Could not preserve old configuration");
+      }
+      state.modelConfig ??= {};
 
       if (version < 3.4) {
         state.modelConfig.sendMemory = true;
@@ -200,10 +174,6 @@ export const useAppConfig = createPersistStore(
         state.modelConfig.template = DEFAULT_INPUT_TEMPLATE;
         state.dontShowMaskSplashScreen = false;
         state.hideBuiltinMasks = false;
-      }
-
-      if (version < 3.5) {
-        state.customModels = "claude,claude-100k";
       }
 
       if (version < 3.6) {
@@ -228,8 +198,6 @@ export const useAppConfig = createPersistStore(
       if (version < 4.1) {
         state.modelConfig.compressModel =
           DEFAULT_CONFIG.modelConfig.compressModel;
-        state.modelConfig.compressProviderName =
-          DEFAULT_CONFIG.modelConfig.compressProviderName;
       }
 
       if (version < 4.2) {
@@ -237,6 +205,18 @@ export const useAppConfig = createPersistStore(
       }
 
       if (version < 4.4) state.ttsConfig = migrateTTSConfig(state.ttsConfig);
+
+      if (version < 4.5) {
+        let rawAccess = await indexedDBStorage.getItem(LEGACY_ACCESS_BACKUP);
+        if (!rawAccess) {
+          rawAccess = await indexedDBStorage.getItem(StoreKey.Access);
+          // The access store can finish migrating between the two reads.
+          rawAccess =
+            (await indexedDBStorage.getItem(LEGACY_ACCESS_BACKUP)) ?? rawAccess;
+        }
+        const access = rawAccess ? JSON.parse(rawAccess)?.state ?? {} : {};
+        state = migrateLegacyConfig(state, access);
+      }
 
       return state as any;
     },

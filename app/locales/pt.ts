@@ -280,99 +280,11 @@ const pt: PartialLocaleType = {
       SubTitle:
         "Irá comprimir se o comprimento das mensagens não comprimidas exceder o valor",
     },
-
-    Usage: {
-      Title: "Saldo da Conta",
-      SubTitle(used: any, total: any) {
-        return `Usado este mês ${used}, assinatura ${total}`;
-      },
-      IsChecking: "Verificando...",
-      Check: "Verificar",
-      NoAccess: "Insira a Chave API para verificar o saldo",
-    },
     Access: {
-      SaasStart: {
-        Title: "Usar NextChat AI",
-        Label: "(A solução mais econômica)",
-        SubTitle:
-          "Mantido oficialmente pelo NextChat, pronto para uso sem configuração, suporta os mais recentes grandes modelos",
-        ChatNow: "Conversar agora",
-      },
-
       AccessCode: {
         Title: "Código de Acesso",
         SubTitle: "Controle de Acesso Habilitado",
         Placeholder: "Insira o Código",
-      },
-      CustomEndpoint: {
-        Title: "Endpoint Personalizado",
-        SubTitle: "Use serviço personalizado Azure ou OpenAI",
-      },
-      Provider: {
-        Title: "Provedor do Modelo",
-        SubTitle: "Selecione Azure ou OpenAI",
-      },
-      OpenAI: {
-        ApiKey: {
-          Title: "Chave API OpenAI",
-          SubTitle: "Usar Chave API OpenAI personalizada",
-          Placeholder: "sk-xxx",
-        },
-
-        Endpoint: {
-          Title: "Endpoint OpenAI",
-          SubTitle:
-            "Deve começar com http(s):// ou usar /api/openai como padrão",
-        },
-      },
-      Azure: {
-        ApiKey: {
-          Title: "Chave API Azure",
-          SubTitle: "Verifique sua chave API do console Azure",
-          Placeholder: "Chave API Azure",
-        },
-
-        Endpoint: {
-          Title: "Endpoint Azure",
-          SubTitle: "Exemplo: ",
-        },
-
-        ApiVerion: {
-          Title: "Versão API Azure",
-          SubTitle: "Verifique sua versão API do console Azure",
-        },
-      },
-      Anthropic: {
-        ApiKey: {
-          Title: "Chave API Anthropic",
-          SubTitle: "Verifique sua chave API do console Anthropic",
-          Placeholder: "Chave API Anthropic",
-        },
-
-        Endpoint: {
-          Title: "Endpoint Address",
-          SubTitle: "Exemplo: ",
-        },
-
-        ApiVerion: {
-          Title: "Versão API (Versão api claude)",
-          SubTitle: "Verifique sua versão API do console Anthropic",
-        },
-      },
-      AI302: {
-        ApiKey: {
-          Title: "Chave API 302.AI",
-          SubTitle: "Use uma chave API 302.AI personalizada",
-          Placeholder: "302.AI API Key",
-        },
-        Endpoint: {
-          Title: "Endpoint Address",
-          SubTitle: "Exemplo: ",
-        },
-      },
-      CustomModel: {
-        Title: "Modelos Personalizados",
-        SubTitle: "Opções de modelo personalizado, separados por vírgula",
       },
     },
 

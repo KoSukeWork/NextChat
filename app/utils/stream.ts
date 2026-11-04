@@ -46,8 +46,9 @@ export function fetch(url: string, options?: RequestInit): Promise<Response> {
     if (signal) {
       signal.addEventListener("abort", () => close());
     }
-    // @ts-ignore 2. listen response multi times, and write to Response.body
-    window.__TAURI__.event
+    // Register before invoking: fast responses can emit their first chunk
+    // before the native command returns its request id.
+    const listening = window.__TAURI__.event
       .listen("stream-response", (e: ResponseEvent) =>
         requestIdPromise.then((request_id) => {
           const { request_id: rid, chunk, status } = e?.payload || {};
@@ -56,7 +57,7 @@ export function fetch(url: string, options?: RequestInit): Promise<Response> {
           }
           if (chunk) {
             writer.ready.then(() => {
-              writer.write(new Uint8Array(chunk));
+              writer.write(new Uint8Array(chunk)).catch(() => {});
             });
           } else if (status === 0) {
             // end of body
@@ -64,7 +65,10 @@ export function fetch(url: string, options?: RequestInit): Promise<Response> {
           }
         }),
       )
-      .then((u: Function) => (unlisten = u));
+      .then((u: Function) => {
+        unlisten = u;
+        if (closed) u();
+      });
 
     const headers: Record<string, string> = {
       Accept: "application/json, text/plain, */*",
@@ -74,17 +78,19 @@ export function fetch(url: string, options?: RequestInit): Promise<Response> {
     for (const item of new Headers(_headers || {})) {
       headers[item[0]] = item[1];
     }
-    return window.__TAURI__
-      .invoke("stream_fetch", {
-        method: method.toUpperCase(),
-        url,
-        headers,
-        // TODO FormData
-        body:
-          typeof body === "string"
-            ? Array.from(new TextEncoder().encode(body))
-            : [],
-      })
+    return listening
+      .then(() =>
+        window.__TAURI__!.invoke("stream_fetch", {
+          method: method.toUpperCase(),
+          url,
+          headers,
+          // TODO FormData
+          body:
+            typeof body === "string"
+              ? Array.from(new TextEncoder().encode(body))
+              : [],
+        }),
+      )
       .then((res: StreamResponse) => {
         const { request_id, status, status_text: statusText, headers } = res;
         setRequestId?.(request_id);
@@ -93,9 +99,6 @@ export function fetch(url: string, options?: RequestInit): Promise<Response> {
           statusText,
           headers,
         });
-        if (status >= 300) {
-          setTimeout(close, 100);
-        }
         return response;
       })
       .catch((e) => {

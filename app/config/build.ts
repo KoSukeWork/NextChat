@@ -39,7 +39,7 @@ export const getBuildConfig = () => {
     ...commitInfo,
     buildMode,
     isApp,
-    template: process.env.DEFAULT_INPUT_TEMPLATE ?? DEFAULT_INPUT_TEMPLATE,
+    template: DEFAULT_INPUT_TEMPLATE,
   };
 };
 

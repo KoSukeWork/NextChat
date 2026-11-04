@@ -1,0 +1,16 @@
+.actions,
+.model-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.model-entry {
+  flex-wrap: wrap;
+
+  input {
+    flex: 1 1 150px;
+    max-width: none;
+    text-align: left;
+  }
+}

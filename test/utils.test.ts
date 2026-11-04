@@ -4,9 +4,6 @@ import {
   getMessageTextContent,
   getMessageTextContentWithoutThinking,
   getMessageImages,
-  isDalle3,
-  getModelSizes,
-  supportsCustomSize,
 } from "../app/utils";
 import { RequestMessage } from "../app/client/api";
 
@@ -108,34 +105,5 @@ describe("getMessageImages", () => {
       ],
     };
     expect(getMessageImages(msg)).toEqual(["http://a", "http://b"]);
-  });
-});
-
-describe("isDalle3", () => {
-  test("matches only the exact dall-e-3 model id", () => {
-    expect(isDalle3("dall-e-3")).toBe(true);
-    expect(isDalle3("dall-e-2")).toBe(false);
-    expect(isDalle3("gpt-4")).toBe(false);
-  });
-});
-
-describe("getModelSizes / supportsCustomSize", () => {
-  test("returns dall-e-3 sizes", () => {
-    expect(getModelSizes("dall-e-3")).toEqual([
-      "1024x1024",
-      "1792x1024",
-      "1024x1792",
-    ]);
-    expect(supportsCustomSize("dall-e-3")).toBe(true);
-  });
-
-  test("returns cogview sizes (case-insensitive match)", () => {
-    expect(getModelSizes("CogView-3")).toContain("768x1344");
-    expect(supportsCustomSize("cogview-3")).toBe(true);
-  });
-
-  test("returns no sizes for models without custom sizing", () => {
-    expect(getModelSizes("gpt-4")).toEqual([]);
-    expect(supportsCustomSize("gpt-4")).toBe(false);
   });
 });

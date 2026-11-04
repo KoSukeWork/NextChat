@@ -1,6 +1,6 @@
 import { useUpdateStore } from "../app/store/update";
 
-test("old update data preserves usage while the current build supplies the version", () => {
+test("old update data drops removed usage fields while the current build supplies the version", () => {
   const options = useUpdateStore.persist.getOptions();
   const legacy = {
     version: "1.0.0",
@@ -15,9 +15,9 @@ test("old update data preserves usage while the current build supplies the versi
   const merged = options.merge!(legacy, current);
   expect(merged.version).toBe("2.16.1");
   expect(merged.formatVersion(merged.version)).toBe("2.16.1");
-  expect(merged.used).toBe(4.5);
-  expect(merged.subscription).toBe(20);
-  expect(merged.lastUpdateUsage).toBe(456);
+  expect(merged).not.toHaveProperty("used");
+  expect(merged).not.toHaveProperty("subscription");
+  expect(merged).not.toHaveProperty("lastUpdateUsage");
   expect(merged).not.toHaveProperty("remoteVersion");
   expect(merged).not.toHaveProperty("lastUpdate");
   expect(merged).not.toHaveProperty("getLatestVersion");

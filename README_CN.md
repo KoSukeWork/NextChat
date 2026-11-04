@@ -10,7 +10,7 @@
 
 [NextChatAI](https://nextchat.club?utm_source=readme) / [企业版](#%E4%BC%81%E4%B8%9A%E7%89%88) / [演示 Demo](https://chat-gpt-next-web.vercel.app/) / [反馈 Issues](https://github.com/Yidadaa/ChatGPT-Next-Web/issues) / [加入 Discord](https://discord.gg/zrhvHCr79N)
 
-[<img src="https://vercel.com/button" alt="Deploy on Zeabur" height="30">](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FChatGPTNextWeb%2FChatGPT-Next-Web&env=OPENAI_API_KEY&env=CODE&project-name=nextchat&repository-name=NextChat) [<img src="https://zeabur.com/button.svg" alt="Deploy on Zeabur" height="30">](https://zeabur.com/templates/ZBUEFA) [<img src="https://gitpod.io/button/open-in-gitpod.svg" alt="Open in Gitpod" height="30">](https://gitpod.io/#https://github.com/Yidadaa/ChatGPT-Next-Web)
+[<img src="https://vercel.com/button" alt="Deploy on Zeabur" height="30">](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FChatGPTNextWeb%2FChatGPT-Next-Web&env=CODE&project-name=nextchat&repository-name=NextChat) [<img src="https://zeabur.com/button.svg" alt="Deploy on Zeabur" height="30">](https://zeabur.com/templates/ZBUEFA) [<img src="https://gitpod.io/button/open-in-gitpod.svg" alt="Open in Gitpod" height="30">](https://gitpod.io/#https://github.com/Yidadaa/ChatGPT-Next-Web)
 
 </div>
 
@@ -40,9 +40,9 @@
 
 ## 开始使用
 
-1. 准备好你的 [OpenAI API Key](https://platform.openai.com/account/api-keys);
+1. 准备好所用接口的 API Key；
 2. 点击右侧按钮开始部署：
-   [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FYidadaa%2FChatGPT-Next-Web&env=OPENAI_API_KEY&env=CODE&env=GOOGLE_API_KEY&project-name=chatgpt-next-web&repository-name=ChatGPT-Next-Web)，直接使用 Github 账号登录即可，记得在环境变量页填入 API Key 和[页面访问密码](#配置页面访问密码) CODE；
+   [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FYidadaa%2FChatGPT-Next-Web&env=CODE&project-name=chatgpt-next-web&repository-name=ChatGPT-Next-Web)，直接使用 Github 账号登录即可，记得在环境变量页填入 [页面访问密码](#配置页面访问密码) CODE；
 3. 部署完毕后，即可开始使用；
 4. （可选）[绑定自定义域名](https://vercel.com/docs/concepts/projects/domains/add-a-domain)：Vercel 分配的域名 DNS 在某些区域被污染了，绑定自定义域名即可直连。
 
@@ -93,205 +93,9 @@ code1,code2,code3
 
 ## 环境变量
 
-> 本项目大多数配置项都通过环境变量来设置，教程：[如何修改 Vercel 环境变量](./docs/vercel-cn.md)。
+请在设置的“接口配置”中选择 OpenAI Chat、OpenAI Responses、Anthropic Messages 或 Gemini，填写基础地址、API Key 和模型。接口配置仅保存在本机，本地导出会包含这些配置，云同步不会上传。
 
-### `OPENAI_API_KEY` （必填项）
-
-OpenAI 密钥，你在 openai 账户页面申请的 api key，使用英文逗号隔开多个 key，这样可以随机轮询这些 key。
-
-### `CODE` （可选）
-
-访问密码，可选，可以使用逗号隔开多个密码。
-
-**警告**：如果不填写此项，则任何人都可以直接使用你部署后的网站，可能会导致你的 token 被急速消耗完毕，建议填写此选项。
-
-### `BASE_URL` （可选）
-
-> Default: `https://api.openai.com`
-
-> Examples: `http://your-openai-proxy.com`
-
-OpenAI 接口代理 URL，如果你手动配置了 openai 接口代理，请填写此选项。
-
-> 如果遇到 ssl 证书问题，请将 `BASE_URL` 的协议设置为 http。
-
-### `OPENAI_ORG_ID` （可选）
-
-指定 OpenAI 中的组织 ID。
-
-### `AZURE_URL` （可选）
-
-> 形如：https://{azure-resource-url}/openai
-
-Azure 部署地址。
-
-### `AZURE_API_KEY` （可选）
-
-Azure 密钥。
-
-### `AZURE_API_VERSION` （可选）
-
-Azure Api 版本，你可以在这里找到：[Azure 文档](https://learn.microsoft.com/en-us/azure/ai-services/openai/reference#chat-completions)。
-
-### `GOOGLE_API_KEY` (可选)
-
-Google Gemini Pro 密钥.
-
-### `GOOGLE_URL` (可选)
-
-Google Gemini Pro Api Url.
-
-### `ANTHROPIC_API_KEY` (可选)
-
-anthropic claude Api Key.
-
-### `ANTHROPIC_API_VERSION` (可选)
-
-anthropic claude Api version.
-
-### `ANTHROPIC_URL` (可选)
-
-anthropic claude Api Url.
-
-### `BAIDU_API_KEY` (可选)
-
-Baidu Api Key.
-
-### `BAIDU_SECRET_KEY` (可选)
-
-Baidu Secret Key.
-
-### `BAIDU_URL` (可选)
-
-Baidu Api Url.
-
-### `BYTEDANCE_API_KEY` (可选)
-
-ByteDance Api Key.
-
-### `BYTEDANCE_URL` (可选)
-
-ByteDance Api Url.
-
-### `ALIBABA_API_KEY` (可选)
-
-阿里云（千问）Api Key.
-
-### `ALIBABA_URL` (可选)
-
-阿里云（千问）Api Url.
-
-### `IFLYTEK_URL` (可选)
-
-讯飞星火Api Url.
-
-### `IFLYTEK_API_KEY` (可选)
-
-讯飞星火Api Key.
-
-### `IFLYTEK_API_SECRET` (可选)
-
-讯飞星火Api Secret.
-
-### `CHATGLM_API_KEY` (可选)
-
-ChatGLM Api Key.
-
-### `CHATGLM_URL` (可选)
-
-ChatGLM Api Url.
-
-### `DEEPSEEK_API_KEY` (可选)
-
-DeepSeek Api Key.
-
-### `DEEPSEEK_URL` (可选)
-
-DeepSeek Api Url.
-
-### `HIDE_USER_API_KEY` （可选）
-
-如果你不想让用户自行填入 API Key，将此环境变量设置为 1 即可。
-
-### `DISABLE_GPT4` （可选）
-
-如果你不想让用户使用 GPT-4，将此环境变量设置为 1 即可。
-
-### `ENABLE_BALANCE_QUERY` （可选）
-
-如果你想启用余额查询功能，将此环境变量设置为 1 即可。
-
-### `DISABLE_FAST_LINK` （可选）
-
-如果你想禁用从链接解析预制设置，将此环境变量设置为 1 即可。
-
-### `WHITE_WEBDAV_ENDPOINTS` (可选)
-
-如果你想增加允许访问的webdav服务地址，可以使用该选项，格式要求：
-
-- 每一个地址必须是一个完整的 endpoint
-  > `https://xxxx/xxx`
-- 多个地址以`,`相连
-
-### `CUSTOM_MODELS` （可选）
-
-> 示例：`+qwen-7b-chat,+glm-6b,-gpt-3.5-turbo,gpt-4-1106-preview=gpt-4-turbo` 表示增加 `qwen-7b-chat` 和 `glm-6b` 到模型列表，而从列表中删除 `gpt-3.5-turbo`，并将 `gpt-4-1106-preview` 模型名字展示为 `gpt-4-turbo`。
-> 如果你想先禁用所有模型，再启用指定模型，可以使用 `-all,+gpt-3.5-turbo`，则表示仅启用 `gpt-3.5-turbo`
-
-用来控制模型列表，使用 `+` 增加一个模型，使用 `-` 来隐藏一个模型，使用 `模型名=展示名` 来自定义模型的展示名，用英文逗号隔开。
-
-在Azure的模式下，支持使用`modelName@Azure=deploymentName`的方式配置模型名称和部署名称(deploy-name)
-
-> 示例：`+gpt-3.5-turbo@Azure=gpt35`这个配置会在模型列表显示一个`gpt35(Azure)`的选项。
-> 如果你只能使用Azure模式，那么设置 `-all,+gpt-3.5-turbo@Azure=gpt35` 则可以让对话的默认使用 `gpt35(Azure)`
-
-在ByteDance的模式下，支持使用`modelName@bytedance=deploymentName`的方式配置模型名称和部署名称(deploy-name)
-
-> 示例: `+Doubao-lite-4k@bytedance=ep-xxxxx-xxx`这个配置会在模型列表显示一个`Doubao-lite-4k(ByteDance)`的选项
-
-### `DEFAULT_MODEL` （可选）
-
-更改默认模型
-
-### `VISION_MODELS` (可选)
-
-> 默认值：空
-> 示例：`gpt-4-vision,claude-3-opus,my-custom-model` 表示为这些模型添加视觉能力，作为对默认模式匹配的补充（默认会检测包含"vision"、"claude-3"、"gemini-1.5"等关键词的模型）。
-
-在默认模式匹配之外，添加更多具有视觉能力的模型。多个模型用逗号分隔。
-
-### `DEFAULT_INPUT_TEMPLATE` （可选）
-
-自定义默认的 template，用于初始化『设置』中的『用户输入预处理』配置项
-
-### `STABILITY_API_KEY` (optional)
-
-Stability API密钥
-
-### `STABILITY_URL` (optional)
-
-自定义的Stability API请求地址
-
-### `ENABLE_MCP` (optional)
-
-启用 MCP（Model Context Protocol）功能。出于安全考虑，启用 MCP 时必须同时配置
-`CODE`，所有 MCP Server Action 都会校验该访问密码。
-
-### `SILICONFLOW_API_KEY` (optional)
-
-SiliconFlow API Key.
-
-### `SILICONFLOW_URL` (optional)
-
-SiliconFlow API URL.
-
-### `AI302_API_KEY` (optional)
-
-302.AI API Key.
-
-### `AI302_URL` (optional)
-
-302.AI API URL.
+可选服务端配置见 `.env.template`。`CODE` 用于网页版访问验证；启用 `ENABLE_MCP=true` 时也必须配置 `CODE`。`WHITE_WEBDAV_ENDPOINTS` 用于增加允许的 WebDAV 转发地址。
 
 ## 开发
 
@@ -299,14 +103,7 @@ SiliconFlow API URL.
 
 [![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/Yidadaa/ChatGPT-Next-Web)
 
-在开始写代码之前，需要在项目根目录新建一个 `.env.local` 文件，里面填入环境变量：
-
-```
-OPENAI_API_KEY=<your api key here>
-
-# 中国大陆用户，可以使用本项目自带的代理进行开发，你也可以自由选择其他代理地址
-BASE_URL=https://b.nextweb.fun/api/proxy
-```
+请在设置的“接口配置”中选择 OpenAI Chat、OpenAI Responses、Anthropic Messages 或 Gemini，填写基础地址、API Key 和模型。接口配置仅保存在本机，本地导出会包含这些配置，云同步不会上传。
 
 ### 本地开发
 
@@ -330,7 +127,6 @@ BASE_URL=https://b.nextweb.fun/api/proxy
 docker pull yidadaa/chatgpt-next-web
 
 docker run -d -p 3000:3000 \
-   -e OPENAI_API_KEY=sk-xxxx \
    -e CODE=页面访问密码 \
    yidadaa/chatgpt-next-web
 ```
@@ -339,7 +135,6 @@ docker run -d -p 3000:3000 \
 
 ```shell
 docker run -d -p 3000:3000 \
-   -e OPENAI_API_KEY=sk-xxxx \
    -e CODE=页面访问密码 \
    --net=host \
    -e PROXY_URL=http://127.0.0.1:7890 \
@@ -350,7 +145,6 @@ docker run -d -p 3000:3000 \
 
 ```shell
 docker run -d -p 3000:3000 \
-   -e OPENAI_API_KEY=sk-xxxx \
    -e CODE=页面访问密码 \
    -e ENABLE_MCP=true \
    yidadaa/chatgpt-next-web

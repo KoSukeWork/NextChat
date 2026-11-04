@@ -44,19 +44,14 @@ import AutoIcon from "../icons/auto.svg";
 import BottomIcon from "../icons/bottom.svg";
 import StopIcon from "../icons/pause.svg";
 import RobotIcon from "../icons/robot.svg";
-import SizeIcon from "../icons/size.svg";
-import QualityIcon from "../icons/hd.svg";
-import StyleIcon from "../icons/palette.svg";
 import PluginIcon from "../icons/plugin.svg";
 import ShortcutkeyIcon from "../icons/shortcutkey.svg";
 import McpToolIcon from "../icons/tool.svg";
-import HeadphoneIcon from "../icons/headphone.svg";
 import {
   BOT_HELLO,
   ChatMessage,
   createMessage,
   DEFAULT_TOPIC,
-  ModelType,
   SubmitKey,
   Theme,
   useAccessStore,
@@ -71,14 +66,10 @@ import {
   getMessageImages,
   getMessageTextContent,
   getMessageTextContentForContext,
-  isDalle3,
   isVisionModel,
   safeLocalStorage,
-  getModelSizes,
-  supportsCustomSize,
   useMobileScreen,
   selectOrCopy,
-  showPlugins,
 } from "../utils";
 
 import { uploadImage as uploadImageRemote } from "@/app/utils/chat";
@@ -86,7 +77,6 @@ import { uploadImage as uploadImageRemote } from "@/app/utils/chat";
 import dynamic from "next/dynamic";
 
 import { ChatControllerPool } from "../client/controller";
-import { DalleQuality, DalleStyle, ModelSize } from "../typing";
 import { Prompt, usePromptStore } from "../store/prompt";
 import Locale from "../locales";
 
@@ -108,7 +98,6 @@ import {
   CHAT_PAGE_SIZE,
   Path,
   REQUEST_TIMEOUT_MS,
-  ServiceProvider,
   UNFINISHED_INPUT,
 } from "../constant";
 import { Avatar } from "./emoji";
@@ -125,8 +114,6 @@ import { useLocalTTS } from "../utils/use-local-tts";
 import { showSpeechFallback } from "./tts-feedback";
 
 import { isEmpty } from "lodash-es";
-import { getModelProvider } from "../utils/model";
-import { RealtimeChat } from "@/app/components/realtime-chat";
 import clsx from "clsx";
 import { getAvailableClientsCount, isMcpEnabled } from "../mcp/actions";
 
@@ -464,7 +451,6 @@ export function ChatActions(props: {
   uploading: boolean;
   setShowShortcutKeyModal: React.Dispatch<React.SetStateAction<boolean>>;
   setUserInput: (input: string) => void;
-  setShowChatSidePanel: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
   const config = useAppConfig();
   const navigate = useNavigate();
@@ -489,46 +475,18 @@ export function ChatActions(props: {
 
   // switch model
   const currentModel = session.mask.modelConfig.model;
-  const currentProviderName =
-    session.mask.modelConfig?.providerName || ServiceProvider.OpenAI;
-  const allModels = useAllModels();
-  const models = useMemo(() => {
-    const filteredModels = allModels.filter((m) => m.available);
-    const defaultModel = filteredModels.find((m) => m.isDefault);
-
-    if (defaultModel) {
-      const arr = [
-        defaultModel,
-        ...filteredModels.filter((m) => m !== defaultModel),
-      ];
-      return arr;
-    } else {
-      return filteredModels;
-    }
-  }, [allModels]);
+  const currentEndpointId = session.mask.modelConfig.endpointId ?? "";
+  const models = useAllModels();
   const currentModelName = useMemo(() => {
     const model = models.find(
-      (m) =>
-        m.name == currentModel &&
-        m?.provider?.providerName == currentProviderName,
+      (item) =>
+        item.name === currentModel && item.endpointId === currentEndpointId,
     );
     return model?.displayName ?? Locale.ModelDiscovery.Unconfigured;
-  }, [models, currentModel, currentProviderName]);
+  }, [models, currentModel, currentEndpointId]);
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [showPluginSelector, setShowPluginSelector] = useState(false);
   const [showUploadImage, setShowUploadImage] = useState(false);
-
-  const [showSizeSelector, setShowSizeSelector] = useState(false);
-  const [showQualitySelector, setShowQualitySelector] = useState(false);
-  const [showStyleSelector, setShowStyleSelector] = useState(false);
-  const modelSizes = getModelSizes(currentModel);
-  const dalle3Qualitys: DalleQuality[] = ["standard", "hd"];
-  const dalle3Styles: DalleStyle[] = ["vivid", "natural"];
-  const currentSize =
-    session.mask.modelConfig?.size ?? ("1024x1024" as ModelSize);
-  const currentQuality = session.mask.modelConfig?.quality ?? "standard";
-  const currentStyle = session.mask.modelConfig?.style ?? "vivid";
-
   const isMobileScreen = useMobileScreen();
 
   useEffect(() => {
@@ -538,34 +496,7 @@ export function ChatActions(props: {
       props.setAttachImages([]);
       props.setUploading(false);
     }
-
-    // if current model is not available
-    // switch to first available model
-    const isUnavailableModel = !models.some(
-      (m) =>
-        m.name === currentModel &&
-        m.provider?.providerName === currentProviderName,
-    );
-    if (isUnavailableModel && models.length === 0 && currentModel) {
-      chatStore.updateTargetSession(session, (session) => {
-        session.mask.modelConfig.model = "";
-      });
-    }
-    if (isUnavailableModel && models.length > 0) {
-      // show next model to default model if exist
-      let nextModel = models.find((model) => model.isDefault) || models[0];
-      chatStore.updateTargetSession(session, (session) => {
-        session.mask.modelConfig.model = nextModel.name;
-        session.mask.modelConfig.providerName = nextModel?.provider
-          ?.providerName as ServiceProvider;
-      });
-      showToast(
-        nextModel?.provider?.providerName == "ByteDance"
-          ? nextModel.displayName
-          : nextModel.name,
-      );
-    }
-  }, [chatStore, currentModel, currentProviderName, models, session]);
+  }, [currentModel, props.setAttachImages, props.setUploading]);
 
   return (
     <div className={styles["chat-input-actions"]}>
@@ -648,7 +579,10 @@ export function ChatActions(props: {
           onClick={() =>
             models.length
               ? setShowModelSelector(true)
-              : showToast(Locale.ModelDiscovery.ConfigureFirst)
+              : showToast(Locale.ModelDiscovery.ConfigureFirst, {
+                  text: Locale.EndpointConfig.OpenSettings,
+                  onClick: () => navigate(Path.Settings),
+                })
           }
           text={currentModelName}
           icon={<RobotIcon />}
@@ -656,133 +590,41 @@ export function ChatActions(props: {
 
         {showModelSelector && (
           <Selector
-            defaultSelectedValue={`${currentModel}@${currentProviderName}`}
-            items={models.map((m) => ({
-              title: `${m.displayName}${
-                m?.provider?.providerName
-                  ? " (" + m?.provider?.providerName + ")"
-                  : ""
-              }`,
-              value: `${m.name}@${m?.provider?.providerName}`,
+            searchPlaceholder={Locale.ModelDiscovery.Search}
+            defaultSelectedValue={JSON.stringify([
+              currentEndpointId,
+              currentModel,
+            ])}
+            items={models.map((model) => ({
+              title: `${model.displayName} (${model.endpointName})`,
+              searchText: model.name,
+              value: JSON.stringify([model.endpointId, model.name]),
             }))}
             onClose={() => setShowModelSelector(false)}
-            onSelection={(s) => {
-              if (s.length === 0) return;
-              const [model, providerName] = getModelProvider(s[0]);
-              chatStore.updateTargetSession(session, (session) => {
-                session.mask.modelConfig.model = model as ModelType;
-                session.mask.modelConfig.providerName =
-                  providerName as ServiceProvider;
-                session.mask.syncGlobalConfig = false;
+            onSelection={(selected) => {
+              if (!selected.length) return;
+              const [endpointId, model] = JSON.parse(selected[0]);
+              chatStore.updateTargetSession(session, (target) => {
+                target.mask.modelConfig.model = model;
+                target.mask.modelConfig.endpointId = endpointId;
+                target.mask.syncGlobalConfig = false;
               });
-              if (providerName == "ByteDance") {
-                const selectedModel = models.find(
-                  (m) =>
-                    m.name == model &&
-                    m?.provider?.providerName == providerName,
-                );
-                showToast(selectedModel?.displayName ?? "");
-              } else {
-                showToast(model);
-              }
+              showToast(model);
             }}
           />
         )}
 
-        {supportsCustomSize(currentModel) && (
-          <ChatAction
-            onClick={() => setShowSizeSelector(true)}
-            text={currentSize}
-            icon={<SizeIcon />}
-          />
-        )}
-
-        {showSizeSelector && (
-          <Selector
-            defaultSelectedValue={currentSize}
-            items={modelSizes.map((m) => ({
-              title: m,
-              value: m,
-            }))}
-            onClose={() => setShowSizeSelector(false)}
-            onSelection={(s) => {
-              if (s.length === 0) return;
-              const size = s[0];
-              chatStore.updateTargetSession(session, (session) => {
-                session.mask.modelConfig.size = size;
-              });
-              showToast(size);
-            }}
-          />
-        )}
-
-        {isDalle3(currentModel) && (
-          <ChatAction
-            onClick={() => setShowQualitySelector(true)}
-            text={currentQuality}
-            icon={<QualityIcon />}
-          />
-        )}
-
-        {showQualitySelector && (
-          <Selector
-            defaultSelectedValue={currentQuality}
-            items={dalle3Qualitys.map((m) => ({
-              title: m,
-              value: m,
-            }))}
-            onClose={() => setShowQualitySelector(false)}
-            onSelection={(q) => {
-              if (q.length === 0) return;
-              const quality = q[0];
-              chatStore.updateTargetSession(session, (session) => {
-                session.mask.modelConfig.quality = quality;
-              });
-              showToast(quality);
-            }}
-          />
-        )}
-
-        {isDalle3(currentModel) && (
-          <ChatAction
-            onClick={() => setShowStyleSelector(true)}
-            text={currentStyle}
-            icon={<StyleIcon />}
-          />
-        )}
-
-        {showStyleSelector && (
-          <Selector
-            defaultSelectedValue={currentStyle}
-            items={dalle3Styles.map((m) => ({
-              title: m,
-              value: m,
-            }))}
-            onClose={() => setShowStyleSelector(false)}
-            onSelection={(s) => {
-              if (s.length === 0) return;
-              const style = s[0];
-              chatStore.updateTargetSession(session, (session) => {
-                session.mask.modelConfig.style = style;
-              });
-              showToast(style);
-            }}
-          />
-        )}
-
-        {showPlugins(currentProviderName, currentModel) && (
-          <ChatAction
-            onClick={() => {
-              if (pluginStore.getAll().length == 0) {
-                navigate(Path.Plugins);
-              } else {
-                setShowPluginSelector(true);
-              }
-            }}
-            text={Locale.Plugin.Name}
-            icon={<PluginIcon />}
-          />
-        )}
+        <ChatAction
+          onClick={() => {
+            if (pluginStore.getAll().length == 0) {
+              navigate(Path.Plugins);
+            } else {
+              setShowPluginSelector(true);
+            }
+          }}
+          text={Locale.Plugin.Name}
+          icon={<PluginIcon />}
+        />
         {showPluginSelector && (
           <Selector
             multiple
@@ -809,15 +651,6 @@ export function ChatActions(props: {
         )}
         {!isMobileScreen && <MCPAction />}
       </>
-      <div className={styles["chat-input-actions-end"]}>
-        {config.realtimeConfig.enable && (
-          <ChatAction
-            onClick={() => props.setShowChatSidePanel(true)}
-            text={"Realtime Chat"}
-            icon={<HeadphoneIcon />}
-          />
-        )}
-      </div>
     </div>
   );
 }
@@ -1522,45 +1355,12 @@ function _Chat() {
       doSubmit(text);
     },
     code: (text) => {
-      if (accessStore.disableFastLink) return;
       console.log("[Command] got code from url: ", text);
       showConfirm(Locale.URLCommand.Code + `code = ${text}`).then((res) => {
         if (res) {
           accessStore.update((access) => (access.accessCode = text));
         }
       });
-    },
-    settings: (text) => {
-      if (accessStore.disableFastLink) return;
-
-      try {
-        const payload = JSON.parse(text) as {
-          key?: string;
-          url?: string;
-        };
-
-        console.log("[Command] got settings from url: ", payload);
-
-        if (payload.key || payload.url) {
-          showConfirm(
-            Locale.URLCommand.Settings +
-              `\n${JSON.stringify(payload, null, 4)}`,
-          ).then((res) => {
-            if (!res) return;
-            if (payload.key) {
-              accessStore.update(
-                (access) => (access.openaiApiKey = payload.key!),
-              );
-            }
-            if (payload.url) {
-              accessStore.update((access) => (access.openaiUrl = payload.url!));
-            }
-            accessStore.update((access) => (access.useCustomConfig = true));
-          });
-        }
-      } catch {
-        console.error("[Command] failed to get settings from url: ", text);
-      }
     },
   });
 
@@ -1752,8 +1552,6 @@ function _Chat() {
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [messages, chatStore, navigate, session]);
-
-  const [showChatSidePanel, setShowChatSidePanel] = useState(false);
 
   return (
     <>
@@ -2194,7 +1992,6 @@ function _Chat() {
                 }}
                 setShowShortcutKeyModal={setShowShortcutKeyModal}
                 setUserInput={setUserInput}
-                setShowChatSidePanel={setShowChatSidePanel}
               />
               <label
                 className={clsx(styles["chat-input-panel-inner"], {
@@ -2253,23 +2050,6 @@ function _Chat() {
                 />
               </label>
             </div>
-          </div>
-          <div
-            className={clsx(styles["chat-side-panel"], {
-              [styles["mobile"]]: isMobileScreen,
-              [styles["chat-side-panel-show"]]: showChatSidePanel,
-            })}
-          >
-            {showChatSidePanel && (
-              <RealtimeChat
-                onClose={() => {
-                  setShowChatSidePanel(false);
-                }}
-                onStartVoice={async () => {
-                  console.log("start voice");
-                }}
-              />
-            )}
           </div>
         </div>
       </div>

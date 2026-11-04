@@ -1,84 +1,67 @@
 import { jest } from "@jest/globals";
 
-jest
-  .mocked(global.fetch)
-  .mockImplementation(
-    async (input) =>
-      ({
-        json: async () =>
-          String(input).includes("prompts.json")
-            ? { en: [], cn: [], tw: [] }
-            : [],
-      }) as Response,
-  );
-
-test.each(["export", "standalone"])(
-  "%s: repeated startup hydration repairs only desktop Access",
-  async (buildMode) => {
-    jest.resetModules();
-    let persisted: string | null = null;
-    jest.unstable_mockModule("@/app/config/client", () => ({
-      getClientConfig: () => ({ buildMode, isApp: buildMode === "export" }),
-    }));
-    jest.unstable_mockModule("@/app/utils/indexedDB-storage", () => ({
-      indexedDBStorage: {
-        getItem: async (key: string) =>
-          key === "access-control" ? persisted : null,
-        setItem: async () => {},
-        removeItem: async () => {},
-        clear: async () => {},
-      },
-    }));
-    await import("../app/client/api");
-    const { useAccessStore } = await import("../app/store/access");
-    await useAccessStore.persist.rehydrate();
-    const initial = useAccessStore.getState();
-    const urlKeys = Object.keys(initial).filter((key) => key.endsWith("Url"));
-    const flags = [
-      "needCode",
-      "hideUserApiKey",
-      "hideBalanceQuery",
-      "disableGPT4",
-      "disableFastLink",
-      "customModels",
-      "defaultModel",
-      "visionModels",
-    ] as const;
-    const legacy: Record<string, unknown> = {
-      ...Object.fromEntries(
-        flags.map((key) => [
-          key,
-          typeof initial[key] === "boolean" ? !initial[key] : "remote-rule",
-        ]),
-      ),
-      ...Object.fromEntries(urlKeys.map((key) => [key, "/api/" + key])),
-      openaiApiKey: "",
-      anthropicApiKey: "user-kept-test-key",
-      anthropicUrl: "https://user.example:8443/custom/v1",
-      googleUrl: "http://127.0.0.1:9999/v1",
-      deepseekUrl: "ftp://invalid.example",
-      xaiUrl: "https://",
-      useCustomConfig: true,
-    };
-    for (let startup = 0; startup < 2; startup++) {
-      // Same version each time: repair is not gated on a schema migration.
-      persisted = JSON.stringify({ state: legacy, version: 3 });
-      await useAccessStore.persist.rehydrate();
-      const result = useAccessStore.getState();
-      for (const key of flags)
-        expect(result[key]).toBe(
-          buildMode === "export" ? initial[key] : legacy[key],
-        );
-      for (const key of urlKeys) {
-        const expected =
-          ["anthropicUrl", "googleUrl"].includes(key) || buildMode !== "export"
-            ? legacy[key]
-            : (initial as any)[key];
-        expect((result as any)[key]).toBe(expected);
-      }
-      expect(result.openaiApiKey).toBe("");
-      expect(result.anthropicApiKey).toBe("user-kept-test-key");
-      expect(result.useCustomConfig).toBe(true);
-    }
+const values = new Map<string, string>();
+let failWrites = false;
+jest.unstable_mockModule("@/app/utils/indexedDB-storage", () => ({
+  indexedDBStorage: {
+    getItem: async (key: string) => values.get(key) ?? null,
+    setItem: async (key: string, value: string) => {
+      if (failWrites) throw new Error("storage full");
+      values.set(key, value);
+    },
+    removeItem: async (key: string) => {
+      values.delete(key);
+    },
   },
+}));
+const { useAccessStore } = await import("../app/store/access");
+const { useAppConfig } = await import("../app/store/config");
+const { LEGACY_ACCESS_BACKUP, LEGACY_CONFIG_BACKUP } = await import(
+  "../app/utils/legacy-endpoint-migration"
 );
+
+beforeEach(() => {
+  values.clear();
+  failWrites = false;
+});
+
+test("access migration preserves the old credentials before retaining the access code", async () => {
+  const old = {
+    accessCode: "site-code",
+    needCode: true,
+    openaiApiKey: "user-key",
+    openaiUrl: "https://example.test",
+  };
+  const result = await useAccessStore.persist.getOptions().migrate!(old, 3);
+  expect(result).toMatchObject({ accessCode: "site-code" });
+  expect(result).not.toHaveProperty("openaiApiKey");
+  expect(JSON.parse(values.get(LEGACY_ACCESS_BACKUP)!).state).toMatchObject(
+    old,
+  );
+  expect(old.openaiApiKey).toBe("user-key");
+});
+
+test("a failed backup aborts migration rather than losing credentials", async () => {
+  const old = { accessCode: "site-code", openaiApiKey: "user-key" };
+  failWrites = true;
+  await expect(
+    useAccessStore.persist.getOptions().migrate!(old, 3),
+  ).rejects.toThrow("storage full");
+  expect(old).toEqual({ accessCode: "site-code", openaiApiKey: "user-key" });
+});
+
+test("failed config hydration does not overwrite the old persisted snapshot", async () => {
+  const old = {
+    state: {
+      modelConfig: { model: "saved", providerName: "OpenAI" },
+      models: [{ name: "saved" }],
+      _hasHydrated: true,
+    },
+    version: 4.4,
+  };
+  values.set("app-config", JSON.stringify(old));
+  failWrites = true;
+  await useAppConfig.persist.rehydrate();
+  expect(JSON.parse(values.get("app-config")!)).toEqual(old);
+  expect(values.has(LEGACY_CONFIG_BACKUP)).toBe(false);
+});
