@@ -365,6 +365,10 @@
     flex: 1;
     min-width: 0;
     margin-right: 8px;
+
+    .chat-body-main-title {
+      max-width: 100%;
+    }
   }
 
   :global(.window-actions) {
@@ -379,6 +383,12 @@
 }
 
 .chat-body-main-title {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: inherit;
   cursor: pointer;
 
   &:hover {
@@ -423,6 +433,10 @@
 
   .chat-body-title {
     text-align: center;
+  }
+
+  .chat-body-main-title {
+    margin: 0 auto;
   }
 }
 

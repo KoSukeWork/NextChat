@@ -26,7 +26,6 @@ import MinIcon from "../icons/min.svg";
 import ResetIcon from "../icons/reload.svg";
 import ReloadIcon from "../icons/reload.svg";
 import BreakIcon from "../icons/break.svg";
-import SettingsIcon from "../icons/chat-settings.svg";
 import DeleteIcon from "../icons/clear.svg";
 import PinIcon from "../icons/pin.svg";
 import SessionPinIcon from "../icons/pin-upright.svg";
@@ -1338,15 +1337,20 @@ function _Chat() {
           <div
             className={clsx("window-header-title", styles["chat-body-title"])}
           >
-            <div
+            <button
+              type="button"
               className={clsx(
                 "window-header-main-title",
                 styles["chat-body-main-title"],
               )}
-              onClickCapture={() => setIsEditingMessage(true)}
+              title={Locale.Chat.InputActions.Settings}
+              aria-label={`${!session.topic ? DEFAULT_TOPIC : session.topic}: ${
+                Locale.Chat.InputActions.Settings
+              }`}
+              onClick={() => setShowPromptModal(true)}
             >
               {!session.topic ? DEFAULT_TOPIC : session.topic}
-            </div>
+            </button>
             <div className="window-header-sub-title">
               {Locale.Chat.SubTitle(session.messages.length)}
             </div>
@@ -1362,15 +1366,6 @@ function _Chat() {
                   showToast(Locale.Chat.Actions.RefreshToast);
                   chatStore.summarizeSession(true, session);
                 }}
-              />
-            </div>
-            <div className="window-action-button">
-              <IconButton
-                icon={<SettingsIcon />}
-                bordered
-                title={Locale.Chat.InputActions.Settings}
-                aria={Locale.Chat.InputActions.Settings}
-                onClick={() => setShowPromptModal(true)}
               />
             </div>
             <div className="window-action-button">
