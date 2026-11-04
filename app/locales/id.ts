@@ -67,16 +67,8 @@ const id: PartialLocaleType = {
     InputActions: {
       Stop: "Hentikan Respons",
       ToBottom: "Gulir ke bawah",
-      Theme: {
-        auto: "Tema Otomatis",
-        light: "Mode Terang",
-        dark: "Mode Gelap",
-      },
-      Prompt: "Perintah Cepat",
-      Masks: "Semua Masker",
       Clear: "Hapus Obrolan",
       Settings: "Pengaturan Obrolan",
-      UploadImage: "Unggah Gambar",
     },
     Rename: "Ganti Nama Obrolan",
     Typing: "Sedang Mengetik…",

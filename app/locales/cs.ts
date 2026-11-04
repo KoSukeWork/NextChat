@@ -67,16 +67,8 @@ const cs: PartialLocaleType = {
     InputActions: {
       Stop: "Zastavit odpověď",
       ToBottom: "Přejít na nejnovější",
-      Theme: {
-        auto: "Automatické téma",
-        light: "Světelný režim",
-        dark: "Tmavý režim",
-      },
-      Prompt: "Rychlé příkazy",
-      Masks: "Všechny masky",
       Clear: "Vymazat konverzaci",
       Settings: "Nastavení konverzace",
-      UploadImage: "Nahrát obrázek",
     },
     Rename: "Přejmenovat konverzaci",
     Typing: "Píše se…",

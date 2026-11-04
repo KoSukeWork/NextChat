@@ -131,16 +131,8 @@ const en: LocaleType = {
     InputActions: {
       Stop: "Stop",
       ToBottom: "To Latest",
-      Theme: {
-        auto: "Auto",
-        light: "Light Theme",
-        dark: "Dark Theme",
-      },
-      Prompt: "Prompts",
-      Masks: "Masks",
       Clear: "Clear Context",
       Settings: "Settings",
-      UploadImage: "Upload Images",
     },
     Rename: "Rename Chat",
     Typing: "Typing…",
@@ -152,6 +144,9 @@ const en: LocaleType = {
       return inputHints + ", / to search prompts, : to use commands";
     },
     Send: "Send",
+    ImageInputHint: ", drag or paste images",
+    ImageUploading: "Processing images…",
+    ImageOnly: "Please use image files only",
     StartSpeak: "Start Speak",
     StopSpeak: "Stop Speak",
     Config: {
@@ -547,9 +542,6 @@ const en: LocaleType = {
     Add: "Add a Prompt",
     Clear: "Context Cleared",
     Revert: "Revert",
-  },
-  Discovery: {
-    Name: "Discovery",
   },
   Mcp: {
     Name: "MCP",

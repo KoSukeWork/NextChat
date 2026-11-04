@@ -66,16 +66,8 @@ const jp: PartialLocaleType = {
     InputActions: {
       Stop: "応答を停止",
       ToBottom: "最新へスクロール",
-      Theme: {
-        auto: "自動テーマ",
-        light: "ライトモード",
-        dark: "ダークモード",
-      },
-      Prompt: "クイックコマンド",
-      Masks: "すべてのマスク",
       Clear: "チャットをクリア",
       Settings: "チャット設定",
-      UploadImage: "画像をアップロード",
     },
     Rename: "チャットの名前を変更",
     Typing: "入力中…",
@@ -345,9 +337,6 @@ const jp: PartialLocaleType = {
   },
   Plugin: {
     Name: "プラグイン",
-  },
-  Discovery: {
-    Name: "発見",
   },
   FineTuned: {
     Sysmessage: "あなたはアシスタントです",

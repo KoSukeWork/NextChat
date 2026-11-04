@@ -23,8 +23,34 @@ type EndpointCallbacks = {
   ) => void;
 };
 
+function waitForAbortable<T>(
+  promise: Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted)
+    return Promise.reject(new DOMException("Aborted", "AbortError"));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new DOMException("Aborted", "AbortError"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
 /** Decode SSE frames across arbitrary network and UTF-8 chunk boundaries. */
-export async function* readEndpointEvents(body: ReadableStream<Uint8Array>) {
+export async function* readEndpointEvents(
+  body: ReadableStream<Uint8Array>,
+  signal?: AbortSignal,
+) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -36,7 +62,7 @@ export async function* readEndpointEvents(body: ReadableStream<Uint8Array>) {
       .join("\n");
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      const { done, value } = await waitForAbortable(reader.read(), signal);
       buffer += decoder.decode(value, { stream: !done });
       let match: RegExpExecArray | null;
       while ((match = /\r?\n\r?\n/.exec(buffer))) {
@@ -50,6 +76,7 @@ export async function* readEndpointEvents(body: ReadableStream<Uint8Array>) {
     const remaining = payload(buffer);
     if (remaining) yield remaining;
   } finally {
+    if (signal?.aborted) void reader.cancel().catch(() => {});
     reader.releaseLock();
   }
 }
@@ -219,12 +246,15 @@ export async function runEndpointChat(
         input.timeoutMs ?? 60000,
       );
       try {
-        lastResponse = await requestFetch(url, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(body),
-          signal: controller.signal,
-        });
+        lastResponse = await waitForAbortable(
+          requestFetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(body),
+            signal: controller.signal,
+          }),
+          controller.signal,
+        );
       } finally {
         clearTimeout(timeout);
       }
@@ -246,7 +276,10 @@ export async function runEndpointChat(
       if (!lastResponse.body)
         throw new Error("Endpoint returned an empty stream");
       const parser = createEndpointEventParser(endpoint.protocol);
-      for await (const data of readEndpointEvents(lastResponse.body)) {
+      for await (const data of readEndpointEvents(
+        lastResponse.body,
+        controller.signal,
+      )) {
         if (data === "[DONE]") break;
         append(parser.parse(JSON.parse(data)));
       }
@@ -256,7 +289,19 @@ export async function runEndpointChat(
         callbacks.onFinish(latest, lastResponse);
         return;
       }
-      const results = await runTools(calls, callbacks, funcs);
+      const results = await waitForAbortable(
+        runTools(
+          calls,
+          {
+            ...callbacks,
+            onAfterTool: (tool) => {
+              if (!controller.signal.aborted) callbacks.onAfterTool?.(tool);
+            },
+          },
+          funcs,
+        ),
+        controller.signal,
+      );
       appendToolResults(endpoint, body, calls, results, parser.outputItems());
     }
     throw new Error("Too many consecutive tool calls");

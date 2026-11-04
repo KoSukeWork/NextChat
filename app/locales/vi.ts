@@ -67,16 +67,8 @@ const vi: PartialLocaleType = {
     InputActions: {
       Stop: "Dừng phản hồi",
       ToBottom: "Cuộn đến tin nhắn mới nhất",
-      Theme: {
-        auto: "Chủ đề tự động",
-        light: "Chế độ sáng",
-        dark: "Chế độ tối",
-      },
-      Prompt: "Lệnh tắt",
-      Masks: "Tất cả mặt nạ",
       Clear: "Xóa cuộc trò chuyện",
       Settings: "Cài đặt trò chuyện",
-      UploadImage: "Tải lên hình ảnh",
     },
     Rename: "Đổi tên cuộc trò chuyện",
     Typing: "Đang nhập…",

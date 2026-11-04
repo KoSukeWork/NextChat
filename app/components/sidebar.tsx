@@ -11,7 +11,8 @@ import DeleteIcon from "../icons/delete.svg";
 import MaskIcon from "../icons/mask.svg";
 import McpIcon from "../icons/mcp.svg";
 import DragIcon from "../icons/drag.svg";
-import DiscoveryIcon from "../icons/discovery.svg";
+import PluginIcon from "../icons/plugin.svg";
+import ShortcutkeyIcon from "../icons/shortcutkey.svg";
 
 import Locale from "../locales";
 
@@ -29,14 +30,13 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import { isIOS, useMobileScreen } from "../utils";
 import dynamic from "next/dynamic";
-import { Selector, showConfirm } from "./ui-lib";
+import { showConfirm } from "./ui-lib";
 import clsx from "clsx";
 import { isMcpEnabled } from "../mcp/actions";
 import { useGlobalSearch } from "./global-search";
+import { useShortcutKey } from "../store/shortcut-key";
 import ArchiveIcon from "../icons/archive.svg";
 import SearchIcon from "../icons/search.svg";
-
-const DISCOVERY = [{ name: Locale.Plugin.Name, path: Path.Plugins }];
 
 const ChatList = dynamic(async () => (await import("./chat-list")).ChatList, {
   loading: () => null,
@@ -228,7 +228,6 @@ export function SideBarTail(props: {
 export function SideBar(props: { className?: string }) {
   useHotKey();
   const { onDragStart, shouldNarrow } = useDragSideBar();
-  const [showDiscoverySelector, setshowDiscoverySelector] = useState(false);
   const navigate = useNavigate();
   const config = useAppConfig();
   const chatStore = useChatStore();
@@ -288,10 +287,14 @@ export function SideBar(props: { className?: string }) {
             />
           )}
           <IconButton
-            icon={<DiscoveryIcon />}
-            text={shouldNarrow ? undefined : Locale.Discovery.Name}
+            icon={<PluginIcon />}
+            text={shouldNarrow ? undefined : Locale.Plugin.Name}
+            title={Locale.Plugin.Name}
+            aria={Locale.Plugin.Name}
             className={styles["sidebar-bar-button"]}
-            onClick={() => setshowDiscoverySelector(true)}
+            onClick={() =>
+              navigate(Path.Plugins, { state: { fromHome: true } })
+            }
             shadow
           />
         </div>
@@ -307,22 +310,6 @@ export function SideBar(props: { className?: string }) {
           onClick={() => useGlobalSearch.getState().setOpen(true)}
           shadow
         />
-        {showDiscoverySelector && (
-          <Selector
-            items={[
-              ...DISCOVERY.map((item) => {
-                return {
-                  title: item.name,
-                  value: item.path,
-                };
-              }),
-            ]}
-            onClose={() => setshowDiscoverySelector(false)}
-            onSelection={(s) => {
-              navigate(s[0], { state: { fromHome: true } });
-            }}
-          />
-        )}
       </SideBarHeader>
       <SideBarBody
         onClick={(e) => {
@@ -363,6 +350,15 @@ export function SideBar(props: { className?: string }) {
                 onClick={() =>
                   navigate(Path.Archived, { state: { fromHome: true } })
                 }
+                shadow
+              />
+            </div>
+            <div className={styles["sidebar-action"]}>
+              <IconButton
+                aria={Locale.Chat.ShortcutKey.Title}
+                title={Locale.Chat.ShortcutKey.Title}
+                icon={<ShortcutkeyIcon />}
+                onClick={() => useShortcutKey.getState().setOpen(true)}
                 shadow
               />
             </div>

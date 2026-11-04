@@ -71,16 +71,8 @@ const ko: PartialLocaleType = {
     InputActions: {
       Stop: "응답 중지",
       ToBottom: "최신으로 스크롤",
-      Theme: {
-        auto: "자동 테마",
-        light: "라이트 모드",
-        dark: "다크 모드",
-      },
-      Prompt: "빠른 명령",
-      Masks: "모든 마스크",
       Clear: "채팅 지우기",
       Settings: "채팅 설정",
-      UploadImage: "이미지 업로드",
     },
     Rename: "채팅 이름 변경",
     Typing: "입력 중…",
@@ -382,9 +374,6 @@ const ko: PartialLocaleType = {
     Add: "대화 추가",
     Clear: "컨텍스트가 지워졌습니다.",
     Revert: "컨텍스트 복원",
-  },
-  Discovery: {
-    Name: "디스커버리",
   },
   Mcp: {
     Name: "MCP 플러그인",

@@ -67,16 +67,8 @@ const tr: PartialLocaleType = {
     InputActions: {
       Stop: "Yanıtı durdur",
       ToBottom: "En alta git",
-      Theme: {
-        auto: "Otomatik tema",
-        light: "Açık mod",
-        dark: "Koyu mod",
-      },
-      Prompt: "Kısayol komutu",
-      Masks: "Tüm maskeler",
       Clear: "Sohbeti temizle",
       Settings: "Sohbet ayarları",
-      UploadImage: "Resim yükle",
     },
     Rename: "Sohbeti yeniden adlandır",
     Typing: "Yazıyor…",

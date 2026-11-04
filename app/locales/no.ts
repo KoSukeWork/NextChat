@@ -69,16 +69,8 @@ const no: PartialLocaleType = {
     InputActions: {
       Stop: "Stopp respons",
       ToBottom: "Rull til nyeste",
-      Theme: {
-        auto: "Automatisk tema",
-        light: "Lyst tema",
-        dark: "Mørkt tema",
-      },
-      Prompt: "Hurtigkommando",
-      Masks: "Alle masker",
       Clear: "Rydd samtale",
       Settings: "Samtaleinnstillinger",
-      UploadImage: "Last opp bilde",
     },
     Rename: "Gi nytt navn til samtale",
     Typing: "Skriver…",

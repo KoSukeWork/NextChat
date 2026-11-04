@@ -121,18 +121,10 @@ const cn = {
       del: "删除聊天",
     },
     InputActions: {
-      Stop: "停止响应",
+      Stop: "停止",
       ToBottom: "滚到最新",
-      Theme: {
-        auto: "自动主题",
-        light: "亮色模式",
-        dark: "深色模式",
-      },
-      Prompt: "快捷指令",
-      Masks: "所有面具",
       Clear: "清除聊天",
       Settings: "对话设置",
-      UploadImage: "上传图片",
     },
     Rename: "重命名对话",
     Typing: "正在输入…",
@@ -144,6 +136,9 @@ const cn = {
       return inputHints + "，/ 触发补全，: 触发命令";
     },
     Send: "发送",
+    ImageInputHint: "，可拖拽或粘贴图片",
+    ImageUploading: "正在处理图片…",
+    ImageOnly: "请选择图片文件",
     StartSpeak: "说话",
     StopSpeak: "停止",
     Config: {
@@ -519,9 +514,6 @@ const cn = {
     Add: "新增一条对话",
     Clear: "上下文已清除",
     Revert: "恢复上下文",
-  },
-  Discovery: {
-    Name: "发现",
   },
   Mcp: {
     Name: "MCP",

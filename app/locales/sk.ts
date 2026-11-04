@@ -68,13 +68,6 @@ const sk: PartialLocaleType = {
     InputActions: {
       Stop: "Zastaviť",
       ToBottom: "Na najnovšie",
-      Theme: {
-        auto: "Automaticky",
-        light: "Svetlý motív",
-        dark: "Tmavý motív",
-      },
-      Prompt: "Výzvy",
-      Masks: "Masky",
       Clear: "Vymazať kontext",
       Settings: "Nastavenia",
     },

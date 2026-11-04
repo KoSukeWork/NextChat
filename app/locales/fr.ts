@@ -68,16 +68,8 @@ const fr: PartialLocaleType = {
     InputActions: {
       Stop: "Arrêter la réponse",
       ToBottom: "Aller au plus récent",
-      Theme: {
-        auto: "Thème automatique",
-        light: "Mode clair",
-        dark: "Mode sombre",
-      },
-      Prompt: "Commandes rapides",
-      Masks: "Tous les masques",
       Clear: "Effacer la discussion",
       Settings: "Paramètres de la discussion",
-      UploadImage: "Télécharger une image",
     },
     Rename: "Renommer la discussion",
     Typing: "En train d'écrire…",

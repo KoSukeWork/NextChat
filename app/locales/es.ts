@@ -69,16 +69,8 @@ const es: PartialLocaleType = {
     InputActions: {
       Stop: "Detener respuesta",
       ToBottom: "Ir al más reciente",
-      Theme: {
-        auto: "Tema automático",
-        light: "Modo claro",
-        dark: "Modo oscuro",
-      },
-      Prompt: "Comandos rápidos",
-      Masks: "Todas las máscaras",
       Clear: "Limpiar chat",
       Settings: "Configuración de conversación",
-      UploadImage: "Subir imagen",
     },
     Rename: "Renombrar conversación",
     Typing: "Escribiendo…",

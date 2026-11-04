@@ -67,13 +67,6 @@ const pt: PartialLocaleType = {
     InputActions: {
       Stop: "Parar",
       ToBottom: "Para o Mais Recente",
-      Theme: {
-        auto: "Automático",
-        light: "Tema Claro",
-        dark: "Tema Escuro",
-      },
-      Prompt: "Prompts",
-      Masks: "Máscaras",
       Clear: "Limpar Contexto",
       Settings: "Configurações",
     },

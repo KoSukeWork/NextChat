@@ -36,9 +36,8 @@ const messages = [
   },
 ];
 const input = {
-  model: "vision-model",
+  model: "ordinary-model",
   messages,
-  vision: true,
   stream: true,
   maxTokens: 1234,
   tools: [tool],
@@ -85,12 +84,103 @@ test("Gemini converts inline images and tools with its authentication header", (
   const request = buildEndpointRequest(endpoint("gemini"), input);
   expect(request.headers["x-goog-api-key"]).toBe("secret");
   expect(request.url).toBe(
-    "https://example.test/v1beta/models/vision-model:streamGenerateContent?alt=sse",
+    "https://example.test/v1beta/models/ordinary-model:streamGenerateContent?alt=sse",
   );
   expect(request.body.contents[0].parts.at(-1)).toEqual({
     inline_data: { mime_type: "image/png", data: "YWJj" },
   });
   expect(request.body.tools[0].functionDeclarations[0]).toEqual(tool.function);
+});
+
+test.each(["openai-chat", "openai-responses", "anthropic", "gemini"] as const)(
+  "%s sends historical images for an arbitrary model and keeps text-only messages as text",
+  (protocol) => {
+    const request = buildEndpointRequest(endpoint(protocol), {
+      ...input,
+      model: "arbitrary-42",
+      messages: [
+        messages[1],
+        { role: "assistant", content: "earlier answer" },
+        { role: "user", content: [{ type: "text", text: "follow up" }] },
+      ],
+    });
+    if (protocol === "openai-chat") {
+      expect(request.body.messages[0].content).toEqual(messages[1].content);
+      expect(request.body.messages[2].content).toBe("follow up");
+    } else if (protocol === "openai-responses") {
+      expect(request.body.input[0].content).toContainEqual({
+        type: "input_image",
+        image_url: "data:image/png;base64,YWJj",
+      });
+      expect(request.body.input[2].content).toBe("follow up");
+    } else if (protocol === "anthropic") {
+      expect(request.body.messages[0].content).toContainEqual({
+        type: "image",
+        source: { type: "base64", media_type: "image/png", data: "YWJj" },
+      });
+      expect(request.body.messages[2].content).toBe("follow up");
+    } else {
+      expect(request.body.contents[0].parts).toContainEqual({
+        inline_data: { mime_type: "image/png", data: "YWJj" },
+      });
+      expect(request.body.contents[2].parts).toEqual([{ text: "follow up" }]);
+    }
+  },
+);
+
+test.each([
+  [
+    "openai-chat",
+    {
+      model: "custom",
+      messages: [{ role: "user", content: "hello" }],
+      stream: true,
+      temperature: 0.4,
+      top_p: 0.8,
+      presence_penalty: 0.1,
+      frequency_penalty: 0.2,
+      max_tokens: 123,
+    },
+  ],
+  [
+    "openai-responses",
+    {
+      model: "custom",
+      input: [{ role: "user", content: "hello" }],
+      stream: true,
+      max_output_tokens: 123,
+    },
+  ],
+  [
+    "anthropic",
+    {
+      model: "custom",
+      messages: [{ role: "user", content: "hello" }],
+      stream: true,
+      max_tokens: 123,
+      temperature: 0.4,
+      top_p: 0.8,
+    },
+  ],
+  [
+    "gemini",
+    {
+      contents: [{ role: "user", parts: [{ text: "hello" }] }],
+      generationConfig: { temperature: 0.4, topP: 0.8, maxOutputTokens: 123 },
+    },
+  ],
+] as const)("%s keeps the plain-text wire format", (protocol, expected) => {
+  const { body } = buildEndpointRequest(endpoint(protocol), {
+    model: "custom",
+    messages: [{ role: "user", content: "hello" }],
+    stream: true,
+    maxTokens: 123,
+    temperature: 0.4,
+    topP: 0.8,
+    presencePenalty: 0.1,
+    frequencyPenalty: 0.2,
+  });
+  expect(body).toEqual(expected);
 });
 
 test("OpenAI chat stream accumulates both reasoning variants and parallel tool fragments", () => {

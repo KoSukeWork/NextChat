@@ -30,6 +30,7 @@ export interface LLMConfig {
 export interface ChatOptions {
   messages: RequestMessage[];
   config: LLMConfig;
+  pluginIds?: string[];
   onUpdate?: (message: string, chunk: string, thinkingActive?: boolean) => void;
   onFinish: (message: string, response: Response) => void;
   onError?: (err: Error) => void;

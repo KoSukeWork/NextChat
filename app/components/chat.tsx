@@ -10,7 +10,6 @@ import React, {
   useState,
 } from "react";
 
-import SendWhiteIcon from "../icons/send-white.svg";
 import BrainIcon from "../icons/brain.svg";
 import RenameIcon from "../icons/rename.svg";
 import EditIcon from "../icons/rename.svg";
@@ -22,8 +21,6 @@ import SpeakIcon from "../icons/speak.svg";
 import SpeakStopIcon from "../icons/speak-stop.svg";
 import LoadingIcon from "../icons/three-dots.svg";
 import LoadingButtonIcon from "../icons/loading.svg";
-import PromptIcon from "../icons/prompt.svg";
-import MaskIcon from "../icons/mask.svg";
 import MaxIcon from "../icons/max.svg";
 import MinIcon from "../icons/min.svg";
 import ResetIcon from "../icons/reload.svg";
@@ -36,24 +33,17 @@ import SessionPinIcon from "../icons/pin-upright.svg";
 import ConfirmIcon from "../icons/confirm.svg";
 import CloseIcon from "../icons/close.svg";
 import CancelIcon from "../icons/cancel.svg";
-import ImageIcon from "../icons/image.svg";
 
-import LightIcon from "../icons/light.svg";
-import DarkIcon from "../icons/dark.svg";
-import AutoIcon from "../icons/auto.svg";
 import BottomIcon from "../icons/bottom.svg";
 import StopIcon from "../icons/pause.svg";
 import RobotIcon from "../icons/robot.svg";
 import PluginIcon from "../icons/plugin.svg";
-import ShortcutkeyIcon from "../icons/shortcutkey.svg";
-import McpToolIcon from "../icons/tool.svg";
 import {
   BOT_HELLO,
   ChatMessage,
   createMessage,
   DEFAULT_TOPIC,
   SubmitKey,
-  Theme,
   useAccessStore,
   useAppConfig,
   useChatStore,
@@ -66,7 +56,6 @@ import {
   getMessageImages,
   getMessageTextContent,
   getMessageTextContentForContext,
-  isVisionModel,
   safeLocalStorage,
   useMobileScreen,
   selectOrCopy,
@@ -81,6 +70,7 @@ import { Prompt, usePromptStore } from "../store/prompt";
 import Locale from "../locales";
 
 import { IconButton } from "./button";
+import { ChatInputControls } from "./chat-input-controls";
 import styles from "./chat.module.scss";
 
 import {
@@ -113,44 +103,13 @@ import { speak, stop } from "../utils/local-tts";
 import { useLocalTTS } from "../utils/use-local-tts";
 import { showSpeechFallback } from "./tts-feedback";
 
-import { isEmpty } from "lodash-es";
 import clsx from "clsx";
-import { getAvailableClientsCount, isMcpEnabled } from "../mcp/actions";
 
 const localStorage = safeLocalStorage();
 
 const Markdown = dynamic(async () => (await import("./markdown")).Markdown, {
   loading: () => <LoadingIcon />,
 });
-
-const MCPAction = () => {
-  const navigate = useNavigate();
-  const accessCode = useAccessStore((state) => state.accessCode);
-  const [count, setCount] = useState<number>(0);
-  const [mcpEnabled, setMcpEnabled] = useState(false);
-
-  useEffect(() => {
-    const checkMcpStatus = async () => {
-      const enabled = await isMcpEnabled();
-      setMcpEnabled(enabled);
-      if (enabled) {
-        const count = await getAvailableClientsCount(accessCode);
-        setCount(count);
-      }
-    };
-    checkMcpStatus();
-  }, [accessCode]);
-
-  if (!mcpEnabled) return null;
-
-  return (
-    <ChatAction
-      onClick={() => navigate(Path.McpMarket)}
-      text={`MCP${count ? ` (${count})` : ""}`}
-      icon={<McpToolIcon />}
-    />
-  );
-};
 
 export function SessionConfigModel(props: { onClose: () => void }) {
   const chatStore = useChatStore();
@@ -416,7 +375,7 @@ export function ChatAction(props: {
 
   return (
     <div
-      className={clsx(styles["chat-input-action"], "clickable")}
+      className={clsx(styles["chat-message-action"], "clickable")}
       onClick={() => {
         props.onClick();
         setTimeout(updateWidth, 1);
@@ -440,38 +399,10 @@ export function ChatAction(props: {
   );
 }
 
-export function ChatActions(props: {
-  uploadImage: () => void;
-  setAttachImages: (images: string[]) => void;
-  setUploading: (uploading: boolean) => void;
-  showPromptModal: () => void;
-  scrollToBottom: () => void;
-  showPromptHints: () => void;
-  hitBottom: boolean;
-  uploading: boolean;
-  setShowShortcutKeyModal: React.Dispatch<React.SetStateAction<boolean>>;
-  setUserInput: (input: string) => void;
-}) {
-  const config = useAppConfig();
+function ChatInputOptions() {
   const navigate = useNavigate();
   const chatStore = useChatStore();
-  const pluginStore = usePluginStore();
   const session = chatStore.currentSession();
-
-  // switch themes
-  const theme = config.theme;
-
-  function nextTheme() {
-    const themes = [Theme.Auto, Theme.Light, Theme.Dark];
-    const themeIndex = themes.indexOf(theme);
-    const nextIndex = (themeIndex + 1) % themes.length;
-    const nextTheme = themes[nextIndex];
-    config.update((config) => (config.theme = nextTheme));
-  }
-
-  // stop all responses
-  const couldStop = ChatControllerPool.hasPending();
-  const stopAll = () => ChatControllerPool.stopAll();
 
   // switch model
   const currentModel = session.mask.modelConfig.model;
@@ -485,97 +416,15 @@ export function ChatActions(props: {
     return model?.displayName ?? Locale.ModelDiscovery.Unconfigured;
   }, [models, currentModel, currentEndpointId]);
   const [showModelSelector, setShowModelSelector] = useState(false);
-  const [showPluginSelector, setShowPluginSelector] = useState(false);
-  const [showUploadImage, setShowUploadImage] = useState(false);
-  const isMobileScreen = useMobileScreen();
-
-  useEffect(() => {
-    const show = isVisionModel(currentModel);
-    setShowUploadImage(show);
-    if (!show) {
-      props.setAttachImages([]);
-      props.setUploading(false);
-    }
-  }, [currentModel, props.setAttachImages, props.setUploading]);
-
+  const clearTitle =
+    session.clearContextIndex === session.messages.length
+      ? Locale.Context.Revert
+      : Locale.Chat.InputActions.Clear;
+  const modelTitle = `${Locale.Exporter.Model}: ${currentModelName}`;
   return (
-    <div className={styles["chat-input-actions"]}>
-      <>
-        {couldStop && (
-          <ChatAction
-            onClick={stopAll}
-            text={Locale.Chat.InputActions.Stop}
-            icon={<StopIcon />}
-          />
-        )}
-        {!props.hitBottom && (
-          <ChatAction
-            onClick={props.scrollToBottom}
-            text={Locale.Chat.InputActions.ToBottom}
-            icon={<BottomIcon />}
-          />
-        )}
-        {props.hitBottom && (
-          <ChatAction
-            onClick={props.showPromptModal}
-            text={Locale.Chat.InputActions.Settings}
-            icon={<SettingsIcon />}
-          />
-        )}
-
-        {showUploadImage && (
-          <ChatAction
-            onClick={props.uploadImage}
-            text={Locale.Chat.InputActions.UploadImage}
-            icon={props.uploading ? <LoadingButtonIcon /> : <ImageIcon />}
-          />
-        )}
-        <ChatAction
-          onClick={nextTheme}
-          text={Locale.Chat.InputActions.Theme[theme]}
-          icon={
-            <>
-              {theme === Theme.Auto ? (
-                <AutoIcon />
-              ) : theme === Theme.Light ? (
-                <LightIcon />
-              ) : theme === Theme.Dark ? (
-                <DarkIcon />
-              ) : null}
-            </>
-          }
-        />
-
-        <ChatAction
-          onClick={props.showPromptHints}
-          text={Locale.Chat.InputActions.Prompt}
-          icon={<PromptIcon />}
-        />
-
-        <ChatAction
-          onClick={() => {
-            navigate(Path.Masks);
-          }}
-          text={Locale.Chat.InputActions.Masks}
-          icon={<MaskIcon />}
-        />
-
-        <ChatAction
-          text={Locale.Chat.InputActions.Clear}
-          icon={<BreakIcon />}
-          onClick={() => {
-            chatStore.updateTargetSession(session, (session) => {
-              if (session.clearContextIndex === session.messages.length) {
-                session.clearContextIndex = undefined;
-              } else {
-                session.clearContextIndex = session.messages.length;
-                session.memoryPrompt = ""; // will clear memory
-              }
-            });
-          }}
-        />
-
-        <ChatAction
+    <>
+      <div className={styles["chat-input-options"]}>
+        <IconButton
           onClick={() =>
             models.length
               ? setShowModelSelector(true)
@@ -584,74 +433,100 @@ export function ChatActions(props: {
                   onClick: () => navigate(Path.Settings),
                 })
           }
-          text={currentModelName}
           icon={<RobotIcon />}
+          title={modelTitle}
+          aria={modelTitle}
+          bordered
+          className={styles["chat-model-select"]}
         />
-
-        {showModelSelector && (
-          <Selector
-            searchPlaceholder={Locale.ModelDiscovery.Search}
-            defaultSelectedValue={JSON.stringify([
-              currentEndpointId,
-              currentModel,
-            ])}
-            items={models.map((model) => ({
-              title: `${model.displayName} (${model.endpointName})`,
-              searchText: model.name,
-              value: JSON.stringify([model.endpointId, model.name]),
-            }))}
-            onClose={() => setShowModelSelector(false)}
-            onSelection={(selected) => {
-              if (!selected.length) return;
-              const [endpointId, model] = JSON.parse(selected[0]);
-              chatStore.updateTargetSession(session, (target) => {
-                target.mask.modelConfig.model = model;
-                target.mask.modelConfig.endpointId = endpointId;
-                target.mask.syncGlobalConfig = false;
-              });
-              showToast(model);
-            }}
-          />
-        )}
-
-        <ChatAction
+        <IconButton
+          title={clearTitle}
+          aria={clearTitle}
+          icon={<BreakIcon />}
+          bordered
+          className={styles["chat-clear-context"]}
           onClick={() => {
-            if (pluginStore.getAll().length == 0) {
+            chatStore.updateTargetSession(session, (target) => {
+              if (target.clearContextIndex === target.messages.length) {
+                target.clearContextIndex = undefined;
+              } else {
+                target.clearContextIndex = target.messages.length;
+                target.memoryPrompt = ""; // will clear memory
+              }
+            });
+          }}
+        />
+      </div>
+
+      {showModelSelector && (
+        <Selector
+          searchPlaceholder={Locale.ModelDiscovery.Search}
+          defaultSelectedValue={JSON.stringify([
+            currentEndpointId,
+            currentModel,
+          ])}
+          items={models.map((model) => ({
+            title: `${model.displayName} (${model.endpointName})`,
+            searchText: model.name,
+            value: JSON.stringify([model.endpointId, model.name]),
+          }))}
+          onClose={() => setShowModelSelector(false)}
+          onSelection={(selected) => {
+            if (!selected.length) return;
+            const [endpointId, model] = JSON.parse(selected[0]);
+            chatStore.updateTargetSession(session, (target) => {
+              target.mask.modelConfig.model = model;
+              target.mask.modelConfig.endpointId = endpointId;
+              target.mask.syncGlobalConfig = false;
+            });
+            showToast(model);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function ChatPluginAction() {
+  const navigate = useNavigate();
+  const chatStore = useChatStore();
+  const pluginStore = usePluginStore();
+  const session = chatStore.currentSession();
+  const [showPluginSelector, setShowPluginSelector] = useState(false);
+  return (
+    <>
+      <div className="window-action-button">
+        <IconButton
+          onClick={() => {
+            if (pluginStore.getAll().length === 0) {
               navigate(Path.Plugins);
             } else {
               setShowPluginSelector(true);
             }
           }}
-          text={Locale.Plugin.Name}
+          title={Locale.Plugin.Name}
+          aria={Locale.Plugin.Name}
           icon={<PluginIcon />}
+          bordered
         />
-        {showPluginSelector && (
-          <Selector
-            multiple
-            defaultSelectedValue={chatStore.currentSession().mask?.plugin}
-            items={pluginStore.getAll().map((item) => ({
-              title: `${item?.title}@${item?.version}`,
-              value: item?.id,
-            }))}
-            onClose={() => setShowPluginSelector(false)}
-            onSelection={(s) => {
-              chatStore.updateTargetSession(session, (session) => {
-                session.mask.plugin = s as string[];
-              });
-            }}
-          />
-        )}
-
-        {!isMobileScreen && (
-          <ChatAction
-            onClick={() => props.setShowShortcutKeyModal(true)}
-            text={Locale.Chat.ShortcutKey.Title}
-            icon={<ShortcutkeyIcon />}
-          />
-        )}
-        {!isMobileScreen && <MCPAction />}
-      </>
-    </div>
+      </div>
+      {showPluginSelector && (
+        <Selector
+          multiple
+          defaultSelectedValue={session.mask?.plugin}
+          items={pluginStore.getAll().map((item) => ({
+            title: `${item?.title}@${item?.version}`,
+            value: item?.id,
+          }))}
+          onClose={() => setShowPluginSelector(false)}
+          onSelection={(selected) => {
+            chatStore.updateTargetSession(session, (target) => {
+              target.mask.plugin = selected as string[];
+            });
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -727,77 +602,6 @@ export function DeleteImageButton(props: { deleteImage: () => void }) {
   );
 }
 
-export function ShortcutKeyModal(props: { onClose: () => void }) {
-  const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
-  const shortcuts = [
-    {
-      title: Locale.Chat.ShortcutKey.newChat,
-      keys: isMac ? ["⌘", "Shift", "O"] : ["Ctrl", "Shift", "O"],
-    },
-    { title: Locale.Chat.ShortcutKey.focusInput, keys: ["Shift", "Esc"] },
-    {
-      title: Locale.Chat.ShortcutKey.copyLastCode,
-      keys: isMac ? ["⌘", "Shift", ";"] : ["Ctrl", "Shift", ";"],
-    },
-    {
-      title: Locale.Chat.ShortcutKey.copyLastMessage,
-      keys: isMac ? ["⌘", "Shift", "C"] : ["Ctrl", "Shift", "C"],
-    },
-    {
-      title: Locale.Chat.ShortcutKey.showShortcutKey,
-      keys: isMac ? ["⌘", "/"] : ["Ctrl", "/"],
-    },
-    {
-      title: Locale.Chat.ShortcutKey.search,
-      keys: isMac ? ["⌘", "K"] : ["Ctrl", "K"],
-    },
-    {
-      title: Locale.Chat.ShortcutKey.clearContext,
-      keys: isMac
-        ? ["⌘", "Shift", "backspace"]
-        : ["Ctrl", "Shift", "backspace"],
-    },
-  ];
-  return (
-    <div className="modal-mask">
-      <Modal
-        title={Locale.Chat.ShortcutKey.Title}
-        onClose={props.onClose}
-        actions={[
-          <IconButton
-            type="primary"
-            text={Locale.UI.Confirm}
-            icon={<ConfirmIcon />}
-            key="ok"
-            onClick={() => {
-              props.onClose();
-            }}
-          />,
-        ]}
-      >
-        <div className={styles["shortcut-key-container"]}>
-          <div className={styles["shortcut-key-grid"]}>
-            {shortcuts.map((shortcut, index) => (
-              <div key={index} className={styles["shortcut-key-item"]}>
-                <div className={styles["shortcut-key-title"]}>
-                  {shortcut.title}
-                </div>
-                <div className={styles["shortcut-key-keys"]}>
-                  {shortcut.keys.map((key, i) => (
-                    <div key={i} className={styles["shortcut-key"]}>
-                      <span>{key}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </Modal>
-    </div>
-  );
-}
-
 function _Chat() {
   type RenderMessage = ChatMessage & { preview?: boolean };
 
@@ -815,6 +619,7 @@ function _Chat() {
   const [showExport, setShowExport] = useState(false);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const pendingImageUploads = useRef(0);
   const [userInput, setUserInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const { submitKey, shouldSubmit } = useSubmitHandler();
@@ -848,6 +653,7 @@ function _Chat() {
       !!jumpToMessageId || !!scrollTargetId,
     );
   const [hitBottom, setHitBottom] = useState(true);
+  useEffect(() => setHitBottom(true), [session.id]);
   const isMobileScreen = useMobileScreen();
   const navigate = useNavigate();
   const [attachImages, setAttachImages] = useState<string[]>([]);
@@ -922,7 +728,8 @@ function _Chat() {
   };
 
   const doSubmit = (userInput: string) => {
-    if (userInput.trim() === "" && isEmpty(attachImages)) return;
+    if (pendingImageUploads.current > 0) return;
+    if (userInput.trim() === "" && attachImages.length === 0) return;
     const matchCommand = chatCommands.match(userInput);
     if (matchCommand.matched) {
       setUserInput("");
@@ -1384,96 +1191,54 @@ function _Chat() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handlePaste = useCallback(
-    async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      const currentModel = chatStore.currentSession().mask.modelConfig.model;
-      if (!isVisionModel(currentModel)) {
-        return;
-      }
-      const items = (event.clipboardData || window.clipboardData).items;
-      for (const item of items) {
-        if (item.kind === "file" && item.type.startsWith("image/")) {
-          event.preventDefault();
-          const file = item.getAsFile();
-          if (file) {
-            const images: string[] = [];
-            images.push(...attachImages);
-            images.push(
-              ...(await new Promise<string[]>((res, rej) => {
-                setUploading(true);
-                const imagesData: string[] = [];
-                uploadImageRemote(file)
-                  .then((dataUrl) => {
-                    imagesData.push(dataUrl);
-                    setUploading(false);
-                    res(imagesData);
-                  })
-                  .catch((e) => {
-                    setUploading(false);
-                    rej(e);
-                  });
-              })),
-            );
-            const imagesLength = images.length;
+  const addImageFiles = useCallback(async (files: File[]) => {
+    const images = files
+      .filter((file) => file.type.startsWith("image/"))
+      .slice(0, 3);
+    if (files.some((file) => !file.type.startsWith("image/"))) {
+      showToast(Locale.Chat.ImageOnly);
+    }
+    if (!images.length) return;
+    pendingImageUploads.current += 1;
+    setUploading(true);
+    try {
+      const urls = await Promise.all(
+        images.map((file) => uploadImageRemote(file)),
+      );
+      setAttachImages((previous) => previous.concat(urls).slice(0, 3));
+    } catch (error) {
+      console.error("[Chat] image upload failed", error);
+      showToast(Locale.Store.Error);
+    } finally {
+      pendingImageUploads.current -= 1;
+      setUploading(pendingImageUploads.current > 0);
+    }
+  }, []);
 
-            if (imagesLength > 3) {
-              images.splice(3, imagesLength - 3);
-            }
-            setAttachImages(images);
-          }
+  const handlePaste = useCallback(
+    (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const files = Array.from(event.clipboardData.items)
+        .filter((item) => item.kind === "file")
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => !!file);
+      if (files.length) {
+        if (files.some((file) => file.type.startsWith("image/"))) {
+          event.preventDefault();
         }
+        void addImageFiles(files);
       }
     },
-    [attachImages, chatStore],
+    [addImageFiles],
   );
 
-  async function uploadImage() {
-    const images: string[] = [];
-    images.push(...attachImages);
-
-    images.push(
-      ...(await new Promise<string[]>((res, rej) => {
-        const fileInput = document.createElement("input");
-        fileInput.type = "file";
-        fileInput.accept =
-          "image/png, image/jpeg, image/webp, image/heic, image/heif";
-        fileInput.multiple = true;
-        fileInput.onchange = (event: any) => {
-          setUploading(true);
-          const files = event.target.files;
-          const imagesData: string[] = [];
-          for (let i = 0; i < files.length; i++) {
-            const file = event.target.files[i];
-            uploadImageRemote(file)
-              .then((dataUrl) => {
-                imagesData.push(dataUrl);
-                if (
-                  imagesData.length === 3 ||
-                  imagesData.length === files.length
-                ) {
-                  setUploading(false);
-                  res(imagesData);
-                }
-              })
-              .catch((e) => {
-                setUploading(false);
-                rej(e);
-              });
-          }
-        };
-        fileInput.click();
-      })),
-    );
-
-    const imagesLength = images.length;
-    if (imagesLength > 3) {
-      images.splice(3, imagesLength - 3);
-    }
-    setAttachImages(images);
-  }
-
-  // 快捷键 shortcut keys
-  const [showShortcutKeyModal, setShowShortcutKeyModal] = useState(false);
+  const handleDrop = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      if (!event.dataTransfer.types.includes("Files")) return;
+      event.preventDefault();
+      void addImageFiles(Array.from(event.dataTransfer.files));
+    },
+    [addImageFiles],
+  );
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1522,11 +1287,6 @@ function _Chat() {
             getMessageTextContentForContext(lastNonUserMessage);
           copyToClipboard(lastMessageContent);
         }
-      }
-      // 展示快捷键 command + /
-      else if ((event.metaKey || event.ctrlKey) && event.key === "/") {
-        event.preventDefault();
-        setShowShortcutKeyModal(true);
       }
       // 清除上下文 command + shift + backspace
       else if (
@@ -1595,28 +1355,38 @@ function _Chat() {
                 icon={<ReloadIcon />}
                 bordered
                 title={Locale.Chat.Actions.RefreshTitle}
+                aria={Locale.Chat.Actions.RefreshTitle}
                 onClick={() => {
                   showToast(Locale.Chat.Actions.RefreshToast);
                   chatStore.summarizeSession(true, session);
                 }}
               />
             </div>
-            {!isMobileScreen && (
-              <div className="window-action-button">
-                <IconButton
-                  icon={<RenameIcon />}
-                  bordered
-                  title={Locale.Chat.EditMessage.Title}
-                  aria={Locale.Chat.EditMessage.Title}
-                  onClick={() => setIsEditingMessage(true)}
-                />
-              </div>
-            )}
+            <div className="window-action-button">
+              <IconButton
+                icon={<SettingsIcon />}
+                bordered
+                title={Locale.Chat.InputActions.Settings}
+                aria={Locale.Chat.InputActions.Settings}
+                onClick={() => setShowPromptModal(true)}
+              />
+            </div>
+            <div className="window-action-button">
+              <IconButton
+                icon={<RenameIcon />}
+                bordered
+                title={Locale.Chat.EditMessage.Title}
+                aria={Locale.Chat.EditMessage.Title}
+                onClick={() => setIsEditingMessage(true)}
+              />
+            </div>
+            <ChatPluginAction />
             <div className="window-action-button">
               <IconButton
                 icon={<ExportIcon />}
                 bordered
                 title={Locale.Chat.Actions.Export}
+                aria={Locale.Chat.Actions.Export}
                 onClick={() => {
                   setShowExport(true);
                 }}
@@ -1683,287 +1453,320 @@ function _Chat() {
             />
           </div>
         )}
-        <div className={styles["chat-main"]}>
+        <div
+          className={styles["chat-main"]}
+          onDragOver={(event) => {
+            if (event.dataTransfer.types.includes("Files")) {
+              event.preventDefault();
+            }
+          }}
+          onDrop={handleDrop}
+        >
           <div className={styles["chat-body-container"]}>
-            <div
-              className={styles["chat-body"]}
-              ref={scrollRef}
-              onScroll={(e) => onChatBodyScroll(e.currentTarget)}
-              onMouseDown={() => inputRef.current?.blur()}
-              onTouchStart={() => {
-                inputRef.current?.blur();
-                setAutoScroll(false);
-              }}
-            >
-              {messages
-                // TODO
-                // .filter((m) => !m.isMcpResponse)
-                .map((message, i) => {
-                  const isUser = message.role === "user";
-                  const isContext = i + msgRenderIndex < context.length;
-                  const showActions =
-                    i > 0 &&
-                    !(message.preview || message.content.length === 0) &&
-                    !isContext;
-                  const showTyping = message.preview || message.streaming;
+            <div className={styles["chat-body-viewport"]}>
+              <div
+                className={styles["chat-body"]}
+                ref={scrollRef}
+                onScroll={(e) => onChatBodyScroll(e.currentTarget)}
+                onMouseDown={() => inputRef.current?.blur()}
+                onTouchStart={() => {
+                  inputRef.current?.blur();
+                  setAutoScroll(false);
+                }}
+              >
+                {messages
+                  // TODO
+                  // .filter((m) => !m.isMcpResponse)
+                  .map((message, i) => {
+                    const isUser = message.role === "user";
+                    const isContext = i + msgRenderIndex < context.length;
+                    const showActions =
+                      i > 0 &&
+                      !(message.preview || message.content.length === 0) &&
+                      !isContext;
+                    const showTyping = message.preview || message.streaming;
 
-                  const shouldShowClearContextDivider =
-                    i === clearContextIndex - 1;
+                    const shouldShowClearContextDivider =
+                      i === clearContextIndex - 1;
 
-                  return (
-                    <Fragment key={message.id}>
-                      <div
-                        data-message-id={message.id}
-                        className={clsx(
-                          isUser
-                            ? styles["chat-message-user"]
-                            : styles["chat-message"],
-                          {
-                            [styles["chat-message-jump"]]:
-                              message.id === highlightMessageId,
-                          },
-                        )}
-                      >
-                        <div className={styles["chat-message-container"]}>
-                          <div className={styles["chat-message-header"]}>
-                            <div className={styles["chat-message-avatar"]}>
-                              <div className={styles["chat-message-edit"]}>
-                                <IconButton
-                                  icon={<EditIcon />}
-                                  aria={Locale.Chat.Actions.Edit}
-                                  onClick={async () => {
-                                    const newMessage = await showPrompt(
-                                      Locale.Chat.Actions.Edit,
-                                      getMessageTextContent(message),
-                                      10,
-                                    );
-                                    let newContent:
-                                      | string
-                                      | MultimodalContent[] = newMessage;
-                                    const images = getMessageImages(message);
-                                    if (images.length > 0) {
-                                      newContent = [
-                                        { type: "text", text: newMessage },
-                                      ];
-                                      for (let i = 0; i < images.length; i++) {
-                                        newContent.push({
-                                          type: "image_url",
-                                          image_url: {
-                                            url: images[i],
-                                          },
-                                        });
-                                      }
-                                    }
-                                    chatStore.updateTargetSession(
-                                      session,
-                                      (session) => {
-                                        const m = session.mask.context
-                                          .concat(session.messages)
-                                          .find((m) => m.id === message.id);
-                                        if (m) {
-                                          m.content = newContent;
-                                        }
-                                      },
-                                    );
-                                  }}
-                                ></IconButton>
-                              </div>
-                              {isUser ? (
-                                <Avatar avatar={config.avatar} />
-                              ) : (
-                                <>
-                                  {["system"].includes(message.role) ? (
-                                    <Avatar avatar="2699-fe0f" />
-                                  ) : (
-                                    <MaskAvatar
-                                      avatar={session.mask.avatar}
-                                      model={
-                                        message.model ||
-                                        session.mask.modelConfig.model
-                                      }
-                                    />
-                                  )}
-                                </>
-                              )}
-                            </div>
-                            {!isUser && (
-                              <div className={styles["chat-model-name"]}>
-                                {message.model}
-                              </div>
-                            )}
-
-                            {showActions && (
-                              <div className={styles["chat-message-actions"]}>
-                                <div className={styles["chat-input-actions"]}>
-                                  {message.streaming ? (
-                                    <ChatAction
-                                      text={Locale.Chat.Actions.Stop}
-                                      icon={<StopIcon />}
-                                      onClick={() =>
-                                        onUserStop(message.id ?? i)
-                                      }
-                                    />
-                                  ) : (
-                                    <>
-                                      <ChatAction
-                                        text={Locale.Chat.Actions.Retry}
-                                        icon={<ResetIcon />}
-                                        onClick={() => onResend(message)}
-                                      />
-
-                                      <ChatAction
-                                        text={Locale.Chat.Actions.Delete}
-                                        icon={<DeleteIcon />}
-                                        onClick={() =>
-                                          onDelete(message.id ?? i)
-                                        }
-                                      />
-
-                                      <ChatAction
-                                        text={Locale.Chat.Actions.Pin}
-                                        icon={<PinIcon />}
-                                        onClick={() => onPinMessage(message)}
-                                      />
-                                      <ChatAction
-                                        text={Locale.Chat.Actions.Copy}
-                                        icon={<CopyIcon />}
-                                        onClick={() =>
-                                          copyToClipboard(
-                                            getMessageTextContentForContext(
-                                              message,
-                                            ),
-                                          )
-                                        }
-                                      />
-                                      {speechSupported &&
-                                        config.ttsConfig.enable && (
-                                          <ChatAction
-                                            text={
-                                              speechMessageId === message.id
-                                                ? Locale.Chat.Actions.StopSpeech
-                                                : Locale.Chat.Actions.Speech
-                                            }
-                                            icon={
-                                              speechMessageId === message.id ? (
-                                                <SpeakStopIcon />
-                                              ) : (
-                                                <SpeakIcon />
-                                              )
-                                            }
-                                            onClick={() =>
-                                              speakMessage(message)
-                                            }
-                                          />
-                                        )}
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                          {message?.tools?.length == 0 && showTyping && (
-                            <div className={styles["chat-message-status"]}>
-                              {Locale.Chat.Typing}
-                            </div>
+                    return (
+                      <Fragment key={message.id}>
+                        <div
+                          data-message-id={message.id}
+                          className={clsx(
+                            isUser
+                              ? styles["chat-message-user"]
+                              : styles["chat-message"],
+                            {
+                              [styles["chat-message-jump"]]:
+                                message.id === highlightMessageId,
+                            },
                           )}
-                          {/*@ts-ignore*/}
-                          {message?.tools?.length > 0 && (
-                            <div className={styles["chat-message-tools"]}>
-                              {message?.tools?.map((tool) => (
-                                <div
-                                  key={tool.id}
-                                  title={tool?.errorMsg}
-                                  className={styles["chat-message-tool"]}
-                                >
-                                  {tool.isError === false ? (
-                                    <ConfirmIcon />
-                                  ) : tool.isError === true ? (
-                                    <CloseIcon />
-                                  ) : (
-                                    <LoadingButtonIcon />
-                                  )}
-                                  <span>{tool?.function?.name}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          <div className={styles["chat-message-item"]}>
-                            <Markdown
-                              key={message.id}
-                              content={getMessageTextContent(message)}
-                              streaming={message.streaming}
-                              thinkingActive={message.thinkingActive}
-                              parseThoughts={message.role === "assistant"}
-                              loading={
-                                (message.preview || message.streaming) &&
-                                message.content.length === 0 &&
-                                !isUser
-                              }
-                              //   onContextMenu={(e) => onRightClick(e, message)} // hard to use
-                              onDoubleClickCapture={() => {
-                                if (!isMobileScreen) return;
-                                setUserInput(
-                                  getMessageTextContentForContext(message),
-                                );
-                              }}
-                              fontSize={fontSize}
-                              fontFamily={fontFamily}
-                              parentRef={scrollRef}
-                              defaultShow={i >= messages.length - 6}
-                            />
-                            {getMessageImages(message).length == 1 && (
-                              <img
-                                className={styles["chat-message-item-image"]}
-                                src={getMessageImages(message)[0]}
-                                alt=""
-                              />
-                            )}
-                            {getMessageImages(message).length > 1 && (
-                              <div
-                                className={styles["chat-message-item-images"]}
-                                style={
-                                  {
-                                    "--image-count":
-                                      getMessageImages(message).length,
-                                  } as React.CSSProperties
-                                }
-                              >
-                                {getMessageImages(message).map(
-                                  (image, index) => {
-                                    return (
-                                      <img
-                                        className={
-                                          styles[
-                                            "chat-message-item-image-multi"
-                                          ]
+                        >
+                          <div className={styles["chat-message-container"]}>
+                            <div className={styles["chat-message-header"]}>
+                              <div className={styles["chat-message-avatar"]}>
+                                <div className={styles["chat-message-edit"]}>
+                                  <IconButton
+                                    icon={<EditIcon />}
+                                    aria={Locale.Chat.Actions.Edit}
+                                    onClick={async () => {
+                                      const newMessage = await showPrompt(
+                                        Locale.Chat.Actions.Edit,
+                                        getMessageTextContent(message),
+                                        10,
+                                      );
+                                      let newContent:
+                                        | string
+                                        | MultimodalContent[] = newMessage;
+                                      const images = getMessageImages(message);
+                                      if (images.length > 0) {
+                                        newContent = [
+                                          { type: "text", text: newMessage },
+                                        ];
+                                        for (
+                                          let i = 0;
+                                          i < images.length;
+                                          i++
+                                        ) {
+                                          newContent.push({
+                                            type: "image_url",
+                                            image_url: {
+                                              url: images[i],
+                                            },
+                                          });
                                         }
-                                        key={index}
-                                        src={image}
-                                        alt=""
+                                      }
+                                      chatStore.updateTargetSession(
+                                        session,
+                                        (session) => {
+                                          const m = session.mask.context
+                                            .concat(session.messages)
+                                            .find((m) => m.id === message.id);
+                                          if (m) {
+                                            m.content = newContent;
+                                          }
+                                        },
+                                      );
+                                    }}
+                                  ></IconButton>
+                                </div>
+                                {isUser ? (
+                                  <Avatar avatar={config.avatar} />
+                                ) : (
+                                  <>
+                                    {["system"].includes(message.role) ? (
+                                      <Avatar avatar="2699-fe0f" />
+                                    ) : (
+                                      <MaskAvatar
+                                        avatar={session.mask.avatar}
+                                        model={
+                                          message.model ||
+                                          session.mask.modelConfig.model
+                                        }
                                       />
-                                    );
-                                  },
+                                    )}
+                                  </>
                                 )}
                               </div>
-                            )}
-                          </div>
-                          {message?.audio_url && (
-                            <div className={styles["chat-message-audio"]}>
-                              <audio src={message.audio_url} controls />
-                            </div>
-                          )}
+                              {!isUser && (
+                                <div className={styles["chat-model-name"]}>
+                                  {message.model}
+                                </div>
+                              )}
 
-                          <div className={styles["chat-message-action-date"]}>
-                            {isContext
-                              ? Locale.Chat.IsContext
-                              : message.date.toLocaleString()}
+                              {showActions && (
+                                <div className={styles["chat-message-actions"]}>
+                                  <div
+                                    className={
+                                      styles["chat-message-action-list"]
+                                    }
+                                  >
+                                    {message.streaming ? (
+                                      <ChatAction
+                                        text={Locale.Chat.Actions.Stop}
+                                        icon={<StopIcon />}
+                                        onClick={() =>
+                                          onUserStop(message.id ?? i)
+                                        }
+                                      />
+                                    ) : (
+                                      <>
+                                        <ChatAction
+                                          text={Locale.Chat.Actions.Retry}
+                                          icon={<ResetIcon />}
+                                          onClick={() => onResend(message)}
+                                        />
+
+                                        <ChatAction
+                                          text={Locale.Chat.Actions.Delete}
+                                          icon={<DeleteIcon />}
+                                          onClick={() =>
+                                            onDelete(message.id ?? i)
+                                          }
+                                        />
+
+                                        <ChatAction
+                                          text={Locale.Chat.Actions.Pin}
+                                          icon={<PinIcon />}
+                                          onClick={() => onPinMessage(message)}
+                                        />
+                                        <ChatAction
+                                          text={Locale.Chat.Actions.Copy}
+                                          icon={<CopyIcon />}
+                                          onClick={() =>
+                                            copyToClipboard(
+                                              getMessageTextContentForContext(
+                                                message,
+                                              ),
+                                            )
+                                          }
+                                        />
+                                        {speechSupported &&
+                                          config.ttsConfig.enable && (
+                                            <ChatAction
+                                              text={
+                                                speechMessageId === message.id
+                                                  ? Locale.Chat.Actions
+                                                      .StopSpeech
+                                                  : Locale.Chat.Actions.Speech
+                                              }
+                                              icon={
+                                                speechMessageId ===
+                                                message.id ? (
+                                                  <SpeakStopIcon />
+                                                ) : (
+                                                  <SpeakIcon />
+                                                )
+                                              }
+                                              onClick={() =>
+                                                speakMessage(message)
+                                              }
+                                            />
+                                          )}
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            {message?.tools?.length == 0 && showTyping && (
+                              <div className={styles["chat-message-status"]}>
+                                {Locale.Chat.Typing}
+                              </div>
+                            )}
+                            {/*@ts-ignore*/}
+                            {message?.tools?.length > 0 && (
+                              <div className={styles["chat-message-tools"]}>
+                                {message?.tools?.map((tool) => (
+                                  <div
+                                    key={tool.id}
+                                    title={tool?.errorMsg}
+                                    className={styles["chat-message-tool"]}
+                                  >
+                                    {tool.isError === false ? (
+                                      <ConfirmIcon />
+                                    ) : tool.isError === true ? (
+                                      <CloseIcon />
+                                    ) : (
+                                      <LoadingButtonIcon />
+                                    )}
+                                    <span>{tool?.function?.name}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <div className={styles["chat-message-item"]}>
+                              <Markdown
+                                key={message.id}
+                                content={getMessageTextContent(message)}
+                                streaming={message.streaming}
+                                thinkingActive={message.thinkingActive}
+                                parseThoughts={message.role === "assistant"}
+                                loading={
+                                  (message.preview || message.streaming) &&
+                                  message.content.length === 0 &&
+                                  !isUser
+                                }
+                                //   onContextMenu={(e) => onRightClick(e, message)} // hard to use
+                                onDoubleClickCapture={() => {
+                                  if (!isMobileScreen) return;
+                                  setUserInput(
+                                    getMessageTextContentForContext(message),
+                                  );
+                                }}
+                                fontSize={fontSize}
+                                fontFamily={fontFamily}
+                                parentRef={scrollRef}
+                                defaultShow={i >= messages.length - 6}
+                              />
+                              {getMessageImages(message).length == 1 && (
+                                <img
+                                  className={styles["chat-message-item-image"]}
+                                  src={getMessageImages(message)[0]}
+                                  alt=""
+                                />
+                              )}
+                              {getMessageImages(message).length > 1 && (
+                                <div
+                                  className={styles["chat-message-item-images"]}
+                                  style={
+                                    {
+                                      "--image-count":
+                                        getMessageImages(message).length,
+                                    } as React.CSSProperties
+                                  }
+                                >
+                                  {getMessageImages(message).map(
+                                    (image, index) => {
+                                      return (
+                                        <img
+                                          className={
+                                            styles[
+                                              "chat-message-item-image-multi"
+                                            ]
+                                          }
+                                          key={index}
+                                          src={image}
+                                          alt=""
+                                        />
+                                      );
+                                    },
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            {message?.audio_url && (
+                              <div className={styles["chat-message-audio"]}>
+                                <audio src={message.audio_url} controls />
+                              </div>
+                            )}
+
+                            <div className={styles["chat-message-action-date"]}>
+                              {isContext
+                                ? Locale.Chat.IsContext
+                                : message.date.toLocaleString()}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      {shouldShowClearContextDivider && <ClearContextDivider />}
-                    </Fragment>
-                  );
-                })}
+                        {shouldShowClearContextDivider && (
+                          <ClearContextDivider />
+                        )}
+                      </Fragment>
+                    );
+                  })}
+              </div>
+              {!hitBottom && (
+                <button
+                  type="button"
+                  className={styles["chat-to-bottom"]}
+                  title={Locale.Chat.InputActions.ToBottom}
+                  aria-label={Locale.Chat.InputActions.ToBottom}
+                  onClick={scrollToBottom}
+                >
+                  <BottomIcon />
+                </button>
+              )}
             </div>
             <div className={styles["chat-input-panel"]}>
               <PromptHints
@@ -1971,54 +1774,40 @@ function _Chat() {
                 onPromptSelect={onPromptSelect}
               />
 
-              <ChatActions
-                uploadImage={uploadImage}
-                setAttachImages={setAttachImages}
-                setUploading={setUploading}
-                showPromptModal={() => setShowPromptModal(true)}
-                scrollToBottom={scrollToBottom}
-                hitBottom={hitBottom}
-                uploading={uploading}
-                showPromptHints={() => {
-                  // Click again to close
-                  if (promptHints.length > 0) {
-                    setPromptHints([]);
-                    return;
-                  }
-
-                  inputRef.current?.focus();
-                  setUserInput("/");
-                  onSearch("");
-                }}
-                setShowShortcutKeyModal={setShowShortcutKeyModal}
-                setUserInput={setUserInput}
-              />
-              <label
-                className={clsx(styles["chat-input-panel-inner"], {
-                  [styles["chat-input-panel-inner-attach"]]:
-                    attachImages.length !== 0,
-                })}
-                htmlFor="chat-input"
-              >
-                <textarea
-                  id="chat-input"
-                  ref={inputRef}
-                  className={styles["chat-input"]}
-                  placeholder={Locale.Chat.Input(submitKey)}
-                  onInput={(e) => onInput(e.currentTarget.value)}
-                  value={userInput}
-                  onKeyDown={onInputKeyDown}
-                  onFocus={scrollToBottom}
-                  onClick={scrollToBottom}
-                  onPaste={handlePaste}
-                  rows={inputRows}
-                  autoFocus={autoFocus}
-                  style={{
-                    fontSize: config.fontSize,
-                    fontFamily: config.fontFamily,
-                  }}
-                />
-                {attachImages.length != 0 && (
+              <div className={styles["chat-input-panel-inner"]}>
+                <div className={styles["chat-input-row"]}>
+                  <textarea
+                    id="chat-input"
+                    ref={inputRef}
+                    className={styles["chat-input"]}
+                    placeholder={`${Locale.Chat.Input(submitKey)}${
+                      Locale.Chat.ImageInputHint
+                    }`}
+                    onInput={(e) => onInput(e.currentTarget.value)}
+                    value={userInput}
+                    onKeyDown={onInputKeyDown}
+                    onFocus={scrollToBottom}
+                    onClick={scrollToBottom}
+                    onPaste={handlePaste}
+                    rows={inputRows}
+                    autoFocus={autoFocus}
+                    style={{
+                      fontSize: config.fontSize,
+                      fontFamily: config.fontFamily,
+                    }}
+                  />
+                  <div className={styles["chat-input-controls"]}>
+                    <ChatInputOptions />
+                    <ChatInputControls
+                      sessionId={session.id}
+                      input={userInput}
+                      hasImages={attachImages.length > 0}
+                      uploading={uploading}
+                      onSend={() => doSubmit(userInput)}
+                    />
+                  </div>
+                </div>
+                {(attachImages.length > 0 || uploading) && (
                   <div className={styles["attach-images"]}>
                     {attachImages.map((image, index) => {
                       return (
@@ -2039,16 +1828,17 @@ function _Chat() {
                         </div>
                       );
                     })}
+                    {uploading && (
+                      <div
+                        className={styles["attach-image-uploading"]}
+                        role="status"
+                      >
+                        <LoadingButtonIcon /> {Locale.Chat.ImageUploading}
+                      </div>
+                    )}
                   </div>
                 )}
-                <IconButton
-                  icon={<SendWhiteIcon />}
-                  text={Locale.Chat.Send}
-                  className={styles["chat-input-send"]}
-                  type="primary"
-                  onClick={() => doSubmit(userInput)}
-                />
-              </label>
+              </div>
             </div>
           </div>
         </div>
@@ -2063,10 +1853,6 @@ function _Chat() {
             setIsEditingMessage(false);
           }}
         />
-      )}
-
-      {showShortcutKeyModal && (
-        <ShortcutKeyModal onClose={() => setShowShortcutKeyModal(false)} />
       )}
     </>
   );

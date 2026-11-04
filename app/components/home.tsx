@@ -24,6 +24,7 @@ import {
 } from "react-router-dom";
 import { SideBar } from "./sidebar";
 import { GlobalSearch } from "./global-search";
+import { ShortcutKeyModal } from "./shortcut-key";
 import { useAppConfig } from "../store/config";
 import { AuthPage } from "./auth";
 import { getClientConfig } from "../config/client";
@@ -177,6 +178,7 @@ function Screen() {
           <Route path="/artifacts/:id" element={<Artifacts />} />
         </Routes>
         <GlobalSearch />
+        <ShortcutKeyModal />
       </>
     );
   }
@@ -214,6 +216,7 @@ function Screen() {
     >
       {renderContent()}
       <GlobalSearch />
+      <ShortcutKeyModal />
     </div>
   );
 }

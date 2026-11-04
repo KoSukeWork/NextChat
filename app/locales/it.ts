@@ -68,16 +68,8 @@ const it: PartialLocaleType = {
     InputActions: {
       Stop: "Interrompi risposta",
       ToBottom: "Scorri fino al più recente",
-      Theme: {
-        auto: "Tema automatico",
-        light: "Tema chiaro",
-        dark: "Tema scuro",
-      },
-      Prompt: "Comandi rapidi",
-      Masks: "Tutte le maschere",
       Clear: "Pulisci chat",
       Settings: "Impostazioni conversazione",
-      UploadImage: "Carica immagine",
     },
     Rename: "Rinomina conversazione",
     Typing: "Digitazione in corso…",

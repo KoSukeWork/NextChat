@@ -1,37 +1,58 @@
-// To store message streaming controller
+const listeners = new Set<() => void>();
+let revision = 0;
+
+function notify() {
+  revision += 1;
+  for (const listener of listeners) listener();
+}
+
+// A conversation can have multiple simultaneous responses.
 export const ChatControllerPool = {
-  controllers: {} as Record<string, AbortController>,
+  controllers: new Map<string, Map<string, AbortController>>(),
+
+  subscribe(listener: () => void) {
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  },
+
+  getSnapshot() {
+    return revision;
+  },
 
   addController(
     sessionId: string,
     messageId: string,
     controller: AbortController,
   ) {
-    const key = this.key(sessionId, messageId);
-    this.controllers[key] = controller;
-    return key;
+    let session = this.controllers.get(sessionId);
+    if (!session) {
+      session = new Map();
+      this.controllers.set(sessionId, session);
+    }
+    session.set(messageId, controller);
+    notify();
   },
 
   stop(sessionId: string, messageId: string) {
-    const key = this.key(sessionId, messageId);
-    const controller = this.controllers[key];
-    controller?.abort();
+    this.controllers.get(sessionId)?.get(messageId)?.abort();
   },
 
-  stopAll() {
-    Object.values(this.controllers).forEach((v) => v.abort());
+  stopSession(sessionId: string) {
+    for (const controller of this.controllers.get(sessionId)?.values() ?? []) {
+      controller.abort();
+    }
   },
 
-  hasPending() {
-    return Object.values(this.controllers).length > 0;
+  hasPending(sessionId: string) {
+    return (this.controllers.get(sessionId)?.size ?? 0) > 0;
   },
 
   remove(sessionId: string, messageId: string) {
-    const key = this.key(sessionId, messageId);
-    delete this.controllers[key];
-  },
-
-  key(sessionId: string, messageIndex: string) {
-    return `${sessionId},${messageIndex}`;
+    const session = this.controllers.get(sessionId);
+    if (!session?.delete(messageId)) return;
+    if (session.size === 0) this.controllers.delete(sessionId);
+    notify();
   },
 };

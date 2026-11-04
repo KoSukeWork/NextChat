@@ -571,6 +571,7 @@ export const useChatStore = createPersistStore(
         const session = get().currentSession();
         if (!get().ensureSessionModel(session)) return;
         const modelConfig = session.mask.modelConfig;
+        const pluginIds = [...(session.mask.plugin ?? [])];
 
         // Continuing an archived chat brings it back to the list.
         if (session.archived && !isMcpResponse) {
@@ -627,6 +628,7 @@ export const useChatStore = createPersistStore(
         api.llm.chat({
           messages: sendMessages,
           config: { ...modelConfig, stream: true },
+          pluginIds,
           onUpdate(message, _chunk, thinkingActive) {
             botMessage.streaming = true;
             botMessage.thinkingActive = thinkingActive;
@@ -643,6 +645,10 @@ export const useChatStore = createPersistStore(
               botMessage.content = message;
               botMessage.date = new Date().toLocaleString();
               get().onNewMessage(botMessage, session);
+            } else {
+              get().updateTargetSession(session, (target) => {
+                target.messages = target.messages.concat();
+              });
             }
             ChatControllerPool.remove(session.id, botMessage.id);
           },

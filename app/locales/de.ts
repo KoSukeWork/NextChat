@@ -68,16 +68,8 @@ const de: PartialLocaleType = {
     InputActions: {
       Stop: "Antwort stoppen",
       ToBottom: "Zum neuesten Beitrag",
-      Theme: {
-        auto: "Automatisches Thema",
-        light: "Helles Thema",
-        dark: "Dunkles Thema",
-      },
-      Prompt: "Schnellbefehle",
-      Masks: "Alle Masken",
       Clear: "Chat löschen",
       Settings: "Gesprächseinstellungen",
-      UploadImage: "Bild hochladen",
     },
     Rename: "Gespräch umbenennen",
     Typing: "Tippt…",

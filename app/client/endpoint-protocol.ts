@@ -20,7 +20,6 @@ export interface EndpointChatInput {
   model: string;
   messages: RequestMessage[];
   stream: boolean;
-  vision: boolean;
   maxTokens?: number;
   timeoutMs?: number;
   temperature?: number;
@@ -39,8 +38,16 @@ function plainText(content: RequestMessage["content"]): string {
         .join("");
 }
 
-function anthropicContent(content: RequestMessage["content"], vision: boolean) {
-  if (typeof content === "string" || !vision) return plainText(content);
+function hasImage(content: RequestMessage["content"]): boolean {
+  return (
+    Array.isArray(content) &&
+    content.some((part) => part.type === "image_url" && !!part.image_url?.url)
+  );
+}
+
+function anthropicContent(content: RequestMessage["content"]) {
+  if (typeof content === "string" || !hasImage(content))
+    return plainText(content);
   return content.flatMap<Record<string, unknown>>((part) => {
     if (part.type === "text") return [{ type: "text", text: part.text ?? "" }];
     const url = part.image_url?.url ?? "";
@@ -56,8 +63,8 @@ function anthropicContent(content: RequestMessage["content"], vision: boolean) {
   });
 }
 
-function geminiParts(content: RequestMessage["content"], vision: boolean) {
-  if (typeof content === "string" || !vision)
+function geminiParts(content: RequestMessage["content"]) {
+  if (typeof content === "string" || !hasImage(content))
     return [{ text: plainText(content) }];
   return content.flatMap<Record<string, unknown>>((part) => {
     if (part.type === "text") return [{ text: part.text ?? "" }];
@@ -98,7 +105,9 @@ export function buildEndpointRequest(
       model: input.model,
       messages: messages.map((message) => ({
         role: message.role,
-        content: input.vision ? message.content : plainText(message.content),
+        content: hasImage(message.content)
+          ? message.content
+          : plainText(message.content),
       })),
       stream: input.stream,
       ...(reasoning
@@ -118,9 +127,7 @@ export function buildEndpointRequest(
       input: messages.map((message) => ({
         role: message.role,
         content:
-          typeof message.content === "string" ||
-          !input.vision ||
-          message.role !== "user"
+          typeof message.content === "string" || !hasImage(message.content)
             ? plainText(message.content)
             : message.content.flatMap<Record<string, unknown>>((part) =>
                 part.type === "text"
@@ -148,14 +155,23 @@ export function buildEndpointRequest(
         : {}),
     };
   } else if (endpoint.protocol === "anthropic") {
-    const system = messages
-      .filter((message) => message.role === "system")
-      .map((message) => plainText(message.content))
-      .join("\n\n");
+    const systemMessages = messages.filter(
+      (message) => message.role === "system",
+    );
+    const system = systemMessages.some((message) => hasImage(message.content))
+      ? systemMessages.flatMap((message) => {
+          const content = anthropicContent(message.content);
+          return typeof content === "string"
+            ? [{ type: "text", text: content }]
+            : content;
+        })
+      : systemMessages
+          .map((message) => plainText(message.content))
+          .join("\n\n");
     const converted: { role: string; content: any }[] = [];
     for (const message of messages.filter((item) => item.role !== "system")) {
       const role = message.role === "assistant" ? "assistant" : "user";
-      const content = anthropicContent(message.content, input.vision);
+      const content = anthropicContent(message.content);
       const previous = converted.at(-1);
       if (previous?.role === role) {
         const blocks = (value: any) =>
@@ -185,7 +201,7 @@ export function buildEndpointRequest(
     const converted: { role: string; parts: any[] }[] = [];
     for (const message of messages) {
       const role = message.role === "assistant" ? "model" : "user";
-      const parts = geminiParts(message.content, input.vision);
+      const parts = geminiParts(message.content);
       const previous = converted.at(-1);
       if (previous?.role === role) previous.parts.push(...parts);
       else converted.push({ role, parts });

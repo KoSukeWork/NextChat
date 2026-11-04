@@ -86,6 +86,7 @@ export async function preProcessImageContentBase(
         result.push(await transformImageUrl(url));
       } catch (error) {
         console.error("Error processing image URL:", error);
+        result.push(await transformImageUrl(part.image_url.url));
       }
     } else {
       result.push({ ...part });

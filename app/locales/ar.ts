@@ -66,16 +66,8 @@ const ar: PartialLocaleType = {
     InputActions: {
       Stop: "إيقاف الاستجابة",
       ToBottom: "الانتقال إلى الأحدث",
-      Theme: {
-        auto: "موضوع تلقائي",
-        light: "الوضع الفاتح",
-        dark: "الوضع الداكن",
-      },
-      Prompt: "الأوامر السريعة",
-      Masks: "جميع الأقنعة",
       Clear: "مسح الدردشة",
       Settings: "إعدادات الدردشة",
-      UploadImage: "تحميل صورة",
     },
     Rename: "إعادة تسمية الدردشة",
     Typing: "يكتب…",

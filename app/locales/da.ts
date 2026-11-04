@@ -69,16 +69,8 @@ const da: PartialLocaleType = {
     InputActions: {
       Stop: "Stop",
       ToBottom: "Ned til nyeste",
-      Theme: {
-        auto: "Automatisk",
-        light: "Lyst tema",
-        dark: "Mørkt tema",
-      },
-      Prompt: "Prompts",
-      Masks: "Personaer",
       Clear: "Ryd kontekst",
       Settings: "Indstillinger",
-      UploadImage: "Upload billeder",
     },
     Rename: "Omdøb chat",
     Typing: "Skriver…",
@@ -374,9 +366,6 @@ const da: PartialLocaleType = {
     Add: "Tilføj prompt",
     Clear: "Kontekst ryddet",
     Revert: "Fortryd",
-  },
-  Discovery: {
-    Name: "Søgning og plugins",
   },
   Mcp: {
     Name: "MCP",

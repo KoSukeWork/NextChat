@@ -2,14 +2,45 @@
 //
 
 use std::time::Duration;
+use std::time::Instant;
 use std::error::Error;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use futures_util::{StreamExt};
 use reqwest::Client;
 use reqwest::header::{HeaderName, HeaderMap};
+use tokio_util::sync::CancellationToken;
 
 static REQUEST_COUNTER: AtomicU32 = AtomicU32::new(0);
+
+#[derive(Default)]
+pub struct StreamState {
+  requests: Mutex<HashMap<String, (CancellationToken, Instant)>>,
+}
+
+impl StreamState {
+  fn token(&self, id: &str) -> CancellationToken {
+    let mut requests = self.requests.lock().unwrap();
+    // A cancellation may arrive before its request is registered. Keep such
+    // entries briefly so the later request cannot start after being stopped.
+    requests.retain(|_, (token, created)| {
+      !token.is_cancelled() || created.elapsed() < Duration::from_secs(120)
+    });
+    requests.entry(id.to_string())
+      .or_insert_with(|| (CancellationToken::new(), Instant::now()))
+      .0.clone()
+  }
+
+  fn finish(&self, id: &str) {
+    self.requests.lock().unwrap().remove(id);
+  }
+}
+
+#[tauri::command]
+pub fn stream_cancel(state: tauri::State<'_, Arc<StreamState>>, cancel_id: String) {
+  state.token(&cancel_id).cancel();
+}
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct StreamResponse {
@@ -34,6 +65,8 @@ pub struct ChunkPayload {
 #[tauri::command]
 pub async fn stream_fetch(
   window: tauri::Window,
+  state: tauri::State<'_, Arc<StreamState>>,
+  cancel_id: String,
   method: String,
   url: String,
   headers: HashMap<String, String>,
@@ -42,6 +75,7 @@ pub async fn stream_fetch(
 
   let event_name = "stream-response";
   let request_id = REQUEST_COUNTER.fetch_add(1, Ordering::SeqCst);
+  let stream_state = Arc::clone(state.inner());
 
   let mut _headers = HeaderMap::new();
   for (key, value) in &headers {
@@ -75,9 +109,16 @@ pub async fn stream_fetch(
   // println!("client: {:?}", client);
   // println!("request: {:?}", request);
 
+  let cancel = stream_state.token(&cancel_id);
   let response_future = request.send();
 
-  let res = response_future.await;
+  let res = tokio::select! {
+    _ = cancel.cancelled() => {
+      stream_state.finish(&cancel_id);
+      return Err("Request aborted".to_string());
+    },
+    result = response_future => result,
+  };
   let response = match res {
     Ok(res) => {
       // get response and emit to client
@@ -91,23 +132,29 @@ pub async fn stream_fetch(
       let status = res.status().as_u16();
 
       tauri::async_runtime::spawn(async move {
-        let mut stream = res.bytes_stream();
-
-        while let Some(chunk) = stream.next().await {
-          match chunk {
-            Ok(bytes) => {
-              // println!("chunk: {:?}", bytes);
-              if let Err(e) = window.emit(event_name, ChunkPayload{ request_id, chunk: bytes }) {
-                println!("Failed to emit chunk payload: {:?}", e);
+        tokio::select! {
+          _ = cancel.cancelled() => {},
+          _ = async {
+            let mut stream = res.bytes_stream();
+            while let Some(chunk) = stream.next().await {
+              match chunk {
+                Ok(bytes) => {
+                  if let Err(e) = window.emit(event_name, ChunkPayload{ request_id, chunk: bytes }) {
+                    println!("Failed to emit chunk payload: {:?}", e);
+                  }
+                }
+                Err(err) => {
+                  println!("Error chunk: {:?}", err);
+                }
               }
             }
-            Err(err) => {
-              println!("Error chunk: {:?}", err);
-            }
-          }
+          } => {},
         }
-        if let Err(e) = window.emit(event_name, EndPayload{ request_id, status: 0 }) {
-          println!("Failed to emit end payload: {:?}", e);
+        stream_state.finish(&cancel_id);
+        if !cancel.is_cancelled() {
+          if let Err(e) = window.emit(event_name, EndPayload{ request_id, status: 0 }) {
+            println!("Failed to emit end payload: {:?}", e);
+          }
         }
       });
 
@@ -119,6 +166,7 @@ pub async fn stream_fetch(
       }
     }
     Err(err) => {
+      stream_state.finish(&cancel_id);
       let error: String = err.source()
         .map(|e| e.to_string())
         .unwrap_or_else(|| "Unknown error occurred".to_string());
@@ -141,5 +189,25 @@ pub async fn stream_fetch(
   };
   // println!("Response: {:?}", response);
   Ok(response)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn cancellation_is_scoped_and_can_arrive_before_registration() {
+    let state = StreamState::default();
+    let first = state.token("first");
+    let second = state.token("second");
+    state.token("first").cancel();
+    assert!(first.is_cancelled());
+    assert!(!second.is_cancelled());
+
+    state.token("early").cancel();
+    assert!(state.token("early").is_cancelled());
+    state.finish("early");
+    assert!(!state.token("early").is_cancelled());
+  }
 }
 

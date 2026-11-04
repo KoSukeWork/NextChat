@@ -3,7 +3,7 @@ import { useAppConfig } from "../store/config";
 import { useChatStore } from "../store/chat";
 import { usePluginStore } from "../store/plugin";
 import { preProcessImageContent } from "../utils/chat";
-import { getTimeoutMSByModel, isVisionModel } from "../utils";
+import { getTimeoutMSByModel } from "../utils";
 import { runEndpointChat } from "./endpoint-stream";
 import type { EndpointTool } from "./endpoint-protocol";
 import { fetchEndpointModels } from "./endpoint-models";
@@ -13,40 +13,45 @@ export class EndpointClient {
   constructor(private endpoint: Endpoint) {}
 
   async chat(options: ChatOptions) {
-    const modelConfig = {
-      ...useAppConfig.getState().modelConfig,
-      ...useChatStore.getState().currentSession().mask.modelConfig,
-      ...options.config,
-    };
-    const messages = await Promise.all(
-      options.messages.map(async (message) => ({
-        ...message,
-        content: await preProcessImageContent(message.content),
-      })),
-    );
-    const [tools, funcs] = usePluginStore
-      .getState()
-      .getAsTools(
-        useChatStore.getState().currentSession().mask.plugin || [],
-      ) as [EndpointTool[], Record<string, Function>];
-    return runEndpointChat(
-      this.endpoint,
-      {
-        model: options.config.model,
-        messages,
-        stream: !!options.config.stream,
-        vision: isVisionModel(options.config.model),
-        maxTokens: modelConfig.max_tokens,
-        timeoutMs: getTimeoutMSByModel(options.config.model),
-        temperature: modelConfig.temperature,
-        topP: modelConfig.top_p,
-        presencePenalty: modelConfig.presence_penalty,
-        frequencyPenalty: modelConfig.frequency_penalty,
-        tools: options.config.stream ? tools : [],
-      },
-      options,
-      funcs,
-    );
+    try {
+      const session = useChatStore.getState().currentSession();
+      const modelConfig = {
+        ...useAppConfig.getState().modelConfig,
+        ...session.mask.modelConfig,
+        ...options.config,
+      };
+      const pluginIds = options.pluginIds ?? session.mask.plugin ?? [];
+      const messages = await Promise.all(
+        options.messages.map(async (message) => ({
+          ...message,
+          content: await preProcessImageContent(message.content),
+        })),
+      );
+      const [tools, funcs] = usePluginStore
+        .getState()
+        .getAsTools(pluginIds) as [EndpointTool[], Record<string, Function>];
+      return await runEndpointChat(
+        this.endpoint,
+        {
+          model: options.config.model,
+          messages,
+          stream: !!options.config.stream,
+          maxTokens: modelConfig.max_tokens,
+          timeoutMs: getTimeoutMSByModel(options.config.model),
+          temperature: modelConfig.temperature,
+          topP: modelConfig.top_p,
+          presencePenalty: modelConfig.presence_penalty,
+          frequencyPenalty: modelConfig.frequency_penalty,
+          tools: options.config.stream ? tools : [],
+        },
+        options,
+        funcs,
+      );
+    } catch (error) {
+      options.onError?.(
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
   }
 
   models() {

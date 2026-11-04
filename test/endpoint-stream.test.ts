@@ -18,7 +18,6 @@ const input = {
   model: "test",
   messages: [{ role: "user" as const, content: "Hi" }],
   stream: true,
-  vision: false,
 };
 const encoder = new TextEncoder();
 const sse = (...events: any[]) =>
@@ -96,6 +95,47 @@ test("streamed output reaches the caller before the response ends", async () => 
   finishStream();
   await work;
   expect(finish.mock.calls[0][0]).toBe("first second");
+});
+
+test("aborting while waiting for response headers finishes promptly", async () => {
+  let controller!: AbortController;
+  const finish = jest.fn();
+  const error = jest.fn();
+  const work = runEndpointChat(
+    endpoint,
+    input,
+    {
+      onController: (value) => (controller = value),
+      onFinish: finish,
+      onError: error,
+    },
+    {},
+    () => new Promise<Response>(() => {}),
+  );
+  controller.abort();
+  await work;
+  expect(finish).toHaveBeenCalledTimes(1);
+  expect(error).not.toHaveBeenCalled();
+});
+
+test("aborting a stalled response stream finishes and cancels its reader", async () => {
+  let controller!: AbortController;
+  const cancel = jest.fn(() => {});
+  const finish = jest.fn();
+  const body = new ReadableStream<Uint8Array>({ cancel });
+  const work = runEndpointChat(
+    endpoint,
+    input,
+    { onController: (value) => (controller = value), onFinish: finish },
+    {},
+    async () => new Response(body),
+  );
+  await Promise.resolve();
+  await Promise.resolve();
+  controller.abort();
+  await work;
+  expect(finish).toHaveBeenCalledTimes(1);
+  expect(cancel).toHaveBeenCalled();
 });
 
 test("Responses function calls execute and continue with function output", async () => {

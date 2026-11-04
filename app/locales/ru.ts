@@ -67,16 +67,8 @@ const ru: PartialLocaleType = {
     InputActions: {
       Stop: "Остановить ответ",
       ToBottom: "Перейти к последнему",
-      Theme: {
-        auto: "Автоматическая тема",
-        light: "Светлая тема",
-        dark: "Темная тема",
-      },
-      Prompt: "Быстрая команда",
-      Masks: "Все маски",
       Clear: "Очистить чат",
       Settings: "Настройки чата",
-      UploadImage: "Загрузить изображение",
     },
     Rename: "Переименовать чат",
     Typing: "Печатает…",

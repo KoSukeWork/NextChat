@@ -22,11 +22,13 @@ fn main() {
             app.manage(Arc::new(mcp::McpState::new(
                 directory.join("mcp_config.json"),
             )));
+            app.manage(Arc::new(stream::StreamState::default()));
             app.manage(tts::setup(app)?);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             stream::stream_fetch,
+            stream::stream_cancel,
             sync_http::sync_http,
             mcp::mcp_read_config,
             mcp::mcp_write_config,

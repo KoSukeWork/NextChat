@@ -67,16 +67,8 @@ const bn: PartialLocaleType = {
     InputActions: {
       Stop: "প্রতিক্রিয়া থামান",
       ToBottom: "সর্বশেষে স্ক্রোল করুন",
-      Theme: {
-        auto: "স্বয়ংক্রিয় থিম",
-        light: "আলোর মোড",
-        dark: "অন্ধকার মোড",
-      },
-      Prompt: "সংক্ষিপ্ত নির্দেশনা",
-      Masks: "সমস্ত মাস্ক",
       Clear: "চ্যাট পরিষ্কার করুন",
       Settings: "চ্যাট সেটিংস",
-      UploadImage: "চিত্র আপলোড করুন",
     },
     Rename: "চ্যাট নাম পরিবর্তন করুন",
     Typing: "লিখছে…",
