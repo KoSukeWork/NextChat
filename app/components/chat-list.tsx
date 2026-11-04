@@ -1,5 +1,6 @@
 import ArchiveIcon from "../icons/archive.svg";
 import DeleteIcon from "../icons/delete.svg";
+import PinIcon from "../icons/pin-upright.svg";
 
 import styles from "./home.module.scss";
 import {
@@ -20,11 +21,14 @@ import { useRef, useEffect } from "react";
 import { showConfirm } from "./ui-lib";
 import { useMobileScreen } from "../utils";
 import clsx from "clsx";
+import { orderedVisibleSessions } from "../utils/chat-order";
 
 export function ChatItem(props: {
   onClick?: () => void;
   onDelete?: () => void;
   onArchive?: () => void;
+  onPin?: () => void;
+  pinned?: boolean;
   title: string;
   count: number;
   time: string;
@@ -44,6 +48,15 @@ export function ChatItem(props: {
   }, [props.selected]);
 
   const { pathname: currentPath } = useLocation();
+  const pinIndicator = props.pinned ? (
+    <span
+      className={styles["chat-item-pinned"]}
+      title={Locale.Pin.Pinned}
+      aria-label={Locale.Pin.Pinned}
+    >
+      <PinIcon />
+    </span>
+  ) : null;
   return (
     <Draggable draggableId={`${props.id}`} index={props.index}>
       {(provided) => (
@@ -64,6 +77,7 @@ export function ChatItem(props: {
             props.count,
           )}`}
         >
+          {props.narrow && pinIndicator}
           {props.narrow ? (
             <div className={styles["chat-item-narrow"]}>
               <div className={clsx(styles["chat-item-avatar"], "no-dark")}>
@@ -78,7 +92,12 @@ export function ChatItem(props: {
             </div>
           ) : (
             <>
-              <div className={styles["chat-item-title"]}>{props.title}</div>
+              <div className={styles["chat-item-title"]}>
+                {pinIndicator}
+                <span className={styles["chat-item-title-text"]}>
+                  {props.title}
+                </span>
+              </div>
               <div className={styles["chat-item-info"]}>
                 <div className={styles["chat-item-count"]}>
                   {Locale.ChatItem.ChatItemCount(props.count)}
@@ -88,29 +107,55 @@ export function ChatItem(props: {
             </>
           )}
 
-          {props.onArchive && (
-            <div
-              className={styles["chat-item-archive"]}
-              title={Locale.Archive.Action}
-              onClickCapture={(e) => {
-                props.onArchive?.();
-                e.preventDefault();
+          <div className={styles["chat-item-actions"]}>
+            {props.onPin && (
+              <button
+                type="button"
+                className={clsx(styles["chat-item-pin"], {
+                  [styles["chat-item-pin-active"]]: props.pinned,
+                })}
+                title={props.pinned ? Locale.Pin.Undo : Locale.Pin.Action}
+                aria-label={props.pinned ? Locale.Pin.Undo : Locale.Pin.Action}
+                aria-pressed={!!props.pinned}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  props.onPin?.();
+                }}
+              >
+                <div className={props.pinned ? "no-dark" : undefined}>
+                  <PinIcon />
+                </div>
+              </button>
+            )}
+            {props.onArchive && (
+              <button
+                type="button"
+                className={styles["chat-item-archive"]}
+                title={Locale.Archive.Action}
+                aria-label={Locale.Archive.Action}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  props.onArchive?.();
+                }}
+              >
+                <div>
+                  <ArchiveIcon />
+                </div>
+              </button>
+            )}
+            <button
+              type="button"
+              className={styles["chat-item-delete"]}
+              aria-label={Locale.Home.DeleteChat}
+              onClick={(e) => {
                 e.stopPropagation();
+                props.onDelete?.();
               }}
             >
-              <ArchiveIcon />
-            </div>
-          )}
-
-          <div
-            className={styles["chat-item-delete"]}
-            onClickCapture={(e) => {
-              props.onDelete?.();
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-          >
-            <DeleteIcon />
+              <div>
+                <DeleteIcon />
+              </div>
+            </button>
           </div>
         </div>
       )}
@@ -133,9 +178,7 @@ export function ChatList(props: { narrow?: boolean }) {
 
   // Archived sessions keep their place in `sessions`, so the list works with
   // positions among the visible rows and the store with real indexes.
-  const visible = sessions.flatMap((session, index) =>
-    session.archived ? [] : [{ session, index }],
-  );
+  const visible = orderedVisibleSessions(sessions);
 
   const onDragEnd: OnDragEndResponder = (result) => {
     const { destination, source } = result;
@@ -143,14 +186,15 @@ export function ChatList(props: { narrow?: boolean }) {
       return;
     }
 
-    if (
-      destination.droppableId === source.droppableId &&
-      destination.index === source.index
-    ) {
-      return;
-    }
-
-    moveSession(visible[source.index].index, visible[destination.index].index);
+    if (destination.droppableId !== source.droppableId) return;
+    const dragged = visible[source.index];
+    if (!dragged) return;
+    const pinnedCount = visible.filter(({ session }) => session.pinned).length;
+    const first = dragged.session.pinned ? 0 : pinnedCount;
+    const last = dragged.session.pinned ? pinnedCount - 1 : visible.length - 1;
+    const target = Math.max(first, Math.min(last, destination.index));
+    if (target === source.index || !visible[target]) return;
+    moveSession(dragged.index, visible[target].index);
   };
 
   return (
@@ -186,6 +230,12 @@ export function ChatList(props: { narrow?: boolean }) {
                 onArchive={
                   item.messages.length > 0
                     ? () => chatStore.archiveSession(item.id)
+                    : undefined
+                }
+                pinned={item.pinned}
+                onPin={
+                  item.messages.length > 0 || item.pinned
+                    ? () => chatStore.togglePinSession(item.id)
                     : undefined
                 }
                 narrow={props.narrow}

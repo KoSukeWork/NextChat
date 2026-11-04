@@ -197,7 +197,8 @@
 .chat-item-title {
   font-size: 14px;
   font-weight: bolder;
-  display: block;
+  display: flex;
+  align-items: center;
   width: calc(100% - 15px);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -205,44 +206,84 @@
   animation: slide-in ease 0.3s;
 }
 
-.chat-item-archive {
+.chat-item-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-item-pinned {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
+  margin-right: 4px;
+
+  svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  path {
+    fill: none !important;
+    stroke: var(--primary) !important;
+  }
+}
+
+.chat-item-actions {
   position: absolute;
-  top: 0;
-  right: 22px;
-  transition: all ease 0.3s;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  gap: 1px;
   opacity: 0;
-  cursor: pointer;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
 }
 
-.chat-item:hover > .chat-item-archive {
-  opacity: 0.5;
-  transform: translateX(-4px);
-}
-
-.chat-item:hover > .chat-item-archive:hover {
+.chat-item:hover > .chat-item-actions,
+.chat-item:focus-within > .chat-item-actions {
   opacity: 1;
+  pointer-events: auto;
 }
 
-.chat-item:hover > .chat-item-title {
-  width: calc(100% - 40px);
+.chat-item-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 2px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0.65;
 }
 
+.chat-item-pin,
+.chat-item-archive,
 .chat-item-delete {
-  position: absolute;
-  top: 0;
-  right: 0;
-  transition: all ease 0.3s;
-  opacity: 0;
-  cursor: pointer;
+  flex-shrink: 0;
 }
 
-.chat-item:hover > .chat-item-delete {
-  opacity: 0.5;
-  transform: translateX(-4px);
-}
-
-.chat-item:hover > .chat-item-delete:hover {
+.chat-item-actions button:hover,
+.chat-item-actions button:focus,
+.chat-item-actions .chat-item-pin-active {
   opacity: 1;
+}
+
+.chat-item-actions .chat-item-pin-active path {
+  fill: none !important;
+  stroke: var(--primary) !important;
+}
+
+.chat-item:hover > .chat-item-title,
+.chat-item:focus-within > .chat-item-title {
+  width: calc(100% - 54px);
 }
 
 .chat-item-info {
@@ -267,8 +308,21 @@
 }
 
 .narrow-sidebar {
-  .chat-item-archive {
-    display: none;
+  .chat-item-pinned {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    margin: 0;
+  }
+
+  .chat-item-actions {
+    gap: 0;
+
+    button {
+      width: 18px;
+      height: 18px;
+      padding: 1px;
+    }
   }
 
   .sidebar-title,
@@ -301,10 +355,9 @@
     transition: all ease 0.3s;
     overflow: hidden;
 
-    &:hover {
-      .chat-item-narrow {
-        transform: scale(0.7) translateX(-50%);
-      }
+    &:hover .chat-item-narrow,
+    &:focus-within .chat-item-narrow {
+      transform: translateY(8px) scale(0.75);
     }
   }
 

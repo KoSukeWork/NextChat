@@ -1,5 +1,5 @@
 import {
-  ChatSession,
+  createEmptySession,
   useAccessStore,
   useAppConfig,
   useChatStore,
@@ -8,6 +8,11 @@ import { useMaskStore } from "../store/mask";
 import { usePromptStore } from "../store/prompt";
 import { StoreKey } from "../constant";
 import { merge } from "./merge";
+import {
+  restoredTimestamp,
+  sessionModifiedAt,
+  validTimestamp,
+} from "./chat-deletion";
 
 type NonFunctionKeys<T> = {
   [K in keyof T]: T[K] extends (...args: any[]) => any ? never : K;
@@ -88,61 +93,148 @@ type StateMerger = {
   [K in keyof AppState]: Merger<K>;
 };
 
+type ChatState = AppState[StoreKey.Chat];
+
+function mergeTombstones(...sources: unknown[]): Record<string, number> {
+  const result: Record<string, number> = Object.create(null);
+  for (const source of sources) {
+    if (!source || typeof source !== "object" || Array.isArray(source))
+      continue;
+    for (const [id, time] of Object.entries(source)) {
+      if (typeof time !== "number" || !Number.isFinite(time)) continue;
+      if (
+        !Object.prototype.hasOwnProperty.call(result, id) ||
+        time > result[id]
+      ) {
+        result[id] = time;
+      }
+    }
+  }
+  return result;
+}
+
+function mergeChatStates(
+  local: ChatState,
+  remote: ChatState,
+  restoreImport = false,
+): ChatState {
+  const oldOrder = local.sessions.map((session) => session.id);
+  const oldIndex = local.currentSessionIndex;
+  const currentId = local.sessions[oldIndex]?.id;
+  const tombstones = mergeTombstones(
+    local.deletedSessions,
+    remote.deletedSessions,
+  );
+  const sessionsById = new Map(
+    local.sessions.map((session) => [session.id, session]),
+  );
+
+  for (const incoming of remote.sessions) {
+    let remoteSession = incoming;
+    const hasTombstone = Object.prototype.hasOwnProperty.call(
+      tombstones,
+      incoming.id,
+    );
+    if (
+      restoreImport &&
+      hasTombstone &&
+      sessionModifiedAt(incoming) <= tombstones[incoming.id]
+    ) {
+      // Import is an explicit restore. Beat both clocks without mutating the file.
+      remoteSession = {
+        ...incoming,
+        lastUpdate: restoredTimestamp(incoming, tombstones[incoming.id]),
+      };
+      delete tombstones[incoming.id];
+    }
+    const localSession = sessionsById.get(remoteSession.id);
+    if (!localSession) {
+      if (
+        remoteSession.messages.length === 0 &&
+        !(restoreImport && hasTombstone)
+      )
+        continue;
+      local.sessions.push(remoteSession);
+      sessionsById.set(remoteSession.id, remoteSession);
+      continue;
+    }
+
+    const messageIds = new Set(
+      localSession.messages.map((message) => message.id),
+    );
+    for (const message of remoteSession.messages) {
+      if (!messageIds.has(message.id)) {
+        localSession.messages.push(message);
+        messageIds.add(message.id);
+      }
+    }
+    localSession.messages.sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+    );
+    if (
+      validTimestamp(remoteSession.archiveUpdatedAt) >
+      validTimestamp(localSession.archiveUpdatedAt)
+    ) {
+      localSession.archived = !!remoteSession.archived;
+      localSession.archiveUpdatedAt = remoteSession.archiveUpdatedAt;
+    }
+    if (
+      validTimestamp(remoteSession.pinUpdatedAt) >
+      validTimestamp(localSession.pinUpdatedAt)
+    ) {
+      localSession.pinned = !!remoteSession.pinned;
+      localSession.pinUpdatedAt = remoteSession.pinUpdatedAt;
+    }
+    // Preserve the newer device's edit time so a later sync cannot delete it.
+    localSession.lastUpdate = Math.max(
+      validTimestamp(localSession.lastUpdate),
+      validTimestamp(remoteSession.lastUpdate),
+    );
+  }
+
+  local.sessions = local.sessions.filter((session) => {
+    if (!Object.prototype.hasOwnProperty.call(tombstones, session.id))
+      return true;
+    if (sessionModifiedAt(session) > tombstones[session.id]) {
+      delete tombstones[session.id];
+      return true;
+    }
+    return false;
+  });
+  local.deletedSessions = tombstones;
+  local.sessions.sort(
+    (a, b) => validTimestamp(b.lastUpdate) - validTimestamp(a.lastUpdate),
+  );
+
+  let selected = local.sessions.findIndex(
+    (session) => session.id === currentId,
+  );
+  if (selected < 0) {
+    const neighbours =
+      oldIndex >= 0
+        ? [
+            ...oldOrder.slice(oldIndex + 1),
+            ...oldOrder.slice(0, oldIndex).reverse(),
+          ]
+        : [];
+    const nearest = neighbours.find((id) =>
+      local.sessions.some((session) => session.id === id && !session.archived),
+    );
+    selected = nearest
+      ? local.sessions.findIndex((session) => session.id === nearest)
+      : local.sessions.findIndex((session) => !session.archived);
+    if (selected < 0) {
+      local.sessions.unshift(createEmptySession());
+      selected = 0;
+    }
+  }
+  local.currentSessionIndex = selected;
+  return local;
+}
 // we merge remote state to local state
 const MergeStates: StateMerger = {
-  [StoreKey.Chat]: (localState, remoteState) => {
-    const currentSessionId =
-      localState.sessions[localState.currentSessionIndex]?.id;
-    const archiveTime = ({ archiveUpdatedAt: time }: ChatSession) =>
-      typeof time === "number" && Number.isFinite(time) ? time : 0;
-
-    // merge sessions
-    const localSessions: Record<string, ChatSession> = {};
-    localState.sessions.forEach((s) => (localSessions[s.id] = s));
-
-    remoteState.sessions.forEach((remoteSession) => {
-      const localSession = localSessions[remoteSession.id];
-      if (!localSession) {
-        // Do not import new, empty chats. Existing chats can still carry a
-        // newer archive/restore operation after their messages were cleared.
-        if (remoteSession.messages.length === 0) return;
-        localState.sessions.push(remoteSession);
-      } else {
-        // if both have the same session id, merge the messages
-        const localMessageIds = new Set(localSession.messages.map((v) => v.id));
-        remoteSession.messages.forEach((m) => {
-          if (!localMessageIds.has(m.id)) {
-            localSession.messages.push(m);
-          }
-        });
-
-        // sort local messages with date field in asc order
-        localSession.messages.sort(
-          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-        );
-
-        // the latest archive or restore wins, whichever device made it
-        if (archiveTime(remoteSession) > archiveTime(localSession)) {
-          localSession.archived = !!remoteSession.archived;
-          localSession.archiveUpdatedAt = remoteSession.archiveUpdatedAt;
-        }
-      }
-    });
-
-    // sort local sessions with date field in desc order
-    localState.sessions.sort(
-      (a, b) =>
-        new Date(b.lastUpdate).getTime() - new Date(a.lastUpdate).getTime(),
-    );
-
-    // sorting moves sessions around, so stay on the session the user had open
-    const currentIndex = localState.sessions.findIndex(
-      (s) => s.id === currentSessionId,
-    );
-    if (currentIndex >= 0) localState.currentSessionIndex = currentIndex;
-
-    return localState;
-  },
+  [StoreKey.Chat]: (localState, remoteState) =>
+    mergeChatStates(localState, remoteState),
   [StoreKey.Prompt]: (localState, remoteState) => {
     localState.prompts = {
       ...remoteState.prompts,
@@ -177,9 +269,21 @@ export function setLocalAppState(appState: AppState) {
   });
 }
 
-export function mergeAppState(localState: AppState, remoteState: AppState) {
+export function mergeAppState(
+  localState: AppState,
+  remoteState: AppState,
+  options?: { restoreDeletedSessions?: boolean },
+) {
   Object.keys(localState).forEach(<T extends keyof AppState>(k: string) => {
     const key = k as T;
+    if (key === StoreKey.Chat && options?.restoreDeletedSessions) {
+      mergeChatStates(
+        localState[StoreKey.Chat],
+        remoteState[StoreKey.Chat],
+        true,
+      );
+      return;
+    }
     const localStoreState = localState[key];
     const remoteStoreState = remoteState[key];
     localState[key] = MergeStates[key](localStoreState, remoteStoreState);

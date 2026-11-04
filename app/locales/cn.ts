@@ -63,6 +63,11 @@ const cn = {
   ChatItem: {
     ChatItemCount: (count: number) => `${count} 条对话`,
   },
+  Pin: {
+    Action: "置顶",
+    Undo: "取消置顶",
+    Pinned: "已置顶",
+  },
   Chat: {
     Thinking: { Title: "思考过程", Active: "思考中…", Done: "已思考" },
     SubTitle: (count: number) => `共 ${count} 条对话`,

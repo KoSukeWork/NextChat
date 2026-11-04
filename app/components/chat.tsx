@@ -32,6 +32,7 @@ import BreakIcon from "../icons/break.svg";
 import SettingsIcon from "../icons/chat-settings.svg";
 import DeleteIcon from "../icons/clear.svg";
 import PinIcon from "../icons/pin.svg";
+import SessionPinIcon from "../icons/pin-upright.svg";
 import ConfirmIcon from "../icons/confirm.svg";
 import CloseIcon from "../icons/close.svg";
 import CancelIcon from "../icons/cancel.svg";
@@ -1757,7 +1758,10 @@ function _Chat() {
   return (
     <>
       <div className={styles.chat} key={session.id}>
-        <div className="window-header" data-tauri-drag-region>
+        <div
+          className={clsx("window-header", styles["chat-header"])}
+          data-tauri-drag-region
+        >
           {isMobileScreen && (
             <div className="window-actions">
               <div className={"window-action-button"}>
@@ -1820,6 +1824,22 @@ function _Chat() {
                 }}
               />
             </div>
+            {(session.messages.length > 0 || session.pinned) &&
+              !session.archived && (
+                <div className="window-action-button">
+                  <IconButton
+                    icon={<SessionPinIcon />}
+                    bordered
+                    type={session.pinned ? "primary" : undefined}
+                    className={clsx(styles["chat-session-pin"], {
+                      [styles["chat-session-pin-active"]]: session.pinned,
+                    })}
+                    title={session.pinned ? Locale.Pin.Undo : Locale.Pin.Action}
+                    aria={session.pinned ? Locale.Pin.Undo : Locale.Pin.Action}
+                    onClick={() => chatStore.togglePinSession(session.id)}
+                  />
+                </div>
+              )}
             {session.messages.length > 0 && !session.archived && (
               <div className="window-action-button">
                 <IconButton

@@ -44,6 +44,7 @@ const ids = () => store().sessions.map((s) => s.id);
 
 beforeEach(() => {
   toast.mockClear();
+  useChatStore.setState({ deletedSessions: {} });
   useAppConfig.setState({
     models: discoveredModels(["home"], "OpenAI"),
     modelConfig: {

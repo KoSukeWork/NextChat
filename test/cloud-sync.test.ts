@@ -46,6 +46,7 @@ jest.unstable_mockModule("@/app/utils/indexedDB-storage", () => ({
   },
 }));
 const { useSyncStore } = await import("../app/store/sync");
+const { readFromFile } = await import("../app/utils");
 const { syncErrorMessage } = await import("../app/utils/cloud/errors");
 const { ProviderType } = await import("../app/utils/cloud");
 
@@ -134,9 +135,29 @@ test("existing backup is downloaded once, merged and uploaded", async () => {
   expect(
     native.mock.calls.filter(([, a]) => a.request.method === "GET"),
   ).toHaveLength(1);
-  expect(merge).toHaveBeenCalledTimes(1);
+  expect(merge).toHaveBeenCalledTimes(2);
   expect(JSON.parse(native.mock.calls[2][1].request.body).remote).toBe(true);
   expect(setLocal).toHaveBeenCalledTimes(1);
+});
+
+test("local file import requests explicit restoration of deleted sessions", async () => {
+  jest
+    .mocked(readFromFile)
+    .mockResolvedValue(JSON.stringify({ imported: true }));
+  const consoleError = jest
+    .spyOn(console, "error")
+    .mockImplementation(() => {});
+  try {
+    await useSyncStore.getState().import();
+    expect(merge).toHaveBeenCalledWith(
+      local,
+      { imported: true },
+      { restoreDeletedSessions: true },
+    );
+    expect(setLocal).toHaveBeenCalled();
+  } finally {
+    consoleError.mockRestore();
+  }
 });
 
 test("failed PUT rejects and never updates sync time or live state", async () => {

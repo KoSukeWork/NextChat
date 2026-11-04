@@ -22,7 +22,7 @@ jest.unstable_mockModule("@/app/components/ui-lib", () => ({
   showToast: toast,
   showConfirm: async () => true,
 }));
-for (const icon of ["archive", "delete"])
+for (const icon of ["archive", "delete", "pin-upright"])
   jest.unstable_mockModule(`@/app/icons/${icon}.svg`, () => ({
     default: () => <svg />,
   }));
@@ -54,7 +54,9 @@ const session = (id: string, extra = {}) => ({
   id,
   topic: id,
   memoryPrompt: "",
-  messages: [{ id: `${id}-m`, role: "user", content: id, date: "2026/1/1" }],
+  messages: [
+    { id: `${id}-m`, role: "user" as const, content: id, date: "2026/1/1" },
+  ],
   stat: { tokenCount: 0, wordCount: 0, charCount: 0 },
   lastUpdate: 1,
   lastSummarizeIndex: 0,
@@ -141,4 +143,81 @@ test("the archive button hides the row without opening it", () => {
 test("empty sessions have no archive button", () => {
   setup([session("a", { messages: [] })]);
   expect(screen.queryByTitle(Locale.Archive.Action)).toBeNull();
+});
+
+test("pinning a row leaves the underlying order alone and marks it", () => {
+  setup([session("a"), session("b")]);
+  const row = screen.getByText("b").closest("[data-position]")!;
+  fireEvent.click(row.querySelector(`[aria-label="${Locale.Pin.Action}"]`)!);
+  expect(ids()).toEqual(["a", "b"]);
+  expect(screen.getByText("b").closest("[data-position]")).toHaveAttribute(
+    "data-position",
+    "0",
+  );
+  expect(screen.getByTitle(Locale.Pin.Pinned)).toBeInTheDocument();
+  expect(screen.getByLabelText(Locale.Pin.Undo)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(current()).toBe("a");
+});
+
+test("an empty session has no pin action", () => {
+  setup([session("a", { messages: [] })]);
+  expect(screen.queryByLabelText(Locale.Pin.Action)).toBeNull();
+});
+
+test.each([
+  [0, 3, ["p2", "p1", "u1", "u2"]],
+  [3, 0, ["p1", "p2", "u2", "u1"]],
+])("dragging across the groups clamps %i to %i", (from, to, expected) => {
+  setup([
+    session("u1"),
+    session("p1", { pinned: true }),
+    session("hidden", { archived: true }),
+    session("u2"),
+    session("p2", { pinned: true }),
+  ]);
+  act(() =>
+    onDragEnd({
+      source: { droppableId: "chat-list", index: from },
+      destination: { droppableId: "chat-list", index: to },
+    }),
+  );
+  expect(
+    expected.map(
+      (id) =>
+        screen
+          .getByText(id)
+          .closest("[data-position]")
+          ?.getAttribute("data-position"),
+    ),
+  ).toEqual(["0", "1", "2", "3"]);
+  expect(
+    useChatStore.getState().sessions.find((s) => s.id === "hidden")?.archived,
+  ).toBe(true);
+  expect(
+    useChatStore
+      .getState()
+      .sessions.filter((s) => s.pinned)
+      .map((s) => s.id)
+      .sort(),
+  ).toEqual(["p1", "p2"]);
+});
+
+test("pinned chats remain marked in the narrow list", () => {
+  useChatStore.setState({
+    sessions: [session("a", { pinned: true })],
+    currentSessionIndex: 0,
+  });
+  render(
+    <MemoryRouter>
+      <ChatList narrow />
+    </MemoryRouter>,
+  );
+  expect(screen.getByTitle(Locale.Pin.Pinned)).toBeInTheDocument();
+  expect(screen.getByLabelText(Locale.Pin.Undo)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 });

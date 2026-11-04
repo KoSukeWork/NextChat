@@ -78,7 +78,9 @@ export const useSyncStore = createPersistStore(
       try {
         const remoteState = JSON.parse(rawContent) as AppState;
         const localState = getLocalAppState();
-        mergeAppState(localState, remoteState);
+        mergeAppState(localState, remoteState, {
+          restoreDeletedSessions: true,
+        });
         setLocalAppState(localState);
         location.reload();
       } catch (e) {
@@ -121,7 +123,16 @@ export const useSyncStore = createPersistStore(
       }
 
       await client.set(config.username, JSON.stringify(localState));
-      if (remoteState) setCloudAppState(localState);
+      if (remoteState) {
+        // The user may have edited or deleted a session while the network
+        // request was in flight. Merge the uploaded snapshot into the latest
+        // local state so a successful PUT cannot undo those newer changes.
+        const latestState = JSON.parse(
+          JSON.stringify(getCloudAppState()),
+        ) as CloudState;
+        mergeCloudAppState(latestState, localState);
+        setCloudAppState(latestState);
+      }
       this.markSyncTime();
     },
 

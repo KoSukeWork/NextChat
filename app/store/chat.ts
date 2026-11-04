@@ -35,6 +35,12 @@ import { estimateTokenLength } from "../utils/token";
 import { ModelConfig, ModelType, useAppConfig } from "./config";
 import { useAccessStore } from "./access";
 import { configuredModels, resolveLocalModel } from "../utils/local-models";
+import {
+  deletionTimestamp,
+  restoredTimestamp,
+  validTimestamp,
+} from "../utils/chat-deletion";
+import { orderedVisibleSessions } from "../utils/chat-order";
 import { createEmptyMask, Mask } from "./mask";
 import { executeMcpAction, getAllTools, isMcpEnabled } from "../mcp/actions";
 import { extractMcpJson, isMcpJson } from "../mcp/utils";
@@ -99,6 +105,8 @@ export interface ChatSession {
   // openable and searchable. The newer archive or restore wins when syncing.
   archived?: boolean;
   archiveUpdatedAt?: number;
+  pinned?: boolean;
+  pinUpdatedAt?: number;
 }
 
 export const DEFAULT_TOPIC = Locale.Store.DefaultTopic;
@@ -107,7 +115,7 @@ export const BOT_HELLO: ChatMessage = createMessage({
   content: Locale.Store.BotHello,
 });
 
-function createEmptySession(): ChatSession {
+export function createEmptySession(): ChatSession {
   return {
     id: nanoid(),
     topic: DEFAULT_TOPIC,
@@ -232,6 +240,7 @@ async function getMcpSystemPrompt(accessCode: string): Promise<string> {
 
 const DEFAULT_CHAT_STATE = {
   sessions: [createEmptySession()],
+  deletedSessions: {} as Record<string, number>,
   currentSessionIndex: 0,
   lastInput: "",
 };
@@ -274,10 +283,25 @@ export const useChatStore = createPersistStore(
       },
 
       clearSessions() {
-        set(() => ({
-          sessions: [createEmptySession()],
-          currentSessionIndex: 0,
-        }));
+        set((state) => {
+          const deletedSessions: Record<string, number> = Object.assign(
+            Object.create(null),
+            state.deletedSessions ?? {},
+          );
+          for (const session of state.sessions) {
+            if (session.messages.length) {
+              deletedSessions[session.id] = deletionTimestamp(
+                session,
+                deletedSessions[session.id],
+              );
+            }
+          }
+          return {
+            sessions: [createEmptySession()],
+            currentSessionIndex: 0,
+            deletedSessions,
+          };
+        });
       },
 
       selectSession(index: number) {
@@ -336,6 +360,19 @@ export const useChatStore = createPersistStore(
         );
       },
 
+      togglePinSession(id: string) {
+        const session = get().sessions.find((s) => s.id === id);
+        if (!session || (!session.pinned && session.messages.length === 0))
+          return;
+        get().updateTargetSession(session, (target) => {
+          target.pinned = !target.pinned;
+          target.pinUpdatedAt = Math.max(
+            Date.now(),
+            validTimestamp(target.pinUpdatedAt) + 1,
+          );
+        });
+      },
+
       moveSession(from: number, to: number) {
         set((state) => {
           const { sessions, currentSessionIndex: oldIndex } = state;
@@ -391,8 +428,8 @@ export const useChatStore = createPersistStore(
 
       nextSession(delta: number) {
         const { sessions, currentSessionIndex: i } = get();
-        const visible = sessions.flatMap((s, index) =>
-          s.archived ? [] : [index],
+        const visible = orderedVisibleSessions(sessions).map(
+          ({ index }) => index,
         );
         const n = visible.length;
         if (n === 0) return;
@@ -402,10 +439,19 @@ export const useChatStore = createPersistStore(
           get().selectSession(visible[limit(position + delta)]);
           return;
         }
-        // Viewing an archived session: move to its neighbour in that direction.
-        const next = visible.findIndex((index) => index > i);
-        const after = next < 0 ? n : next;
-        get().selectSession(visible[limit(delta > 0 ? after : after - 1)]);
+        // An open archived chat occupies its usual place within its pin group.
+        const withCurrent = orderedVisibleSessions(sessions, i).map(
+          ({ index }) => index,
+        );
+        const current = withCurrent.indexOf(i);
+        if (current < 0) {
+          get().selectSession(visible[delta > 0 ? 0 : n - 1]);
+          return;
+        }
+        const neighbour =
+          (current + (delta > 0 ? 1 : -1) + withCurrent.length) %
+          withCurrent.length;
+        get().selectSession(withCurrent[neighbour]);
       },
 
       deleteSession(index: number) {
@@ -429,15 +475,24 @@ export const useChatStore = createPersistStore(
           nextIndex = nearestVisibleIndex(sessions, nextIndex);
         }
 
-        // for undo delete action
-        const restoreState = {
-          currentSessionIndex: get().currentSessionIndex,
-          sessions: get().sessions.slice(),
-        };
+        const deletedSessions: Record<string, number> = Object.assign(
+          Object.create(null),
+          get().deletedSessions ?? {},
+        );
+        const deletedAt = deletedSession.messages.length
+          ? deletionTimestamp(
+              deletedSession,
+              deletedSessions[deletedSession.id],
+            )
+          : undefined;
+        if (deletedAt !== undefined)
+          deletedSessions[deletedSession.id] = deletedAt;
+        const wasCurrent = index === currentIndex;
 
         set(() => ({
           currentSessionIndex: nextIndex,
           sessions,
+          deletedSessions,
         }));
 
         showToast(
@@ -445,7 +500,42 @@ export const useChatStore = createPersistStore(
           {
             text: Locale.Home.Revert,
             onClick() {
-              set(() => restoreState);
+              set((state) => {
+                const sessions = state.sessions.slice();
+                const selectedId = sessions[state.currentSessionIndex]?.id;
+                const existing = sessions.findIndex(
+                  (s) => s.id === deletedSession.id,
+                );
+                const previous =
+                  existing >= 0 ? sessions[existing] : deletedSession;
+                const knownDeletion = Math.max(
+                  deletedAt ?? 0,
+                  validTimestamp(state.deletedSessions?.[deletedSession.id]),
+                );
+                const restored = {
+                  ...previous,
+                  lastUpdate: restoredTimestamp(previous, knownDeletion),
+                };
+                if (existing >= 0) sessions[existing] = restored;
+                else
+                  sessions.splice(
+                    Math.min(index, sessions.length),
+                    0,
+                    restored,
+                  );
+                const deletedSessions: Record<string, number> = Object.assign(
+                  Object.create(null),
+                  state.deletedSessions ?? {},
+                );
+                delete deletedSessions[deletedSession.id];
+                const targetId = wasCurrent ? restored.id : selectedId;
+                const selected = sessions.findIndex((s) => s.id === targetId);
+                return {
+                  sessions,
+                  currentSessionIndex: Math.max(0, selected),
+                  deletedSessions,
+                };
+              });
             },
           },
           5000,
@@ -469,7 +559,7 @@ export const useChatStore = createPersistStore(
       onNewMessage(message: ChatMessage, targetSession: ChatSession) {
         get().updateTargetSession(targetSession, (session) => {
           session.messages = session.messages.concat();
-          session.lastUpdate = Date.now();
+          session.lastUpdate = restoredTimestamp(session);
         });
 
         get().updateStat(message, targetSession);
@@ -554,6 +644,7 @@ export const useChatStore = createPersistStore(
             savedUserMessage,
             botMessage,
           ]);
+          session.lastUpdate = restoredTimestamp(session);
         });
 
         const api: ClientApi = getClientApi(modelConfig.providerName);

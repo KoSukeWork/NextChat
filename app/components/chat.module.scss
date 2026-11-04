@@ -331,7 +331,41 @@
   }
 }
 
+.chat-session-pin svg path {
+  fill: none !important;
+}
+
+.chat-session-pin.chat-session-pin-active svg path {
+  fill: none !important;
+  stroke: white !important;
+}
+
 @media only screen and (max-width: 600px) {
+  .chat-header {
+    padding: 10px 12px;
+
+    :global(.window-header-title) {
+      flex: 1;
+      min-width: 0;
+      margin: 0 4px;
+    }
+
+    :global(.window-actions) {
+      flex-shrink: 0;
+      gap: 4px;
+    }
+
+    :global(.window-action-button:not(:first-child)) {
+      margin-left: 0;
+    }
+
+    :global(.window-action-button button) {
+      width: 40px;
+      height: 40px;
+      padding: 10px;
+    }
+  }
+
   .chat-body-title {
     text-align: center;
   }

@@ -66,6 +66,11 @@ const en: LocaleType = {
   ChatItem: {
     ChatItemCount: (count: number) => `${count} messages`,
   },
+  Pin: {
+    Action: "Pin chat",
+    Undo: "Unpin chat",
+    Pinned: "Pinned",
+  },
   Chat: {
     Thinking: {
       Title: "Thinking process",
