@@ -13,6 +13,7 @@ jest.mocked(global.fetch).mockImplementation(
 const toast = jest.fn();
 jest.unstable_mockModule("@/app/components/ui-lib", () => ({
   showToast: toast,
+  showConfirm: async () => true,
 }));
 await import("../app/client/api");
 const { EndpointClient } = await import("../app/client/endpoint-client");

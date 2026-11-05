@@ -20,15 +20,54 @@ pub struct McpConfig {
     pub mcp_servers: BTreeMap<String, ServerConfig>,
 }
 
+pub fn config_directory(default: &Path, configured: Option<std::ffi::OsString>) -> Result<PathBuf, String> {
+    let directory = configured.map(PathBuf::from).unwrap_or_else(|| default.to_path_buf());
+    if !directory.is_absolute() {
+        return Err("NEXTCHAT_MCP_CONFIG_DIR must be an absolute path".into());
+    }
+    Ok(directory)
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ServerConfig {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub command: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub headers: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<ServerStatus>,
+}
+
+impl ServerConfig {
+    fn validate(&self) -> bool {
+        if let Some(url) = &self.url {
+            let valid_url = reqwest::Url::parse(url)
+                .map(|url| matches!(url.scheme(), "http" | "https"))
+                .unwrap_or(false);
+            valid_url && self.command.is_empty() && self.args.is_empty() && self.env.is_empty()
+                && self.headers.iter().all(|(name, value)| {
+                    reqwest::header::HeaderName::from_bytes(name.as_bytes()).is_ok()
+                        && reqwest::header::HeaderValue::from_str(value).is_ok()
+                })
+        } else {
+            !self.command.trim().is_empty() && !self.command.contains('\0')
+                && self.headers.is_empty()
+                && !self.args.iter().any(|s| s.contains('\0'))
+                && !self.env.iter().any(|(k, v)| k.is_empty() || k.contains(['=', '\0']) || v.contains('\0'))
+        }
+    }
+
+    fn connection_eq(&self, other: &Self) -> bool {
+        (&self.command, &self.args, &self.env, &self.url, &self.headers)
+            == (&other.command, &other.args, &other.env, &other.url, &other.headers)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -49,6 +88,47 @@ pub struct ProcessEvent {
 }
 
 type EventSink = Arc<dyn Fn(&str, ProcessEvent) + Send + Sync>;
+
+#[derive(Clone, Copy)]
+struct McpDialogText {
+    title: &'static str,
+    intro: &'static str,
+    server: &'static str,
+    url: &'static str,
+    headers: &'static str,
+    command: &'static str,
+    environment: &'static str,
+    approve: &'static str,
+    reject: &'static str,
+}
+
+fn mcp_dialog_text(language: &str) -> McpDialogText {
+    if language == "cn" {
+        McpDialogText {
+            title: "允许 MCP 服务器连接？",
+            intro: "允许这些 MCP 服务器连接？本地服务器可以使用你的权限运行程序。远程服务器会收到配置的请求头。\n请仅批准你信任的服务器。",
+            server: "服务器",
+            url: "地址",
+            headers: "请求头名称",
+            command: "命令",
+            environment: "环境变量",
+            approve: "允许",
+            reject: "拒绝",
+        }
+    } else {
+        McpDialogText {
+            title: "Allow MCP server connections?",
+            intro: "Allow these MCP server connections? Local servers can run programs with your permissions. Remote servers receive the configured request headers.\nOnly approve servers you trust.",
+            server: "Server",
+            url: "URL",
+            headers: "Request header names",
+            command: "Command",
+            environment: "Environment",
+            approve: "Allow",
+            reject: "Deny",
+        }
+    }
+}
 
 struct RunningProcess {
     run_id: u64,
@@ -90,32 +170,47 @@ impl McpState {
         self.read_disk()
     }
 
+    #[cfg(test)]
     fn write_config(
         &self,
         config: McpConfig,
         confirm: impl FnOnce(&str) -> bool,
     ) -> Result<(), String> {
+        self.write_config_localized(config, "en", confirm)
+    }
+
+    fn write_config_localized(
+        &self,
+        config: McpConfig,
+        language: &str,
+        confirm: impl FnOnce(&str) -> bool,
+    ) -> Result<(), String> {
+        let text = mcp_dialog_text(language);
         let _guard = self.config_lock.lock().map_err(|e| e.to_string())?;
         let old = self.read_disk()?;
         let mut changes = Vec::new();
         for (id, server) in &config.mcp_servers {
-            if id.trim().is_empty()
-                || server.command.trim().is_empty()
-                || server.command.contains('\0')
-                || server.args.iter().any(|s| s.contains('\0'))
-                || server
-                    .env
-                    .iter()
-                    .any(|(k, v)| k.is_empty() || k.contains(['=', '\0']) || v.contains('\0'))
-            {
+            if id.trim().is_empty() || matches!(id.as_str(), "__proto__" | "constructor" | "prototype") || !server.validate() {
                 return Err("Invalid MCP server configuration".into());
             }
             if old
                 .mcp_servers
                 .get(id)
-                .map(|s| (&s.command, &s.args, &s.env))
-                != Some((&server.command, &server.args, &server.env))
+                .map(|s| s.connection_eq(server)) != Some(true)
             {
+                if let Some(url) = &server.url {
+                    let names: Vec<_> = server.headers.keys().collect();
+                    changes.push(format!(
+                        "{}: {}\n{}: {}\n{}: {}",
+                        text.server,
+                        serde_json::to_string(id).unwrap(),
+                        text.url,
+                        serde_json::to_string(url).unwrap(),
+                        text.headers,
+                        serde_json::to_string(&names).unwrap()
+                    ));
+                    continue;
+                }
                 // JSON quoting keeps argument boundaries and control characters visible.
                 let command = std::iter::once(&server.command)
                     .chain(server.args.iter())
@@ -123,14 +218,17 @@ impl McpState {
                     .collect::<Vec<_>>()
                     .join(" ");
                 changes.push(format!(
-                    "Server: {}\nCommand: {}\nEnvironment: {}",
+                    "{}: {}\n{}: {}\n{}: {}",
+                    text.server,
                     serde_json::to_string(id).unwrap(),
+                    text.command,
                     command,
+                    text.environment,
                     serde_json::to_string_pretty(&server.env).unwrap()
                 ));
             }
         }
-        if !changes.is_empty() && !confirm(&format!("Allow these MCP servers to run local programs with your permissions?\nOnly approve commands you trust.\n\n{}", changes.join("\n\n"))) {
+        if !changes.is_empty() && !confirm(&format!("{}\n\n{}", text.intro, changes.join("\n\n"))) {
             return Err("MCP configuration was not approved. No changes were saved.".into());
         }
         let parent = self
@@ -149,8 +247,7 @@ impl McpState {
         for (id, previous) in &old.mcp_servers {
             if config.mcp_servers.get(id).map_or(true, |next| {
                 next.status == Some(ServerStatus::Paused)
-                    || (&next.command, &next.args, &next.env)
-                        != (&previous.command, &previous.args, &previous.env)
+                    || !next.connection_eq(previous)
             }) {
                 self.kill(id, None)?;
             }
@@ -168,6 +265,9 @@ impl McpState {
             .ok_or("MCP server is not configured")?;
         if server.status == Some(ServerStatus::Paused) {
             return Err("MCP server is paused".into());
+        }
+        if server.url.is_some() || !server.validate() {
+            return Err("MCP server is not a valid local server".into());
         }
         self.kill(id, None)?;
         let environment = child_environment(&server.env);
@@ -459,15 +559,21 @@ pub async fn mcp_write_config(
     window: tauri::Window,
     state: tauri::State<'_, Arc<McpState>>,
     config: McpConfig,
+    language: Option<String>,
 ) -> Result<(), String> {
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        state.write_config(config, |message| {
-            tauri::api::dialog::blocking::ask(
-                Some(&window),
-                "Allow MCP command execution?",
-                message,
-            )
+        let language = language.as_deref().unwrap_or("en");
+        let text = mcp_dialog_text(language);
+        state.write_config_localized(config, language, |message| {
+            tauri::api::dialog::blocking::MessageDialogBuilder::new(text.title, message)
+                .parent(&window)
+                .buttons(tauri::api::dialog::MessageDialogButtons::OkCancelWithLabels(
+                    text.approve.into(),
+                    text.reject.into(),
+                ))
+                .kind(tauri::api::dialog::MessageDialogKind::Warning)
+                .show()
         })
     })
     .await

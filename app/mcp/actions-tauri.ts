@@ -3,14 +3,20 @@ import { z } from "zod";
 import type * as ServerActions from "./actions";
 import type {
   McpConfigData,
+  ServerConfig,
   ServerStatusResponse,
   ListToolsResponse,
 } from "./types";
+import { isRemoteServer } from "./types";
+import { parseMcpConfig } from "./config";
+import { createRemoteClient, nativeMcpFetch, safeRemoteError } from "./remote";
 import { invoke, isTauri } from "./tauri-api";
 import { TauriStdioTransport } from "./tauri-transport";
+import { getLang } from "../locales";
 
 interface Entry {
-  client: Client;
+  client: Client | null;
+  remote: boolean;
   tools: ListToolsResponse | null;
   status: "initializing" | "active" | "error";
   errorMsg: string | null;
@@ -25,43 +31,51 @@ function mutate<T>(operation: () => Promise<T>): Promise<T> {
   return result;
 }
 
-const readConfig = () => invoke<McpConfigData>("mcp_read_config");
+const readConfig = async () =>
+  parseMcpConfig(await invoke<McpConfigData>("mcp_read_config"));
 const writeConfig = (config: McpConfigData) =>
-  invoke<void>("mcp_write_config", { config });
+  invoke<void>("mcp_write_config", { config, language: getLang() });
 
 async function stop(id: string) {
   const entry = clients.get(id);
   clients.delete(id);
-  if (entry) await entry.client.close();
+  if (entry?.client) await entry.client.close();
   else await invoke("mcp_kill", { id });
 }
 
-async function start(id: string) {
+async function start(id: string, server: ServerConfig) {
   await stop(id);
-  const client = new Client(
-    { name: `nextchat-mcp-client-${id}`, version: "1.0.0" },
-    { capabilities: {} },
-  );
-  const transport = new TauriStdioTransport(id);
+  const remote = isRemoteServer(server);
   const entry: Entry = {
-    client,
+    client: null,
+    remote,
     tools: null,
     status: "initializing",
     errorMsg: null,
   };
   clients.set(id, entry);
-  client.onerror = (error) => {
-    entry.errorMsg = error.message;
-  };
-  client.onclose = () => {
-    if (clients.get(id) === entry) {
-      entry.status = "error";
-      entry.tools = null;
-      entry.errorMsg ??= "MCP server disconnected";
-    }
-  };
+  let client: Client | null = null;
   try {
-    await client.connect(transport);
+    if (remote) {
+      client = await createRemoteClient(id, server, nativeMcpFetch);
+    } else {
+      client = new Client(
+        { name: `nextchat-mcp-client-${id}`, version: "1.0.0" },
+        { capabilities: {} },
+      );
+      await client.connect(new TauriStdioTransport(id));
+    }
+    entry.client = client;
+    client.onerror = (error) => {
+      entry.errorMsg = remote ? safeRemoteError(error) : error.message;
+    };
+    client.onclose = () => {
+      if (clients.get(id) === entry) {
+        entry.status = "error";
+        entry.tools = null;
+        entry.errorMsg ??= "MCP server disconnected";
+      }
+    };
     const tools = [];
     let cursor: string | undefined;
     const seen = new Set<string>();
@@ -80,8 +94,12 @@ async function start(id: string) {
     entry.errorMsg = null;
   } catch (error) {
     entry.status = "error";
-    entry.errorMsg = error instanceof Error ? error.message : String(error);
-    await client.close().catch(() => {});
+    entry.errorMsg = remote
+      ? safeRemoteError(error)
+      : error instanceof Error
+      ? error.message
+      : String(error);
+    await client?.close().catch(() => {});
     throw new Error(entry.errorMsg);
   }
 }
@@ -90,8 +108,8 @@ async function startConfigured(config: McpConfigData) {
   await Promise.all(
     Object.entries(config.mcpServers)
       .filter(([id, server]) => server.status !== "paused" && !clients.has(id))
-      .map(([id]) =>
-        start(id).catch(() => {
+      .map(([id, server]) =>
+        start(id, server).catch(() => {
           /* Expose startup errors through getClientsStatus. */
         }),
       ),
@@ -133,8 +151,8 @@ export const getAllTools: typeof ServerActions.getAllTools = async (
   _accessCode,
 ) =>
   [...clients.entries()]
-    .filter(([, entry]) => entry.status === "active")
-    .map(([clientId, entry]) => ({ clientId, tools: entry.tools }));
+    .filter(([, entry]) => entry.status === "active" && entry.tools !== null)
+    .map(([clientId, entry]) => ({ clientId, tools: entry.tools! }));
 
 export const initializeMcpSystem: typeof ServerActions.initializeMcpSystem =
   async (_accessCode) =>
@@ -151,11 +169,15 @@ export const addMcpServer: typeof ServerActions.addMcpServer = async (
 ) =>
   mutate(async () => {
     const config = await readConfig();
-    config.mcpServers[id] = { ...server, status: server.status ?? "active" };
+    const incoming = parseMcpConfig({ mcpServers: { [id]: server } });
+    config.mcpServers[id] = {
+      ...incoming.mcpServers[id],
+      status: server.status ?? "active",
+    };
     // Native approval happens before changing a running connection.
     await writeConfig(config);
     if (server.status === "paused") await stop(id);
-    else await start(id).catch(() => {});
+    else await start(id, config.mcpServers[id]).catch(() => {});
     return config;
   });
 
@@ -181,7 +203,7 @@ export const resumeMcpServer: typeof ServerActions.resumeMcpServer = async (
     if (!config.mcpServers[id]) throw new Error(`Server ${id} not found`);
     config.mcpServers[id].status = "active";
     await writeConfig(config);
-    await start(id);
+    await start(id, config.mcpServers[id]);
   });
 
 export const removeMcpServer: typeof ServerActions.removeMcpServer = async (
@@ -214,5 +236,38 @@ export const executeMcpAction: typeof ServerActions.executeMcpAction = async (
   const entry = clients.get(id);
   if (!entry || entry.status !== "active")
     throw new Error(`MCP server ${id} is not connected`);
-  return entry.client.request(request, z.any());
+  try {
+    const call = entry.client!.request as (
+      requestMessage: typeof request,
+      schema: unknown,
+    ) => Promise<unknown>;
+    return await call.call(entry.client, request, z.any());
+  } catch (error) {
+    if (entry.remote) throw new Error(safeRemoteError(error));
+    throw error;
+  }
 };
+
+export const mergeMcpServers: typeof ServerActions.mergeMcpServers = async (
+  incoming,
+  _accessCode,
+) =>
+  mutate(async () => {
+    const additions = parseMcpConfig(incoming);
+    const config = await readConfig();
+    const merged = parseMcpConfig({
+      mcpServers: { ...config.mcpServers, ...additions.mcpServers },
+    });
+    await writeConfig(merged);
+    // Queue connection work after this mutation without holding up the import.
+    // Keeping it on the same queue serializes it with later edits and stops.
+    void mutate(async () => {
+      await Promise.all(
+        Object.entries(additions.mcpServers).map(async ([id, server]) => {
+          if (server.status === "paused") await stop(id).catch(() => {});
+          else await start(id, server).catch(() => {});
+        }),
+      );
+    }).catch(() => {});
+    return merged;
+  });

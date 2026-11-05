@@ -110,11 +110,30 @@ export interface ServerStatusResponse {
 }
 
 // MCP 服务器配置相关类型
-export interface ServerConfig {
+export interface LocalServerConfig {
   command: string;
   args: string[];
   env?: Record<string, string>;
+  url?: never;
+  headers?: never;
   status?: "active" | "paused" | "error";
+}
+
+export interface RemoteServerConfig {
+  url: string;
+  headers?: Record<string, string>;
+  command?: never;
+  args?: never;
+  env?: never;
+  status?: "active" | "paused" | "error";
+}
+
+export type ServerConfig = LocalServerConfig | RemoteServerConfig;
+
+export function isRemoteServer(
+  config: ServerConfig,
+): config is RemoteServerConfig {
+  return typeof config.url === "string";
 }
 
 export interface McpConfigData {

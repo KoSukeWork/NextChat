@@ -12,6 +12,7 @@ import {
   restartAllClients,
   executeMcpAction,
   getMcpConfigFromFile,
+  mergeMcpServers,
 } from "../app/mcp/actions";
 
 // Regression coverage for the unauthenticated MCP server actions: every one of
@@ -67,6 +68,7 @@ describe("MCP server actions require MCP to be enabled", () => {
       ["restartAllClients", () => restartAllClients("")],
       ["executeMcpAction", () => executeMcpAction("x", {} as any, "")],
       ["getMcpConfigFromFile", () => getMcpConfigFromFile("")],
+      ["mergeMcpServers", () => mergeMcpServers({ mcpServers: {} }, "")],
     ])("%s rejects instead of running", async (_name, callAction) => {
       await expect(callAction()).rejects.toThrow("MCP is not enabled");
     });
@@ -90,6 +92,12 @@ describe("MCP server actions require MCP to be enabled", () => {
       await expect(getMcpConfigFromFile("wrong-code")).rejects.toThrow(
         "Unauthorized MCP request",
       );
+    });
+
+    test("importing MCP configuration rejects an invalid access code", async () => {
+      await expect(
+        mergeMcpServers({ mcpServers: {} }, "wrong-code"),
+      ).rejects.toThrow("Unauthorized MCP request");
     });
 
     test("MCP fails closed when CODE is not configured", async () => {

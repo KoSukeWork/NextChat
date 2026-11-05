@@ -5,6 +5,7 @@ import {
   runEndpointChat,
 } from "../app/client/endpoint-stream";
 import type { Endpoint } from "../app/utils/endpoints";
+import Locale from "../app/locales";
 
 const endpoint: Endpoint = {
   id: "1",
@@ -49,6 +50,28 @@ test("SSE decoder preserves multibyte characters and partial frames", async () =
   for await (const value of readEndpointEvents(body)) events.push(value);
   expect(events).toEqual(['{"delta":"你好"}', "[DONE]"]);
 });
+
+test.each([
+  ["NETWORK_REFUSED", "NETWORK_REFUSED"],
+  ["Network request failed", "NETWORK_FAILED"],
+  ["NETWORK_REFUSED secret-key", "NETWORK_FAILED"],
+] as const)(
+  "native failure %s becomes a safe localized chat error",
+  async (body, key) => {
+    const onError = jest.fn<(error: Error) => void>();
+    await runEndpointChat(
+      endpoint,
+      input,
+      { onFinish: jest.fn(), onError },
+      {},
+      async () => new Response(body, { status: 599 }),
+    );
+    expect(onError.mock.calls[0][0].message).toBe(
+      Locale.Settings.Sync.Errors[key],
+    );
+    expect(onError.mock.calls[0][0].message).not.toContain("secret-key");
+  },
+);
 
 test("streamed output reaches the caller before the response ends", async () => {
   let finishStream!: () => void;

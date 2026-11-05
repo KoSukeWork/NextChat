@@ -43,27 +43,40 @@ export function fetch(url: string, options?: RequestInit): Promise<Response> {
     const aborted = new Promise<never>((_resolve, reject) => {
       rejectAbort = reject;
     });
-    const ts = new TransformStream();
-    const writer = ts.writable.getWriter();
+    let controller: ReadableStreamDefaultController<Uint8Array>;
+    const bodyStream = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+      },
+      cancel() {
+        cancelNative();
+        close(undefined, true);
+      },
+    });
 
     let closed = false;
-    const close = (error?: Error) => {
+    const close = (error?: Error, cancelled = false) => {
       if (closed) return;
       closed = true;
       unlisten && unlisten();
       signal?.removeEventListener("abort", onAbort);
-      if (error) writer.abort(error).catch(() => {});
-      else writer.ready.then(() => writer.close()).catch(() => {});
+      if (!cancelled) {
+        if (error) controller.error(error);
+        else controller.close();
+      }
     };
 
-    const onAbort = () => {
-      const error = abortError();
-      close(error);
+    const cancelNative = () => {
       if (started) {
         void window
           .__TAURI__!.invoke("stream_cancel", { cancelId })
           .catch(() => {});
       }
+    };
+    const onAbort = () => {
+      const error = abortError();
+      cancelNative();
+      close(error);
       rejectAbort(error);
     };
     signal?.addEventListener("abort", onAbort, { once: true });
@@ -77,9 +90,7 @@ export function fetch(url: string, options?: RequestInit): Promise<Response> {
             return;
           }
           if (chunk) {
-            writer.ready
-              .then(() => writer.write(new Uint8Array(chunk)))
-              .catch(() => {});
+            if (!closed) controller.enqueue(new Uint8Array(chunk));
           } else if (status === 0) {
             // end of body
             close();
@@ -91,14 +102,17 @@ export function fetch(url: string, options?: RequestInit): Promise<Response> {
         if (closed) u();
       });
 
-    const headers: Record<string, string> = {
+    const normalizedHeaders = new Headers({
       Accept: "application/json, text/plain, */*",
       "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
       "User-Agent": navigator.userAgent,
-    };
-    for (const item of new Headers(_headers || {})) {
-      headers[item[0]] = item[1];
-    }
+    });
+    new Headers(_headers || {}).forEach((value, name) => {
+      normalizedHeaders.set(name, value);
+    });
+    // HTTP header names are case-insensitive. Normalize before crossing IPC so
+    // Rust's map cannot pick a default value over the caller's differently cased key.
+    const headers = Object.fromEntries(normalizedHeaders.entries());
     const response = listening
       .then(() => {
         if (signal?.aborted) throw abortError();
@@ -108,6 +122,7 @@ export function fetch(url: string, options?: RequestInit): Promise<Response> {
           url,
           headers,
           cancelId,
+          redirect: options?.redirect ?? "follow",
           // TODO FormData
           body:
             typeof body === "string"
@@ -118,7 +133,10 @@ export function fetch(url: string, options?: RequestInit): Promise<Response> {
       .then((res: StreamResponse) => {
         const { request_id, status, status_text: statusText, headers } = res;
         setRequestId?.(request_id);
-        const response = new Response(ts.readable, {
+        const noBody =
+          method.toUpperCase() === "HEAD" || [204, 205, 304].includes(status);
+        if (noBody) close();
+        const response = new Response(noBody ? null : bodyStream, {
           status,
           statusText,
           headers,
@@ -127,9 +145,8 @@ export function fetch(url: string, options?: RequestInit): Promise<Response> {
       })
       .catch((e) => {
         if (signal?.aborted) throw abortError();
-        console.error("stream error", e);
-        // throw e;
-        return new Response("", { status: 599 });
+        close();
+        return new Response("Network request failed", { status: 599 });
       });
     return signal ? Promise.race([response, aborted]) : response;
   }

@@ -550,7 +550,12 @@ function SyncItems() {
 
         <ListItem
           title={Locale.Settings.Sync.LocalState}
-          subTitle={Locale.Settings.Sync.Overview(stateOverview)}
+          subTitle={
+            <>
+              {Locale.Settings.Sync.Overview(stateOverview)}
+              <div>{Locale.Settings.Sync.BackupSecrets}</div>
+            </>
+          }
         >
           <div style={{ display: "flex" }}>
             <IconButton

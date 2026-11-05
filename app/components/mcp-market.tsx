@@ -21,6 +21,7 @@ import {
   restartAllClients,
   resumeMcpServer,
   removeMcpServer,
+  mergeMcpServers,
 } from "../mcp/actions";
 import {
   ListToolsResponse,
@@ -28,7 +29,11 @@ import {
   PresetServer,
   ServerConfig,
   ServerStatusResponse,
+  isRemoteServer,
 } from "../mcp/types";
+import { parseMcpConfig, parsePastedMcpConfig } from "../mcp/config";
+import { localizedMcpError } from "../mcp/error-message";
+import Locale from "../locales";
 import clsx from "clsx";
 import PlayIcon from "../icons/play.svg";
 import StopIcon from "../icons/pause.svg";
@@ -42,6 +47,14 @@ interface ConfigProperty {
   required?: boolean;
   minItems?: number;
 }
+
+type Operation =
+  | "updating"
+  | "creating"
+  | "removing"
+  | "stopping"
+  | "starting"
+  | "restarting";
 
 export function McpMarketPage() {
   const navigate = useNavigate();
@@ -61,11 +74,16 @@ export function McpMarketPage() {
   const [presetServers, setPresetServers] = useState<PresetServer[]>([]);
   const [customServer, setCustomServer] = useState<{
     id: string;
+    originalId?: string;
+    type: "local" | "remote";
     command: string;
     args: string;
     env: string;
+    url: string;
+    headers: string;
   }>();
-  const [loadingStates, setLoadingStates] = useState<Record<string, string>>(
+  const [pastedConfig, setPastedConfig] = useState<string>();
+  const [loadingStates, setLoadingStates] = useState<Record<string, Operation>>(
     {},
   );
 
@@ -106,13 +124,13 @@ export function McpMarketPage() {
         setLoadingPresets(true);
         const response = await fetch("https://nextchat.club/mcp/list");
         if (!response.ok) {
-          throw new Error("Failed to load preset servers");
+          throw new Error(Locale.Mcp.LoadPresetsFailed);
         }
         const data = await response.json();
         setPresetServers(data?.data ?? []);
       } catch (error) {
         console.error("Failed to load preset servers:", error);
-        showToast("Failed to load preset servers");
+        showToast(Locale.Mcp.LoadPresetsFailed);
       } finally {
         setLoadingPresets(false);
       }
@@ -134,7 +152,7 @@ export function McpMarketPage() {
         setClientStatuses(statuses);
       } catch (error) {
         console.error("Failed to load initial state:", error);
-        showToast("Failed to load initial state");
+        showToast(localizedMcpError(error, Locale.Mcp.LoadStateFailed));
       } finally {
         setIsLoading(false);
       }
@@ -155,10 +173,10 @@ export function McpMarketPage() {
           if (mapping.type === "spread") {
             // For spread types, extract the array from args.
             const startPos = mapping.position ?? 0;
-            userConfig[key] = currentConfig.args.slice(startPos);
+            userConfig[key] = (currentConfig.args ?? []).slice(startPos);
           } else if (mapping.type === "single") {
             // For single types, get a single value
-            userConfig[key] = currentConfig.args[mapping.position ?? 0];
+            userConfig[key] = (currentConfig.args ?? [])[mapping.position ?? 0];
           } else if (
             mapping.type === "env" &&
             mapping.key &&
@@ -185,11 +203,11 @@ export function McpMarketPage() {
     .map(([id, server]) => ({
       id,
       name: id,
-      description: server.command,
+      description: isRemoteServer(server) ? server.url : server.command,
       repo: "",
-      tags: ["Custom"],
-      command: server.command,
-      baseArgs: server.args,
+      tags: [Locale.Mcp.Custom],
+      command: isRemoteServer(server) ? "" : server.command,
+      baseArgs: isRemoteServer(server) ? [] : server.args,
       configurable: false,
     }));
   const allServers = [...presetServers, ...savedServers];
@@ -198,39 +216,43 @@ export function McpMarketPage() {
     if (!customServer) return;
     try {
       const id = customServer.id.trim();
-      const args: unknown = JSON.parse(customServer.args);
-      const env: unknown = JSON.parse(customServer.env);
-      if (
-        !id ||
-        !customServer.command.trim() ||
-        !Array.isArray(args) ||
-        !args.every((arg) => typeof arg === "string") ||
-        !env ||
-        typeof env !== "object" ||
-        Array.isArray(env) ||
-        !Object.values(env).every((value) => typeof value === "string")
-      ) {
-        throw new Error(
-          "Enter a server ID, command, JSON array of arguments, and JSON object of environment values.",
-        );
-      }
+      const raw =
+        customServer.type === "remote"
+          ? {
+              url: customServer.url.trim(),
+              headers: JSON.parse(customServer.headers),
+            }
+          : {
+              command: customServer.command.trim(),
+              args: JSON.parse(customServer.args),
+              env: JSON.parse(customServer.env),
+            };
+      const parsed = parseMcpConfig({ mcpServers: { [id]: raw } });
+      const previous = config?.mcpServers[id];
+      const server = {
+        ...parsed.mcpServers[id],
+        ...(previous?.status ? { status: previous.status } : {}),
+      } as ServerConfig;
       setIsLoading(true);
-      setConfig(
-        await addMcpServer(
-          id,
-          {
-            command: customServer.command.trim(),
-            args,
-            env: env as Record<string, string>,
-          },
-          accessCode,
-        ),
-      );
+      setConfig(await addMcpServer(id, server, accessCode));
       setCustomServer(undefined);
     } catch (error) {
-      showToast(
-        error instanceof Error ? error.message : "Failed to save server",
-      );
+      showToast(localizedMcpError(error, Locale.Mcp.InvalidOrDenied));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const savePastedConfig = async () => {
+    if (pastedConfig === undefined) return;
+    try {
+      const parsed = parsePastedMcpConfig(JSON.parse(pastedConfig));
+      if (!Object.keys(parsed.mcpServers).length) throw new Error();
+      setIsLoading(true);
+      setConfig(await mergeMcpServers(parsed, accessCode));
+      setPastedConfig(undefined);
+    } catch (error) {
+      showToast(localizedMcpError(error, Locale.Mcp.InvalidOrDenied));
     } finally {
       setIsLoading(false);
     }
@@ -249,7 +271,7 @@ export function McpMarketPage() {
     setEditingServerId(undefined);
 
     try {
-      updateLoadingState(savingServerId, "Updating configuration...");
+      updateLoadingState(savingServerId, "updating");
       // 构建服务器配置
       const args = [...preset.baseArgs];
       const env: Record<string, string> = {};
@@ -285,11 +307,9 @@ export function McpMarketPage() {
         accessCode,
       );
       setConfig(newConfig);
-      showToast("Server configuration updated successfully");
+      showToast(Locale.Mcp.ConfigUpdated);
     } catch (error) {
-      showToast(
-        error instanceof Error ? error.message : "Failed to save configuration",
-      );
+      showToast(localizedMcpError(error, Locale.Mcp.SaveFailed));
     } finally {
       updateLoadingState(savingServerId, null);
     }
@@ -302,17 +322,17 @@ export function McpMarketPage() {
       if (result) {
         setTools(result);
       } else {
-        throw new Error("Failed to load tools");
+        throw new Error(Locale.Mcp.LoadToolsFailed);
       }
     } catch (error) {
-      showToast("Failed to load tools");
+      showToast(localizedMcpError(error, Locale.Mcp.LoadToolsFailed));
       console.error(error);
       setTools(null);
     }
   };
 
   // 更新加载状态的辅助函数
-  const updateLoadingState = (id: string, message: string | null) => {
+  const updateLoadingState = (id: string, message: Operation | null) => {
     setLoadingStates((prev) => {
       if (message === null) {
         const { [id]: _, ...rest } = prev;
@@ -327,7 +347,7 @@ export function McpMarketPage() {
     if (!preset.configurable) {
       try {
         const serverId = preset.id;
-        updateLoadingState(serverId, "Creating MCP client...");
+        updateLoadingState(serverId, "creating");
 
         const serverConfig: ServerConfig = {
           command: preset.command,
@@ -344,9 +364,7 @@ export function McpMarketPage() {
         const statuses = await getClientsStatus(accessCode);
         setClientStatuses(statuses);
       } catch (error) {
-        showToast(
-          error instanceof Error ? error.message : "Failed to add server",
-        );
+        showToast(localizedMcpError(error, Locale.Mcp.AddFailed));
       } finally {
         updateLoadingState(preset.id, null);
       }
@@ -359,13 +377,11 @@ export function McpMarketPage() {
 
   const removeServer = async (id: string) => {
     try {
-      updateLoadingState(id, "Removing server...");
+      updateLoadingState(id, "removing");
       setConfig(await removeMcpServer(id, accessCode));
       setClientStatuses(await getClientsStatus(accessCode));
     } catch (error) {
-      showToast(
-        error instanceof Error ? error.message : "Failed to remove server",
-      );
+      showToast(localizedMcpError(error, Locale.Mcp.RemoveFailed));
     } finally {
       updateLoadingState(id, null);
     }
@@ -374,12 +390,12 @@ export function McpMarketPage() {
   // 修改暂停服务器函数
   const pauseServer = async (id: string) => {
     try {
-      updateLoadingState(id, "Stopping server...");
+      updateLoadingState(id, "stopping");
       const newConfig = await pauseMcpServer(id, accessCode);
       setConfig(newConfig);
-      showToast("Server stopped successfully");
+      showToast(Locale.Mcp.ServerStopped);
     } catch (error) {
-      showToast("Failed to stop server");
+      showToast(localizedMcpError(error, Locale.Mcp.StopFailed));
       console.error(error);
     } finally {
       updateLoadingState(id, null);
@@ -389,14 +405,10 @@ export function McpMarketPage() {
   // Restart server
   const restartServer = async (id: string) => {
     try {
-      updateLoadingState(id, "Starting server...");
+      updateLoadingState(id, "starting");
       await resumeMcpServer(id, accessCode);
     } catch (error) {
-      showToast(
-        error instanceof Error
-          ? error.message
-          : "Failed to start server, please check logs",
-      );
+      showToast(localizedMcpError(error, Locale.Mcp.StartFailed));
       console.error(error);
     } finally {
       updateLoadingState(id, null);
@@ -406,12 +418,12 @@ export function McpMarketPage() {
   // Restart all clients
   const handleRestartAll = async () => {
     try {
-      updateLoadingState("all", "Restarting all servers...");
+      updateLoadingState("all", "restarting");
       const newConfig = await restartAllClients(accessCode);
       setConfig(newConfig);
-      showToast("Restarting all clients");
+      showToast(Locale.Mcp.RestartStarted);
     } catch (error) {
-      showToast("Failed to restart clients");
+      showToast(localizedMcpError(error, Locale.Mcp.RestartFailed));
       console.error(error);
     } finally {
       updateLoadingState("all", null);
@@ -428,8 +440,7 @@ export function McpMarketPage() {
         if (prop.type === "array") {
           const currentValue = userConfig[key as keyof typeof userConfig] || [];
           const itemLabel = (prop as any).itemLabel || key;
-          const addButtonText =
-            (prop as any).addButtonText || `Add ${itemLabel}`;
+          const addButtonText = Locale.Mcp.AddItem(itemLabel);
 
           return (
             <ListItem
@@ -485,7 +496,7 @@ export function McpMarketPage() {
                 aria-label={key}
                 type="text"
                 value={currentValue}
-                placeholder={`Enter ${key}`}
+                placeholder={Locale.Mcp.EnterItem(key)}
                 onChange={(e) => {
                   setUserConfig({ ...userConfig, [key]: e.target.value });
                 }}
@@ -510,19 +521,23 @@ export function McpMarketPage() {
       // 添加初始化状态
       initializing: (
         <span className={clsx(styles["server-status"], styles["initializing"])}>
-          Initializing
+          {Locale.Mcp.Initializing}
         </span>
       ),
       paused: (
         <span className={clsx(styles["server-status"], styles["stopped"])}>
-          Stopped
+          {Locale.Mcp.Stopped}
         </span>
       ),
-      active: <span className={styles["server-status"]}>Running</span>,
+      active: (
+        <span className={styles["server-status"]}>{Locale.Mcp.Running}</span>
+      ),
       error: (
         <span className={clsx(styles["server-status"], styles["error"])}>
-          Error
-          <span className={styles["error-message"]}>: {status.errorMsg}</span>
+          {Locale.Mcp.Error}
+          <span className={styles["error-message"]}>
+            : {localizedMcpError(status.errorMsg)}
+          </span>
         </span>
       ),
     };
@@ -531,11 +546,18 @@ export function McpMarketPage() {
   };
 
   // Get the type of operation status
-  const getOperationStatusType = (message: string) => {
-    if (message.toLowerCase().includes("stopping")) return "stopping";
-    if (message.toLowerCase().includes("starting")) return "starting";
-    if (message.toLowerCase().includes("error")) return "error";
+  const getOperationStatusType = (operation: Operation) => {
+    if (operation === "stopping") return "stopping";
+    if (operation === "starting") return "starting";
     return "default";
+  };
+  const operationText: Record<Operation, string> = {
+    updating: Locale.Mcp.Updating,
+    creating: Locale.Mcp.Creating,
+    removing: Locale.Mcp.Removing,
+    stopping: Locale.Mcp.Stopping,
+    starting: Locale.Mcp.Starting,
+    restarting: Locale.Mcp.Restarting,
   };
 
   // 渲染服务器列表
@@ -544,7 +566,7 @@ export function McpMarketPage() {
       return (
         <div className={styles["loading-container"]}>
           <div className={styles["loading-text"]}>
-            Loading preset server list...
+            {Locale.Mcp.LoadingPresets}
           </div>
         </div>
       );
@@ -553,7 +575,7 @@ export function McpMarketPage() {
     if (allServers.length === 0) {
       return (
         <div className={styles["empty-container"]}>
-          <div className={styles["empty-text"]}>No servers available</div>
+          <div className={styles["empty-text"]}>{Locale.Mcp.NoServers}</div>
         </div>
       );
     }
@@ -586,7 +608,7 @@ export function McpMarketPage() {
         };
 
         // Get actual status (including loading status)
-        const getEffectiveStatus = (status: string, loading?: string) => {
+        const getEffectiveStatus = (status: string, loading?: Operation) => {
           if (loading) {
             const operationType = getOperationStatusType(loading);
             return operationType === "default" ? status : operationType;
@@ -631,7 +653,7 @@ export function McpMarketPage() {
                       loadingStates[server.id],
                     )}
                   >
-                    {loadingStates[server.id]}
+                    {operationText[loadingStates[server.id]]}
                   </span>
                 )}
                 {!loadingStates[server.id] && getServerStatusDisplay(server.id)}
@@ -641,7 +663,7 @@ export function McpMarketPage() {
                     target="_blank"
                     rel="noopener noreferrer"
                     className={styles["repo-link"]}
-                    title="Open repository"
+                    title={Locale.Mcp.OpenRepository}
                   >
                     <GithubIcon />
                   </a>
@@ -658,32 +680,41 @@ export function McpMarketPage() {
                 className={clsx(styles["mcp-market-info"], "one-line")}
                 title={server.description}
               >
-                {server.description}
+                {config?.mcpServers[server.id] &&
+                isRemoteServer(config.mcpServers[server.id])
+                  ? config.mcpServers[server.id].url
+                  : server.description}
               </div>
             </div>
             <div className={styles["mcp-market-actions"]}>
               {isServerAdded(server.id) ? (
                 <>
-                  {server.configurable && (
+                  {server.configurable &&
+                    !isRemoteServer(config!.mcpServers[server.id]) && (
+                      <IconButton
+                        icon={<EditIcon />}
+                        text={Locale.Mcp.Configure}
+                        onClick={() => setEditingServerId(server.id)}
+                        disabled={isLoading}
+                      />
+                    )}
+                  {(!server.configurable ||
+                    isRemoteServer(config!.mcpServers[server.id])) && (
                     <IconButton
                       icon={<EditIcon />}
-                      text="Configure"
-                      onClick={() => setEditingServerId(server.id)}
-                      disabled={isLoading}
-                    />
-                  )}
-                  {!server.configurable && (
-                    <IconButton
-                      icon={<EditIcon />}
-                      text="Configure"
+                      text={Locale.Mcp.Configure}
                       disabled={isLoading}
                       onClick={() => {
                         const saved = config!.mcpServers[server.id];
                         setCustomServer({
                           id: server.id,
-                          command: saved.command,
-                          args: JSON.stringify(saved.args),
+                          originalId: server.id,
+                          type: isRemoteServer(saved) ? "remote" : "local",
+                          command: saved.command ?? "",
+                          args: JSON.stringify(saved.args ?? []),
                           env: JSON.stringify(saved.env ?? {}),
+                          url: saved.url ?? "",
+                          headers: JSON.stringify(saved.headers ?? {}),
                         });
                       }}
                     />
@@ -692,13 +723,13 @@ export function McpMarketPage() {
                     <>
                       <IconButton
                         icon={<PlayIcon />}
-                        text="Start"
+                        text={Locale.Mcp.Start}
                         onClick={() => restartServer(server.id)}
                         disabled={isLoading}
                       />
                       <IconButton
                         icon={<DeleteIcon />}
-                        text="Remove"
+                        text={Locale.Mcp.Remove}
                         onClick={() => removeServer(server.id)}
                         disabled={isLoading}
                       />
@@ -707,7 +738,7 @@ export function McpMarketPage() {
                     <>
                       <IconButton
                         icon={<EyeIcon />}
-                        text="Tools"
+                        text={Locale.Mcp.Tools}
                         onClick={async () => {
                           setViewingServerId(server.id);
                           await loadTools(server.id);
@@ -719,7 +750,7 @@ export function McpMarketPage() {
                       />
                       <IconButton
                         icon={<StopIcon />}
-                        text="Stop"
+                        text={Locale.Mcp.Stop}
                         onClick={() => pauseServer(server.id)}
                         disabled={isLoading}
                       />
@@ -729,7 +760,7 @@ export function McpMarketPage() {
               ) : (
                 <IconButton
                   icon={<AddIcon />}
-                  text="Add"
+                  text={Locale.Mcp.Add}
                   onClick={() => addServer(server)}
                   disabled={isLoading}
                 />
@@ -746,15 +777,17 @@ export function McpMarketPage() {
         <div className="window-header">
           <div className="window-header-title">
             <div className="window-header-main-title">
-              MCP Market
+              {Locale.Mcp.Market}
               {loadingStates["all"] && (
                 <span className={styles["loading-indicator"]}>
-                  {loadingStates["all"]}
+                  {operationText[loadingStates["all"]]}
                 </span>
               )}
             </div>
             <div className="window-header-sub-title">
-              {Object.keys(config?.mcpServers ?? {}).length} servers configured
+              {Locale.Mcp.Configured(
+                Object.keys(config?.mcpServers ?? {}).length,
+              )}
             </div>
           </div>
 
@@ -762,17 +795,29 @@ export function McpMarketPage() {
             <div className="window-action-button">
               <IconButton
                 icon={<AddIcon />}
-                text="Add Server"
+                text={Locale.Mcp.AddServer}
                 bordered
                 disabled={isLoading}
                 onClick={() =>
                   setCustomServer({
                     id: "",
+                    type: "local",
                     command: "",
                     args: "[]",
                     env: "{}",
+                    url: "",
+                    headers: "{}",
                   })
                 }
+              />
+            </div>
+            <div className="window-action-button">
+              <IconButton
+                icon={<AddIcon />}
+                text={Locale.Mcp.PasteJson}
+                bordered
+                disabled={isLoading}
+                onClick={() => setPastedConfig("")}
               />
             </div>
             <div className="window-action-button">
@@ -780,7 +825,7 @@ export function McpMarketPage() {
                 icon={<RestartIcon />}
                 bordered
                 onClick={handleRestartAll}
-                text="Restart All"
+                text={Locale.Mcp.RestartAll}
                 disabled={isLoading}
               />
             </div>
@@ -800,7 +845,7 @@ export function McpMarketPage() {
             <input
               type="text"
               className={styles["search-bar"]}
-              placeholder={"Search MCP Server"}
+              placeholder={Locale.Mcp.Search}
               autoFocus
               onInput={(e) => setSearchText(e.currentTarget.value)}
             />
@@ -812,19 +857,19 @@ export function McpMarketPage() {
         {customServer && (
           <div className="modal-mask">
             <Modal
-              title="Configure stdio MCP Server"
+              title={Locale.Mcp.ConfigureServer}
               onClose={() => !isLoading && setCustomServer(undefined)}
               actions={[
                 <IconButton
                   key="cancel"
-                  text="Cancel"
+                  text={Locale.UI.Cancel}
                   bordered
                   disabled={isLoading}
                   onClick={() => setCustomServer(undefined)}
                 />,
                 <IconButton
                   key="save"
-                  text="Save"
+                  text={Locale.Mcp.Save}
                   bordered
                   disabled={isLoading}
                   onClick={saveCustomServer}
@@ -832,19 +877,43 @@ export function McpMarketPage() {
               ]}
             >
               <List>
-                {(
-                  [
-                    ["id", "Server ID"],
-                    ["command", "Command"],
-                    ["args", "Arguments (JSON array)"],
-                    ["env", "Environment (JSON object)"],
-                  ] as const
+                <ListItem title={Locale.Mcp.Transport}>
+                  <select
+                    aria-label={Locale.Mcp.Transport}
+                    value={customServer.type}
+                    disabled={isLoading}
+                    onChange={(event) =>
+                      setCustomServer({
+                        ...customServer,
+                        type: event.target.value as "local" | "remote",
+                      })
+                    }
+                  >
+                    <option value="local">{Locale.Mcp.Local}</option>
+                    <option value="remote">{Locale.Mcp.Remote}</option>
+                  </select>
+                </ListItem>
+                {(customServer.type === "local"
+                  ? ([
+                      ["id", Locale.Mcp.ServerId],
+                      ["command", Locale.Mcp.Command],
+                      ["args", Locale.Mcp.Arguments],
+                      ["env", Locale.Mcp.Environment],
+                    ] as const)
+                  : ([
+                      ["id", Locale.Mcp.ServerId],
+                      ["url", Locale.Mcp.Url],
+                      ["headers", Locale.Mcp.Headers],
+                    ] as const)
                 ).map(([key, title]) => (
                   <ListItem key={key} title={title} vertical>
                     <input
+                      className={styles["config-input"]}
                       aria-label={title}
                       value={customServer[key]}
-                      disabled={isLoading}
+                      disabled={
+                        isLoading || (key === "id" && !!customServer.originalId)
+                      }
                       onChange={(event) =>
                         setCustomServer({
                           ...customServer,
@@ -859,23 +928,60 @@ export function McpMarketPage() {
           </div>
         )}
 
+        {pastedConfig !== undefined && (
+          <div className="modal-mask">
+            <Modal
+              title={Locale.Mcp.PasteJson}
+              onClose={() => !isLoading && setPastedConfig(undefined)}
+              actions={[
+                <IconButton
+                  key="cancel"
+                  text={Locale.UI.Cancel}
+                  bordered
+                  onClick={() => setPastedConfig(undefined)}
+                  disabled={isLoading}
+                />,
+                <IconButton
+                  key="save"
+                  text={Locale.UI.Confirm}
+                  bordered
+                  onClick={savePastedConfig}
+                  disabled={isLoading}
+                />,
+              ]}
+            >
+              <List>
+                <ListItem title={Locale.Mcp.PasteHelp} vertical>
+                  <textarea
+                    className={styles["config-input"]}
+                    aria-label={Locale.Mcp.PasteJson}
+                    rows={10}
+                    value={pastedConfig}
+                    onChange={(e) => setPastedConfig(e.target.value)}
+                  />
+                </ListItem>
+              </List>
+            </Modal>
+          </div>
+        )}
+
         {/*编辑服务器配置*/}
         {editingServerId && (
           <div className="modal-mask">
             <Modal
-              title={`Configure Server - ${editingServerId}`}
+              title={Locale.Mcp.ConfigureTitle(editingServerId)}
               onClose={() => !isLoading && setEditingServerId(undefined)}
               actions={[
                 <IconButton
                   key="cancel"
-                  text="Cancel"
+                  text={Locale.UI.Cancel}
                   onClick={() => setEditingServerId(undefined)}
                   bordered
                   disabled={isLoading}
                 />,
                 <IconButton
                   key="confirm"
-                  text="Save"
+                  text={Locale.Mcp.Save}
                   type="primary"
                   onClick={saveServerConfig}
                   bordered
@@ -891,20 +997,35 @@ export function McpMarketPage() {
         {viewingServerId && (
           <div className="modal-mask">
             <Modal
-              title={`Server Details - ${viewingServerId}`}
+              title={Locale.Mcp.ServerDetails(viewingServerId)}
               onClose={() => setViewingServerId(undefined)}
               actions={[
                 <IconButton
                   key="close"
-                  text="Close"
+                  text={Locale.UI.Close}
                   onClick={() => setViewingServerId(undefined)}
                   bordered
                 />,
               ]}
             >
+              {config?.mcpServers[viewingServerId] &&
+                isRemoteServer(config.mcpServers[viewingServerId]) && (
+                  <List>
+                    <ListItem
+                      title={Locale.Mcp.Url}
+                      subTitle={config.mcpServers[viewingServerId].url}
+                    />
+                    <ListItem
+                      title={Locale.Mcp.HeaderNames}
+                      subTitle={Object.keys(
+                        config.mcpServers[viewingServerId].headers ?? {},
+                      ).join(", ")}
+                    />
+                  </List>
+                )}
               <div className={styles["tools-list"]}>
                 {isLoading ? (
-                  <div>Loading...</div>
+                  <div>{Locale.Mcp.LoadingTools}</div>
                 ) : tools?.tools ? (
                   tools.tools.map(
                     (tool: ListToolsResponse["tools"], index: number) => (
@@ -917,7 +1038,7 @@ export function McpMarketPage() {
                     ),
                   )
                 ) : (
-                  <div>No tools available</div>
+                  <div>{Locale.Mcp.NoTools}</div>
                 )}
               </div>
             </Modal>

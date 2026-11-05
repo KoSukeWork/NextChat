@@ -67,18 +67,21 @@ export async function downloadAs(text: string, filename: string) {
       try {
         await window.__TAURI__.fs.writeTextFile(result, text);
         showToast(Locale.Download.Success);
+        return true;
       } catch (error) {
         showToast(Locale.Download.Failed);
+        return false;
       }
     } else {
       showToast(Locale.Download.Failed);
+      return false;
     }
   } else {
     const element = document.createElement("a");
-    element.setAttribute(
-      "href",
-      "data:text/plain;charset=utf-8," + encodeURIComponent(text),
+    const url = URL.createObjectURL(
+      new Blob([text], { type: "text/plain;charset=utf-8" }),
     );
+    element.setAttribute("href", url);
     element.setAttribute("download", filename);
 
     element.style.display = "none";
@@ -87,6 +90,8 @@ export async function downloadAs(text: string, filename: string) {
     element.click();
 
     document.body.removeChild(element);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return true;
   }
 }
 

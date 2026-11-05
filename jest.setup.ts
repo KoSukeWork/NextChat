@@ -1,6 +1,15 @@
 // Learn more: https://github.com/testing-library/jest-dom
 import "@testing-library/jest-dom";
 import { jest } from "@jest/globals";
+import {
+  ReadableStream,
+  TransformStream,
+  WritableStream,
+} from "node:stream/web";
+
+if (!globalThis.ReadableStream) Object.assign(globalThis, { ReadableStream });
+if (!globalThis.TransformStream) Object.assign(globalThis, { TransformStream });
+if (!globalThis.WritableStream) Object.assign(globalThis, { WritableStream });
 
 global.fetch = jest.fn(() =>
   Promise.resolve({

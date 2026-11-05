@@ -3,6 +3,15 @@ use serde_json::{json, Value};
 use std::sync::mpsc::{self, Receiver};
 
 static NEXT_TEST: AtomicU64 = AtomicU64::new(1);
+
+#[test]
+fn config_directory_defaults_to_native_path_and_rejects_relative_overrides() {
+    let default = std::env::temp_dir().join("default-mcp");
+    let isolated = std::env::temp_dir().join("isolated-mcp");
+    assert_eq!(config_directory(&default, None).unwrap(), default);
+    assert_eq!(config_directory(&default, Some(isolated.clone().into_os_string())).unwrap(), isolated);
+    assert!(config_directory(&default, Some("relative".into())).is_err());
+}
 struct Fixture {
     state: Arc<McpState>,
     directory: PathBuf,
@@ -191,6 +200,64 @@ fn invalid_config_never_runs_and_kill_all_cleans_up() {
     fixture.state.spawn("second", Arc::new(|_, _| {})).unwrap();
     fixture.state.kill_all();
     assert!(fixture.state.processes.lock().unwrap().is_empty());
+}
+
+#[test]
+fn remote_configuration_is_validated_and_approval_hides_header_values() {
+    let fixture = Fixture::new();
+    let config: McpConfig = serde_json::from_value(json!({"mcpServers": {
+        "remote": {"url": "https://example.test/mcp", "headers": {"Authorization": "Bearer private-token", "X-Key": "another-secret"}}
+    }})).unwrap();
+    assert!(fixture.state.write_config(config.clone(), |message| {
+        assert!(message.contains("https://example.test/mcp"));
+        assert!(message.contains("Authorization"));
+        assert!(message.contains("X-Key"));
+        assert!(!message.contains("private-token"));
+        assert!(!message.contains("another-secret"));
+        false
+    }).is_err());
+    assert!(!fixture.state.config_path.exists());
+    fixture.state.write_config(config.clone(), |_| true).unwrap();
+    assert!(fixture.state.spawn("remote", Arc::new(|_, _| {})).unwrap_err().contains("local"));
+    let mut paused = config.clone();
+    paused.mcp_servers.get_mut("remote").unwrap().status = Some(ServerStatus::Paused);
+    fixture.state.write_config(paused, |_| panic!("status-only change prompted")).unwrap();
+    for invalid in [
+        json!({"url":"file:///etc/passwd"}),
+        json!({"url":"https://example.test", "command":"node"}),
+        json!({"url":"https://example.test", "headers":{"Bad Header":"value"}}),
+    ] {
+        let candidate: McpConfig = serde_json::from_value(json!({"mcpServers":{"bad":invalid}})).unwrap();
+        assert!(fixture.state.write_config(candidate, |_| panic!("invalid config prompted")).is_err());
+    }
+}
+
+#[test]
+fn approval_text_uses_fixed_chinese_or_english_and_falls_back_to_english() {
+    let fixture = Fixture::new();
+    let config: McpConfig = serde_json::from_value(json!({"mcpServers": {
+        "remote": {"url": "https://example.test/mcp", "headers": {"Authorization": "Bearer private-token"}},
+        "local": {"command": "node", "args": ["server.js"]}
+    }})).unwrap();
+    for (language, title, label, approve, reject) in [
+        ("cn", "允许 MCP 服务器连接？", "请求头名称", "允许", "拒绝"),
+        ("en", "Allow MCP server connections?", "Request header names", "Allow", "Deny"),
+        ("unknown", "Allow MCP server connections?", "Request header names", "Allow", "Deny"),
+    ] {
+        assert_eq!(mcp_dialog_text(language).title, title);
+        assert_eq!(mcp_dialog_text(language).approve, approve);
+        assert_eq!(mcp_dialog_text(language).reject, reject);
+        assert!(fixture.state.write_config_localized(config.clone(), language, |message| {
+            assert!(message.contains(label));
+            assert!(message.contains("remote"));
+            assert!(message.contains("https://example.test/mcp"));
+            assert!(message.contains("Authorization"));
+            assert!(message.contains("node"));
+            assert!(!message.contains("private-token"));
+            false
+        }).is_err());
+        assert!(!fixture.state.config_path.exists());
+    }
 }
 
 #[cfg(windows)]

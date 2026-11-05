@@ -89,6 +89,11 @@ test("real SDK handshake, tool pagination/call, approval denial, pause/resume/re
     nativeInvoke.mock.calls.some(([command]) => command === "mcp_spawn"),
   ).toBe(false);
   await actions.addMcpServer("test", { command: "node", args: [] }, "ignored");
+  const write = nativeInvoke.mock.calls.find(
+    ([command]) => command === "mcp_write_config",
+  )!;
+  expect(Object.keys(write[1]).sort()).toEqual(["config", "language"]);
+  expect(typeof write[1].language).toBe("string");
   expect((await actions.getClientsStatus(""))["test"].status).toBe("active");
   expect(await actions.getAvailableClientsCount("")).toBe(1);
   expect((await actions.getClientTools("test", ""))?.tools).toHaveLength(2);

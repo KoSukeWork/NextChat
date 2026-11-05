@@ -19,8 +19,14 @@ fn main() {
             std::fs::create_dir_all(&directory)?;
             // Generic filesystem IPC (including save-dialog grants) must not bypass MCP approval.
             app.fs_scope().forbid_directory(&directory, true)?;
+            let mcp_directory = mcp::config_directory(
+                &directory,
+                std::env::var_os("NEXTCHAT_MCP_CONFIG_DIR"),
+            )?;
+            std::fs::create_dir_all(&mcp_directory)?;
+            app.fs_scope().forbid_directory(&mcp_directory, true)?;
             app.manage(Arc::new(mcp::McpState::new(
-                directory.join("mcp_config.json"),
+                mcp_directory.join("mcp_config.json"),
             )));
             app.manage(Arc::new(stream::StreamState::default()));
             app.manage(tts::setup(app)?);

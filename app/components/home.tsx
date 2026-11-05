@@ -240,10 +240,6 @@ export function Home() {
         state.unmigratedEndpoints = [];
       });
     }
-    if (sessionStorage.getItem("legacy-endpoint-import")) {
-      sessionStorage.removeItem("legacy-endpoint-import");
-      showToast(Locale.EndpointConfig.LegacyImport, undefined, 10000);
-    }
   }, [configHydrated, migrationWarnings]);
 
   useEffect(() => {

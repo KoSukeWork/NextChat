@@ -5,19 +5,48 @@ import {
   AppState,
   getLocalAppState,
   GetStoreState,
-  mergeAppState,
   setLocalAppState,
   CloudState,
   getCloudAppState,
   mergeCloudAppState,
   setCloudAppState,
-  prepareImportedState,
+  getNonFunctionFileds,
 } from "../utils/sync";
+import {
+  applyRestoredBackup,
+  createBackup,
+  restoreBackup,
+  PluginSnapshot,
+} from "../utils/backup";
+import { usePluginStore, FunctionToolService } from "./plugin";
+import {
+  getMcpConfigFromFile,
+  isMcpEnabled,
+  mergeMcpServers,
+} from "../mcp/actions";
+import { useAccessStore } from "./access";
 import { downloadAs, readFromFile } from "../utils";
-import { showToast } from "../components/ui-lib";
+import { showConfirm, showToast } from "../components/ui-lib";
 import Locale from "../locales";
 import { createSyncClient, ProviderType } from "../utils/cloud";
 import { SyncError } from "../utils/cloud/transport";
+import { BackupWorker } from "../utils/backup-worker-client";
+import type { McpConfigData } from "../mcp/types";
+
+async function withBackupProgress<T>(
+  message: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  const { showBackupProgress } = await import("../components/backup-dialog");
+  const close = showBackupProgress(message);
+  try {
+    // Let React paint the status before sending or applying a large snapshot.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return await work();
+  } finally {
+    close();
+  }
+}
 
 export interface WebDavConfig {
   server: string;
@@ -61,36 +90,152 @@ export const useSyncStore = createPersistStore(
       set({ lastSyncTime: Date.now(), lastProvider: get().provider });
     },
 
-    export() {
-      const state = getLocalAppState();
-      const datePart = isApp
-        ? `${new Date().toLocaleDateString().replace(/\//g, "_")} ${new Date()
-            .toLocaleTimeString()
-            .replace(/:/g, "_")}`
-        : new Date().toLocaleString();
-
-      const fileName = `Backup-${datePart}.json`;
-      downloadAs(JSON.stringify(state), fileName);
+    async export() {
+      try {
+        let mcp: McpConfigData | undefined;
+        try {
+          if (await isMcpEnabled()) {
+            mcp = await getMcpConfigFromFile(
+              useAccessStore.getState().accessCode,
+            );
+          }
+        } catch {
+          if (!(await showConfirm(Locale.Settings.Sync.ExportWithoutMcp)))
+            return false;
+        }
+        const { showBackupPassword } = await import(
+          "../components/backup-dialog"
+        );
+        const password = await showBackupPassword("export");
+        if (password === null) return false;
+        const worker = new BackupWorker();
+        let encrypted: string;
+        try {
+          encrypted = await withBackupProgress(
+            Locale.Settings.Sync.Encrypting,
+            async () => {
+              const state = createBackup(
+                getLocalAppState(),
+                getNonFunctionFileds(
+                  usePluginStore.getState(),
+                ) as PluginSnapshot,
+                getNonFunctionFileds(get()),
+                mcp,
+              );
+              return worker.request<string>({
+                type: "encrypt",
+                data: state,
+                password,
+              });
+            },
+          );
+        } finally {
+          worker.close();
+        }
+        const datePart = isApp
+          ? `${new Date().toLocaleDateString().replace(/\//g, "_")} ${new Date()
+              .toLocaleTimeString()
+              .replace(/:/g, "_")}`
+          : new Date().toLocaleString();
+        return await downloadAs(encrypted, `Backup-${datePart}.json`);
+      } catch {
+        showToast(Locale.Settings.Sync.ExportFailed);
+        return false;
+      }
     },
 
     async import() {
-      const rawContent = await readFromFile();
-
       try {
-        const remoteState = JSON.parse(rawContent) as AppState;
-        const localState = getLocalAppState();
-        const { state: importedState, legacyApiSettings } =
-          prepareImportedState(localState, remoteState);
-        mergeAppState(localState, importedState, {
-          restoreDeletedSessions: true,
-        });
-        setLocalAppState(localState);
-        if (legacyApiSettings)
-          sessionStorage.setItem("legacy-endpoint-import", "1");
-        location.reload();
-      } catch (e) {
-        console.error("[Import]", e);
-        showToast(Locale.Settings.Sync.ImportFailed);
+        const rawContent = await readFromFile();
+        const worker = new BackupWorker();
+        let remote: unknown;
+        try {
+          const opened = await withBackupProgress(
+            Locale.Settings.Sync.Decrypting,
+            () =>
+              worker.request<{ encrypted: boolean; backup?: unknown }>({
+                type: "open",
+                text: rawContent,
+              }),
+          );
+          if (opened.encrypted) {
+            const { showBackupPassword } = await import(
+              "../components/backup-dialog"
+            );
+            let retry = false;
+            while (true) {
+              const password = await showBackupPassword("import", retry);
+              if (password === null) return;
+              try {
+                remote = await withBackupProgress(
+                  Locale.Settings.Sync.Decrypting,
+                  () => worker.request({ type: "decrypt", password }),
+                );
+                break;
+              } catch (error) {
+                if (
+                  !(error instanceof Error) ||
+                  error.message !== "AUTH_FAILED"
+                )
+                  throw error;
+                retry = true;
+              }
+            }
+          } else {
+            remote = opened.backup;
+          }
+        } finally {
+          worker.close();
+        }
+        if (!(await showConfirm(Locale.Settings.Sync.ImportConfirm))) return;
+        const { restored, mcpSkipped } = await withBackupProgress(
+          Locale.Settings.Sync.Restoring,
+          async () => {
+            const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+            const restored = restoreBackup(
+              clone(getLocalAppState()),
+              remote,
+              clone(
+                getNonFunctionFileds(usePluginStore.getState()),
+              ) as PluginSnapshot,
+              clone(getNonFunctionFileds(get())),
+            );
+            const { mcpSkipped } = await applyRestoredBackup(
+              restored,
+              async (mcp) => {
+                if (!(await isMcpEnabled())) throw new Error("MCP unavailable");
+                await mergeMcpServers(
+                  mcp,
+                  restored.local[StoreKey.Access].accessCode,
+                );
+              },
+              (state) => {
+                setLocalAppState(state.local);
+                usePluginStore.setState(state.plugins);
+                FunctionToolService.tools = {};
+                set(state.sync);
+              },
+            );
+            return { restored, mcpSkipped };
+          },
+        );
+        const notices = [
+          restored.legacyApiSettings ? Locale.EndpointConfig.LegacyImport : "",
+          mcpSkipped ? Locale.Settings.Sync.McpNotImported : "",
+        ].filter(Boolean);
+        showToast(
+          notices.length
+            ? notices.join(" ")
+            : Locale.Settings.Sync.ImportSuccess,
+          undefined,
+          notices.length ? 10000 : undefined,
+        );
+      } catch (error) {
+        showToast(
+          error instanceof Error && error.message === "INVALID_BACKUP"
+            ? Locale.Settings.Sync.InvalidEncryptedBackup
+            : Locale.Settings.Sync.ImportFailed,
+        );
       }
     },
 

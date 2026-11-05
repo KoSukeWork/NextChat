@@ -3,7 +3,6 @@
 
 use std::time::Duration;
 use std::time::Instant;
-use std::error::Error;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
@@ -71,6 +70,7 @@ pub async fn stream_fetch(
   url: String,
   headers: HashMap<String, String>,
   body: Vec<u8>,
+  redirect: Option<String>,
 ) -> Result<StreamResponse, String> {
 
   let event_name = "stream-response";
@@ -79,7 +79,9 @@ pub async fn stream_fetch(
 
   let mut _headers = HeaderMap::new();
   for (key, value) in &headers {
-    _headers.insert(key.parse::<HeaderName>().unwrap(), value.parse().unwrap());
+    let name = key.parse::<HeaderName>().map_err(|_| "Invalid request header name")?;
+    let value = value.parse().map_err(|_| "Invalid request header value")?;
+    _headers.insert(name, value);
   }
 
   // println!("method: {:?}", method);
@@ -90,7 +92,11 @@ pub async fn stream_fetch(
   let method = method.parse::<reqwest::Method>().map_err(|err| format!("failed to parse method: {}", err))?;
   let client = Client::builder()
     .default_headers(_headers)
-    .redirect(reqwest::redirect::Policy::limited(3))
+    .redirect(if matches!(redirect.as_deref(), Some("manual" | "error")) {
+      reqwest::redirect::Policy::none()
+    } else {
+      reqwest::redirect::Policy::limited(3)
+    })
     .connect_timeout(Duration::new(3, 0))
     .build()
     .map_err(|err| format!("failed to generate client: {}", err))?;
@@ -124,12 +130,12 @@ pub async fn stream_fetch(
       // get response and emit to client
       let mut headers = HashMap::new();
       for (name, value) in res.headers() {
-        headers.insert(
-          name.as_str().to_string(),
-          std::str::from_utf8(value.as_bytes()).unwrap().to_string()
-        );
+        if let Ok(value) = value.to_str() {
+          headers.insert(name.as_str().to_string(), value.to_string());
+        }
       }
       let status = res.status().as_u16();
+      let status_text = res.status().canonical_reason().unwrap_or("").to_string();
 
       tauri::async_runtime::spawn(async move {
         tokio::select! {
@@ -143,9 +149,7 @@ pub async fn stream_fetch(
                     println!("Failed to emit chunk payload: {:?}", e);
                   }
                 }
-                Err(err) => {
-                  println!("Error chunk: {:?}", err);
-                }
+                Err(_) => break,
               }
             }
           } => {},
@@ -161,16 +165,13 @@ pub async fn stream_fetch(
       StreamResponse {
         request_id,
         status,
-        status_text: "OK".to_string(),
+        status_text,
         headers,
       }
     }
     Err(err) => {
       stream_state.finish(&cancel_id);
-      let error: String = err.source()
-        .map(|e| e.to_string())
-        .unwrap_or_else(|| "Unknown error occurred".to_string());
-      println!("Error response: {:?}", error);
+      let error = network_reason(&err).to_string();
       tauri::async_runtime::spawn( async move {
         if let Err(e) = window.emit(event_name, ChunkPayload{ request_id, chunk: error.into() }) {
           println!("Failed to emit chunk payload: {:?}", e);
@@ -189,6 +190,16 @@ pub async fn stream_fetch(
   };
   // println!("Response: {:?}", response);
   Ok(response)
+}
+
+fn network_reason(error: &reqwest::Error) -> &'static str {
+  let details = format!("{error:?}").to_ascii_lowercase();
+  if error.is_timeout() || details.contains("timed out") { "NETWORK_TIMEOUT" }
+  else if details.contains("refused") || details.contains("10061") { "NETWORK_REFUSED" }
+  else if details.contains("dns") || details.contains("resolve") || details.contains("11001") { "NETWORK_DNS" }
+  else if details.contains("certificate") || details.contains("tls") { "NETWORK_TLS" }
+  else if error.is_connect() { "NETWORK_CONNECT" }
+  else { "NETWORK_FAILED" }
 }
 
 #[cfg(test)]

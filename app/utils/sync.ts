@@ -52,7 +52,7 @@ const LocalStateGetters = {
 } as const;
 
 export type AppState = {
-  [k in keyof typeof LocalStateGetters]: ReturnType<
+  -readonly [k in keyof typeof LocalStateGetters]: ReturnType<
     (typeof LocalStateGetters)[k]
   >;
 };

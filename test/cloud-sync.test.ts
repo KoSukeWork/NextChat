@@ -23,6 +23,10 @@ const merge = jest.fn((a: any, b: any) => {
   Object.assign(a, b);
 });
 const setLocal = jest.fn();
+const prepareImport = jest.fn((_local: any, state: any) => ({
+  state,
+  legacyApiSettings: false,
+}));
 jest.unstable_mockModule("@/app/utils/sync", () => ({
   getLocalAppState: getLocal,
   mergeAppState: merge,
@@ -30,17 +34,59 @@ jest.unstable_mockModule("@/app/utils/sync", () => ({
   getCloudAppState: getLocal,
   mergeCloudAppState: merge,
   setCloudAppState: setLocal,
-  prepareImportedState: (_local: any, state: any) => ({
-    state,
-    legacyApiSettings: false,
-  }),
+  prepareImportedState: prepareImport,
+  getNonFunctionFileds: (state: any) =>
+    Object.fromEntries(
+      Object.entries(state).filter(([, value]) => typeof value !== "function"),
+    ),
 }));
+jest.unstable_mockModule("@/app/store/plugin", () => ({
+  usePluginStore: {
+    getState: () => ({ plugins: {}, _hasHydrated: true }),
+    setState: jest.fn(),
+  },
+  FunctionToolService: { tools: {} },
+}));
+jest.unstable_mockModule("@/app/store/access", () => ({
+  useAccessStore: { getState: () => ({ accessCode: "" }) },
+}));
+const isMcpEnabled = jest.fn<() => Promise<boolean>>(async () => false);
+const getMcpConfigFromFile = jest.fn<(...args: any[]) => Promise<any>>();
+const mergeMcpServers = jest.fn<(...args: any[]) => Promise<any>>(
+  async () => ({}),
+);
+jest.unstable_mockModule("@/app/mcp/actions", () => ({
+  isMcpEnabled,
+  getMcpConfigFromFile,
+  mergeMcpServers,
+}));
+const downloadBackup = jest.fn<(...args: any[]) => Promise<boolean>>(
+  async () => true,
+);
 jest.unstable_mockModule("@/app/utils", () => ({
-  downloadAs: jest.fn(),
+  downloadAs: downloadBackup,
   readFromFile: jest.fn(),
 }));
+const showConfirm = jest.fn<(...args: any[]) => Promise<boolean>>(
+  async () => true,
+);
+const showToast = jest.fn();
 jest.unstable_mockModule("@/app/components/ui-lib", () => ({
-  showToast: jest.fn(),
+  showToast,
+  showConfirm,
+}));
+jest.unstable_mockModule("@/app/components/backup-dialog", () => ({
+  showBackupProgress: () => () => {},
+  showBackupPassword: async () => "test-password",
+}));
+jest.unstable_mockModule("@/app/utils/backup-worker-client", () => ({
+  BackupWorker: class {
+    async request(request: { type: string; text: string }) {
+      if (request.type === "encrypt") return "encrypted-test-backup";
+      return { encrypted: false, backup: JSON.parse(request.text) };
+    }
+    close() {}
+  },
 }));
 jest.unstable_mockModule("@/app/utils/indexedDB-storage", () => ({
   indexedDBStorage: {
@@ -97,6 +143,16 @@ beforeEach(() => {
   });
   merge.mockClear();
   setLocal.mockClear();
+  isMcpEnabled.mockReset().mockResolvedValue(false);
+  getMcpConfigFromFile.mockReset();
+  mergeMcpServers.mockClear();
+  downloadBackup.mockClear();
+  showConfirm.mockReset().mockResolvedValue(true);
+  showToast.mockClear();
+  prepareImport.mockReset().mockImplementation((_local, state) => ({
+    state,
+    legacyApiSettings: false,
+  }));
 });
 afterEach(() => {
   global.fetch = originalFetch;
@@ -154,7 +210,7 @@ test("local file import requests explicit restoration of deleted sessions", asyn
   try {
     await useSyncStore.getState().import();
     expect(merge).toHaveBeenCalledWith(
-      local,
+      expect.objectContaining(local),
       { imported: true },
       { restoreDeletedSessions: true },
     );
@@ -162,6 +218,78 @@ test("local file import requests explicit restoration of deleted sessions", asyn
   } finally {
     consoleError.mockRestore();
   }
+});
+
+test("export skips MCP silently when disabled, but warns when an enabled read fails", async () => {
+  await expect(useSyncStore.getState().export()).resolves.toBe(true);
+  expect(showConfirm).not.toHaveBeenCalled();
+  expect(getMcpConfigFromFile).not.toHaveBeenCalled();
+  expect(downloadBackup).toHaveBeenCalledWith(
+    "encrypted-test-backup",
+    expect.any(String),
+  );
+
+  isMcpEnabled.mockResolvedValue(true);
+  getMcpConfigFromFile.mockRejectedValue(new Error("unavailable"));
+  showConfirm.mockResolvedValue(false);
+  await expect(useSyncStore.getState().export()).resolves.toBe(false);
+  expect(showConfirm).toHaveBeenCalledWith(cn.Settings.Sync.ExportWithoutMcp);
+});
+
+test("import authorizes MCP with the restored access code before applying local state", async () => {
+  (local as any)["access-control"] = { accessCode: "current-code" };
+  const mcp = { mcpServers: { remote: { url: "https://example.test/mcp" } } };
+  jest.mocked(readFromFile).mockResolvedValue(
+    JSON.stringify({
+      "access-control": { accessCode: "backup-code" },
+      "mcp-store": mcp,
+    }),
+  );
+  isMcpEnabled.mockResolvedValue(true);
+  try {
+    await useSyncStore.getState().import();
+    expect(mergeMcpServers).toHaveBeenCalledWith(mcp, "backup-code");
+    expect(setLocal).toHaveBeenCalled();
+  } finally {
+    delete (local as any)["access-control"];
+  }
+});
+
+test("import warnings remain visible for ten seconds", async () => {
+  (local as any)["access-control"] = { accessCode: "current-code" };
+  jest.mocked(readFromFile).mockResolvedValue(
+    JSON.stringify({
+      "mcp-store": {
+        mcpServers: { remote: { url: "https://example.test/mcp" } },
+      },
+    }),
+  );
+  try {
+    await useSyncStore.getState().import();
+    expect(showToast).toHaveBeenCalledWith(
+      cn.Settings.Sync.McpNotImported,
+      undefined,
+      10000,
+    );
+  } finally {
+    delete (local as any)["access-control"];
+  }
+});
+
+test("legacy import warning remains visible for ten seconds", async () => {
+  jest
+    .mocked(readFromFile)
+    .mockResolvedValue(JSON.stringify({ imported: true }));
+  prepareImport.mockImplementation((_local, state) => ({
+    state,
+    legacyApiSettings: true,
+  }));
+  await useSyncStore.getState().import();
+  expect(showToast).toHaveBeenCalledWith(
+    cn.EndpointConfig.LegacyImport,
+    undefined,
+    10000,
+  );
 });
 
 test("failed PUT rejects and never updates sync time or live state", async () => {

@@ -25,10 +25,8 @@ export class ErrorBoundary extends React.Component<any, IErrorBoundaryState> {
     this.setState({ hasError: true, error, info });
   }
 
-  clearAndSaveData() {
-    try {
-      useSyncStore.getState().export();
-    } finally {
+  async clearAndSaveData() {
+    if (await useSyncStore.getState().export()) {
       useChatStore.getState().clearAllData();
     }
   }
@@ -50,7 +48,7 @@ export class ErrorBoundary extends React.Component<any, IErrorBoundaryState> {
               text="Clear All Data"
               onClick={async () => {
                 if (await showConfirm(Locale.Settings.Danger.Reset.Confirm)) {
-                  this.clearAndSaveData();
+                  await this.clearAndSaveData();
                 }
               }}
               bordered

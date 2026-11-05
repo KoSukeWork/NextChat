@@ -1,6 +1,7 @@
 import type { Endpoint } from "../utils/endpoints";
 import { endpointFetch } from "../utils/endpoint-transport";
 import { ThinkingStream } from "../utils/thinking";
+import { nativeNetworkErrorMessage } from "../utils/network-error";
 import {
   buildEndpointRequest,
   createEndpointEventParser,
@@ -260,6 +261,8 @@ export async function runEndpointChat(
       }
       if (!lastResponse.ok) {
         const details = await lastResponse.text();
+        if (lastResponse.status === 599)
+          throw new Error(nativeNetworkErrorMessage(details));
         throw new Error(
           `HTTP ${lastResponse.status}${details ? `: ${details}` : ""}`,
         );

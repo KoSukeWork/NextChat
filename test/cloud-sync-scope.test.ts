@@ -1,5 +1,43 @@
 import { jest } from "@jest/globals";
 import { TextEncoder, TextDecoder } from "util";
+Object.assign(global, { TextEncoder, TextDecoder });
+const { encryptBackup, decryptBackup, looksEncrypted } = await import(
+  "../app/utils/backup-crypto"
+);
+let passwordHandler: (
+  mode: string,
+  retry?: boolean,
+) => Promise<string | null> = async () => "unit-test-password";
+jest.unstable_mockModule("@/app/components/backup-dialog", () => ({
+  showBackupPassword: (mode: string, retry?: boolean) =>
+    passwordHandler(mode, retry),
+  showBackupProgress: () => () => {},
+}));
+jest.unstable_mockModule("@/app/utils/backup-worker-client", () => ({
+  BackupWorker: class {
+    encrypted: unknown;
+    async request(request: {
+      type: string;
+      data: unknown;
+      password: string;
+      text: string;
+    }) {
+      if (request.type === "encrypt")
+        return encryptBackup(request.data, request.password);
+      if (request.type === "open") {
+        const parsed = JSON.parse(request.text);
+        if (!looksEncrypted(parsed))
+          return { encrypted: false, backup: parsed };
+        this.encrypted = parsed;
+        return { encrypted: true };
+      }
+      if (request.type === "decrypt")
+        return decryptBackup(this.encrypted, request.password);
+      throw new Error("unexpected request");
+    }
+    close() {}
+  },
+}));
 jest.mocked(global.fetch).mockImplementation(
   async (input) =>
     ({
@@ -11,6 +49,7 @@ jest.mocked(global.fetch).mockImplementation(
 );
 jest.unstable_mockModule("@/app/components/ui-lib", () => ({
   showToast: jest.fn(),
+  showConfirm: async () => true,
 }));
 await import("../app/client/api");
 const { useAppConfig, useAccessStore, useChatStore } = await import(
@@ -35,9 +74,50 @@ const endpoint = (id: string) => ({
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 const originalTauri = Object.getOwnPropertyDescriptor(window, "__TAURI__");
 afterEach(() => {
+  passwordHandler = async () => "unit-test-password";
   if (originalTauri) Object.defineProperty(window, "__TAURI__", originalTauri);
   else Reflect.deleteProperty(window, "__TAURI__");
 });
+
+test("encrypted import retries a wrong password before applying any changes", async () => {
+  const before = clone(getLocalAppState());
+  const incoming = clone(before);
+  incoming[StoreKey.Config].fontSize = 27;
+  incoming[StoreKey.Config].endpoints = [endpoint("encrypted")];
+  const encrypted = encryptBackup(incoming, "correct-password");
+  let calls = 0;
+  passwordHandler = async (mode, retry) => {
+    expect(mode).toBe("import");
+    calls++;
+    if (calls === 1) return "incorrect-password";
+    expect(retry).toBe(true);
+    expect(clone(getLocalAppState())).toEqual(before);
+    return "correct-password";
+  };
+  const click = jest
+    .spyOn(HTMLInputElement.prototype, "click")
+    .mockImplementation(function (this: HTMLInputElement) {
+      Object.defineProperty(this, "files", {
+        configurable: true,
+        value: [
+          new File([encrypted], "backup.json", { type: "application/json" }),
+        ],
+      });
+      this.dispatchEvent(new Event("change"));
+    });
+  try {
+    await useSyncStore.getState().import();
+    expect(calls).toBe(2);
+    expect(useAppConfig.getState().fontSize).toBe(27);
+    expect(
+      useAppConfig
+        .getState()
+        .endpoints.some((e) => e.apiKey === "encrypted-secret"),
+    ).toBe(true);
+  } finally {
+    click.mockRestore();
+  }
+}, 30000);
 
 test.each([ProviderType.WebDAV, ProviderType.UpStash])(
   "%s sync ignores old remote credentials/settings and uploads only content",
@@ -149,7 +229,7 @@ test.each([ProviderType.WebDAV, ProviderType.UpStash])(
   },
 );
 
-test("local export still downloads the complete five-store backup", async () => {
+test("local export includes plugin and sync settings when MCP is unavailable", async () => {
   const write = jest.fn(async () => {});
   Object.defineProperty(window, "__TAURI__", {
     configurable: true,
@@ -158,9 +238,14 @@ test("local export still downloads the complete five-store backup", async () => 
       fs: { writeTextFile: write },
     },
   });
-  useSyncStore.getState().export();
+  await useSyncStore.getState().export();
   await new Promise((resolve) => setTimeout(resolve, 0));
-  const content = JSON.parse((write.mock.calls[0] as any)[1]);
+  const serialized = (write.mock.calls[0] as any)[1];
+  expect(serialized).not.toContain("home-secret");
+  const content = decryptBackup(
+    JSON.parse(serialized),
+    "unit-test-password",
+  ) as any;
   expect(Object.keys(content).sort()).toEqual(
     [
       StoreKey.Chat,
@@ -168,11 +253,15 @@ test("local export still downloads the complete five-store backup", async () => 
       StoreKey.Prompt,
       StoreKey.Config,
       StoreKey.Access,
+      StoreKey.Plugin,
+      StoreKey.Sync,
     ].sort(),
   );
   expect(content[StoreKey.Config].endpoints).toEqual(
     useAppConfig.getState().endpoints,
   );
+  expect(content[StoreKey.Sync]).not.toHaveProperty("lastSyncTime");
+  expect(content[StoreKey.Sync]).not.toHaveProperty("lastProvider");
 });
 
 test("legacy import restores content while leaving endpoint and access settings intact", () => {

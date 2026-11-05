@@ -1,0 +1,15 @@
+.fields {
+  display: grid;
+  gap: 12px;
+  max-width: 440px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+
+  input {
+    box-sizing: border-box;
+    width: 100%;
+  }
+}

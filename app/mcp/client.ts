@@ -4,7 +4,13 @@ import {
   StdioClientTransport,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { MCPClientLogger } from "./logger";
-import { ListToolsResponse, McpRequestMessage, ServerConfig } from "./types";
+import {
+  ListToolsResponse,
+  McpRequestMessage,
+  ServerConfig,
+  isRemoteServer,
+} from "./types";
+import { createRemoteClient } from "./remote";
 import { z } from "zod";
 
 const logger = new MCPClientLogger();
@@ -23,6 +29,8 @@ export async function createClient(
   config: ServerConfig,
 ): Promise<Client> {
   logger.info(`Creating client for ${id}...`);
+
+  if (isRemoteServer(config)) return createRemoteClient(id, config);
 
   const transport = new StdioClientTransport({
     command: config.command,
@@ -56,5 +64,9 @@ export async function executeRequest(
   client: Client,
   request: McpRequestMessage,
 ) {
-  return client.request(request, z.any());
+  const call = client.request as (
+    request: McpRequestMessage,
+    schema: unknown,
+  ) => Promise<unknown>;
+  return call.call(client, request, z.any());
 }

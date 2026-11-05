@@ -12,6 +12,7 @@ import {
 } from "@fortaine/fetch-event-source";
 import { prettyObject } from "./format";
 import { fetch as tauriFetch } from "./stream";
+import { nativeNetworkErrorMessage } from "./network-error";
 
 export function compressImage(file: Blob, maxSize: number): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -327,6 +328,11 @@ export function stream(
         console.log("[Request] response content type: ", contentType);
         responseRes = res;
 
+        if (res.status === 599) {
+          responseText = nativeNetworkErrorMessage(await res.clone().text());
+          return finish();
+        }
+
         if (contentType?.startsWith("text/plain")) {
           responseText = await res.clone().text();
           return finish();
@@ -561,6 +567,11 @@ export function streamWithThink(
         const contentType = res.headers.get("content-type");
         console.log("[Request] response content type: ", contentType);
         responseRes = res;
+
+        if (res.status === 599) {
+          responseText = nativeNetworkErrorMessage(await res.clone().text());
+          return finish();
+        }
 
         if (contentType?.startsWith("text/plain")) {
           responseText = await res.clone().text();

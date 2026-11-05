@@ -755,12 +755,6 @@ export const useChatStore = createPersistStore(
           ];
         }
 
-        if (shouldInjectSystemPrompts || mcpEnabled) {
-          console.log(
-            "[Global System Prompt] ",
-            systemPrompts.at(0)?.content ?? "empty",
-          );
-        }
         const memoryPrompt = get().getMemoryPrompt();
         // long term memory
         const shouldSendLongTermMemory =
@@ -1022,15 +1016,12 @@ export const useChatStore = createPersistStore(
           try {
             const mcpRequest = extractMcpJson(content);
             if (mcpRequest) {
-              console.debug("[MCP Request]", mcpRequest);
-
               executeMcpAction(
                 mcpRequest.clientId,
                 mcpRequest.mcp,
                 useAccessStore.getState().accessCode,
               )
                 .then((result) => {
-                  console.log("[MCP Response]", result);
                   const mcpResponse =
                     typeof result === "object"
                       ? JSON.stringify(result)
@@ -1043,8 +1034,8 @@ export const useChatStore = createPersistStore(
                 })
                 .catch((error) => showToast("MCP execution failed", error));
             }
-          } catch (error) {
-            console.error("[Check MCP JSON]", error);
+          } catch {
+            console.error("[MCP] Invalid tool request");
           }
         }
       },

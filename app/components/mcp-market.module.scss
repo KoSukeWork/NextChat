@@ -655,3 +655,8 @@
     opacity: 0.6;
   }
 }
+.config-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
