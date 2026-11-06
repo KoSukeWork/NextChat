@@ -536,7 +536,8 @@ export function McpMarketPage() {
         <span className={clsx(styles["server-status"], styles["error"])}>
           {Locale.Mcp.Error}
           <span className={styles["error-message"]}>
-            : {localizedMcpError(status.errorMsg)}
+            {Locale.Mcp.ErrorSeparator}
+            {localizedMcpError(status.errorMsg)}
           </span>
         </span>
       ),

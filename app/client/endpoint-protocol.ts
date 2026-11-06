@@ -3,6 +3,8 @@ import type { RequestMessage } from "./api";
 import type { Endpoint, EndpointProtocol } from "../utils/endpoints";
 import { endpointUrl } from "../utils/endpoints";
 import { stripThinkingFromMessages, thinkingChunk } from "../utils/thinking";
+import { geminiSchema } from "../mcp/tool-runtime";
+import type { ToolDisplay, ToolResult } from "../mcp/tool-runtime";
 
 export interface EndpointTool {
   type: string;
@@ -26,8 +28,32 @@ export interface EndpointChatInput {
   topP?: number;
   presencePenalty?: number;
   frequencyPenalty?: number;
+  enableTemperature?: boolean;
+  enableTopP?: boolean;
+  enableMaxTokens?: boolean;
+  enablePresencePenalty?: boolean;
+  enableFrequencyPenalty?: boolean;
+  enableReasoningSummary?: boolean;
+  reasoningEffort?: string;
   tools?: EndpointTool[];
+  toolDisplay?: Record<string, ToolDisplay>;
+  textOnly?: boolean;
+  textToolPrompt?: string;
+  executeTextTool?: (clientId: string, request: unknown) => Promise<ToolResult>;
+  hasPlugins?: boolean;
+  reasoningEnabled?: boolean;
 }
+
+export class EndpointStreamError extends Error {
+  constructor(
+    message: string,
+    public status?: number,
+  ) {
+    super(message);
+  }
+}
+
+export const ANTHROPIC_DEFAULT_MAX_TOKENS = 16000;
 
 function plainText(content: RequestMessage["content"]): string {
   return typeof content === "string"
@@ -98,6 +124,10 @@ export function buildEndpointRequest(
   const messages = stripThinkingFromMessages(input.messages);
   const tools = input.tools ?? [];
   const url = endpointUrl(endpoint, "chat", input.model, input.stream);
+  const effort = input.reasoningEffort?.trim() ?? "";
+  const numericEffort = /^-?\d+$/.test(effort);
+  const requestThoughts = input.enableReasoningSummary !== false;
+  const includeThoughts = requestThoughts && input.reasoningEnabled !== false;
   let body: Record<string, any>;
   if (endpoint.protocol === "openai-chat") {
     const reasoning = /^(?:o1|o3|o4|gpt-5)/i.test(input.model);
@@ -110,15 +140,24 @@ export function buildEndpointRequest(
           : plainText(message.content),
       })),
       stream: input.stream,
-      ...(reasoning
-        ? { max_completion_tokens: input.maxTokens }
-        : {
-            temperature: input.temperature,
-            top_p: input.topP,
-            presence_penalty: input.presencePenalty,
-            frequency_penalty: input.frequencyPenalty,
-            max_tokens: input.maxTokens,
-          }),
+      ...(input.enableTemperature && input.temperature !== undefined
+        ? { temperature: input.temperature }
+        : {}),
+      ...(input.enableTopP && input.topP !== undefined
+        ? { top_p: input.topP }
+        : {}),
+      ...(input.enablePresencePenalty && input.presencePenalty !== undefined
+        ? { presence_penalty: input.presencePenalty }
+        : {}),
+      ...(input.enableFrequencyPenalty && input.frequencyPenalty !== undefined
+        ? { frequency_penalty: input.frequencyPenalty }
+        : {}),
+      ...(input.enableMaxTokens && input.maxTokens !== undefined
+        ? reasoning
+          ? { max_completion_tokens: input.maxTokens }
+          : { max_tokens: input.maxTokens }
+        : {}),
+      ...(effort ? { reasoning_effort: effort } : {}),
       ...(tools.length ? { tools } : {}),
     };
   } else if (endpoint.protocol === "openai-responses") {
@@ -138,18 +177,30 @@ export function buildEndpointRequest(
               ),
       })),
       stream: input.stream,
-      max_output_tokens: input.maxTokens,
-      ...(/^(?:o1|o3|o4|gpt-5)/i.test(input.model)
+      ...(input.enableTemperature && input.temperature !== undefined
+        ? { temperature: input.temperature }
+        : {}),
+      ...(input.enableTopP && input.topP !== undefined
+        ? { top_p: input.topP }
+        : {}),
+      ...(input.enableMaxTokens && input.maxTokens !== undefined
+        ? { max_output_tokens: input.maxTokens }
+        : {}),
+      ...(effort || includeThoughts
         ? {
-            reasoning: { summary: "auto" },
-            include: ["reasoning.encrypted_content"],
+            reasoning: {
+              ...(effort ? { effort } : {}),
+              ...(includeThoughts ? { summary: "auto" } : {}),
+            },
           }
         : {}),
+      ...(includeThoughts ? { include: ["reasoning.encrypted_content"] } : {}),
       ...(tools.length
         ? {
             tools: tools.map((tool) => ({
               type: "function",
               ...tool.function,
+              strict: false,
             })),
           }
         : {}),
@@ -183,9 +234,26 @@ export function buildEndpointRequest(
       model: input.model,
       messages: converted,
       stream: input.stream,
-      max_tokens: input.maxTokens ?? 4000,
-      temperature: input.temperature,
-      top_p: input.topP,
+      max_tokens: input.enableMaxTokens
+        ? input.maxTokens ?? ANTHROPIC_DEFAULT_MAX_TOKENS
+        : ANTHROPIC_DEFAULT_MAX_TOKENS,
+      ...(input.enableTemperature && input.temperature !== undefined
+        ? { temperature: input.temperature }
+        : {}),
+      ...(input.enableTopP && input.topP !== undefined
+        ? { top_p: input.topP }
+        : {}),
+      ...(effort && !numericEffort ? { output_config: { effort } } : {}),
+      ...(effort || includeThoughts
+        ? {
+            thinking: {
+              ...(numericEffort
+                ? { type: "enabled", budget_tokens: Number(effort) }
+                : { type: "adaptive" }),
+              ...(includeThoughts ? { display: "summarized" } : {}),
+            },
+          }
+        : {}),
       ...(system ? { system } : {}),
       ...(tools.length
         ? {
@@ -206,17 +274,56 @@ export function buildEndpointRequest(
       if (previous?.role === role) previous.parts.push(...parts);
       else converted.push({ role, parts });
     }
+    const thinkingConfig = {
+      ...(effort
+        ? numericEffort
+          ? { thinkingBudget: Number(effort) }
+          : { thinkingLevel: effort }
+        : {}),
+      ...(includeThoughts ? { includeThoughts: true } : {}),
+    };
+    const generationConfig = {
+      ...(input.enableTemperature && input.temperature !== undefined
+        ? { temperature: input.temperature }
+        : {}),
+      ...(input.enableTopP && input.topP !== undefined
+        ? { topP: input.topP }
+        : {}),
+      ...(input.enableMaxTokens && input.maxTokens !== undefined
+        ? { maxOutputTokens: input.maxTokens }
+        : {}),
+      ...(input.enablePresencePenalty && input.presencePenalty !== undefined
+        ? { presencePenalty: input.presencePenalty }
+        : {}),
+      ...(input.enableFrequencyPenalty && input.frequencyPenalty !== undefined
+        ? { frequencyPenalty: input.frequencyPenalty }
+        : {}),
+      ...(Object.keys(thinkingConfig).length ? { thinkingConfig } : {}),
+    };
     body = {
       contents: converted,
-      generationConfig: {
-        temperature: input.temperature,
-        topP: input.topP,
-        maxOutputTokens: input.maxTokens,
-      },
+      ...(Object.keys(generationConfig).length ? { generationConfig } : {}),
       ...(tools.length
         ? {
             tools: [
-              { functionDeclarations: tools.map((tool) => tool.function) },
+              {
+                functionDeclarations: tools.map((tool) => {
+                  const { parameters, ...definition } = tool.function;
+                  const schema = geminiSchema(parameters) as Record<
+                    string,
+                    any
+                  >;
+                  const emptyObject =
+                    (typeof schema.type === "string"
+                      ? schema.type.toLowerCase() === "object"
+                      : schema.properties !== undefined) &&
+                    !Object.keys(schema.properties ?? {}).length;
+                  return {
+                    ...definition,
+                    ...(!emptyObject ? { parameters: schema } : {}),
+                  };
+                }),
+              },
             ],
           }
         : {}),
@@ -258,11 +365,21 @@ export function createEndpointEventParser(protocol: EndpointProtocol) {
         value?.type === "response.failed" ||
         value?.error
       ) {
-        throw new Error(
+        const error = value?.error ?? value?.response?.error ?? value;
+        const code =
+          error?.status ?? error?.status_code ?? error?.code ?? value?.status;
+        const status =
+          typeof code === "number"
+            ? code
+            : /^\d{3}$/.test(String(code ?? ""))
+            ? Number(code)
+            : undefined;
+        throw new EndpointStreamError(
           value?.error?.message ??
             value?.response?.error?.message ??
             value?.message ??
             "Endpoint stream failed",
+          status,
         );
       }
       if (protocol === "openai-chat") {

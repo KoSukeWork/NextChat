@@ -15,8 +15,6 @@ import {
   DEFAULT_INPUT_TEMPLATE,
   DEFAULT_SYSTEM_TEMPLATE,
   KnowledgeCutOffDate,
-  MCP_SYSTEM_TEMPLATE,
-  MCP_TOOLS_TEMPLATE,
   StoreKey,
 } from "../constant";
 import Locale, { getLang } from "../locales";
@@ -24,7 +22,6 @@ import { prettyObject } from "../utils/format";
 import { createPersistStore } from "../utils/store";
 import { estimateTokenLength } from "../utils/token";
 import { ModelConfig, ModelType, useAppConfig } from "./config";
-import { useAccessStore } from "./access";
 import { resolveConfiguredModel } from "../utils/endpoint-resolution";
 import {
   deletionTimestamp,
@@ -33,8 +30,8 @@ import {
 } from "../utils/chat-deletion";
 import { orderedVisibleSessions } from "../utils/chat-order";
 import { createEmptyMask, Mask } from "./mask";
-import { executeMcpAction, getAllTools, isMcpEnabled } from "../mcp/actions";
-import { extractMcpJson, isMcpJson } from "../mcp/utils";
+import { cleanMcpHistory } from "../mcp/utils";
+import type { ToolDisplay } from "../mcp/tool-runtime";
 
 const localStorage = safeLocalStorage();
 
@@ -49,6 +46,7 @@ export type ChatMessageTool = {
   content?: string;
   isError?: boolean;
   errorMsg?: string;
+  display?: ToolDisplay;
 };
 
 export type ChatMessage = RequestMessage & {
@@ -61,6 +59,7 @@ export type ChatMessage = RequestMessage & {
   tools?: ChatMessageTool[];
   audio_url?: string;
   isMcpResponse?: boolean;
+  toolMode?: "native" | "text";
 };
 
 export function createMessage(override: Partial<ChatMessage>): ChatMessage {
@@ -187,27 +186,6 @@ function fillTemplateWith(input: string, modelConfig: ModelConfig) {
   });
 
   return output;
-}
-
-async function getMcpSystemPrompt(accessCode: string): Promise<string> {
-  const tools = await getAllTools(accessCode);
-
-  let toolsStr = "";
-
-  tools.forEach((i) => {
-    // error client has no tools
-    if (!i.tools) return;
-
-    toolsStr += MCP_TOOLS_TEMPLATE.replace(
-      "{{ clientId }}",
-      i.clientId,
-    ).replace(
-      "{{ tools }}",
-      i.tools.tools.map((p: object) => JSON.stringify(p, null, 2)).join("\n"),
-    );
-  });
-
-  return MCP_SYSTEM_TEMPLATE.replace("{{ MCP_TOOLS }}", toolsStr);
 }
 
 const DEFAULT_CHAT_STATE = {
@@ -536,8 +514,6 @@ export const useChatStore = createPersistStore(
 
         get().updateStat(message, targetSession);
 
-        get().checkMcpJson(message);
-
         get().summarizeSession(false, targetSession);
       },
 
@@ -563,27 +539,23 @@ export const useChatStore = createPersistStore(
         return true;
       },
 
-      async onUserInput(
-        content: string,
-        attachImages?: string[],
-        isMcpResponse?: boolean,
-      ) {
+      async onUserInput(content: string, attachImages?: string[]) {
         const session = get().currentSession();
         if (!get().ensureSessionModel(session)) return;
         const modelConfig = session.mask.modelConfig;
         const pluginIds = [...(session.mask.plugin ?? [])];
 
         // Continuing an archived chat brings it back to the list.
-        if (session.archived && !isMcpResponse) {
+        if (session.archived) {
           get().unarchiveSession(session.id);
         }
 
-        // MCP Response no need to fill template
-        let mContent: string | MultimodalContent[] = isMcpResponse
-          ? content
-          : fillTemplateWith(content, modelConfig);
+        let mContent: string | MultimodalContent[] = fillTemplateWith(
+          content,
+          modelConfig,
+        );
 
-        if (!isMcpResponse && attachImages && attachImages.length > 0) {
+        if (attachImages && attachImages.length > 0) {
           mContent = [
             ...(content ? [{ type: "text" as const, text: content }] : []),
             ...attachImages.map((url) => ({
@@ -596,17 +568,17 @@ export const useChatStore = createPersistStore(
         let userMessage: ChatMessage = createMessage({
           role: "user",
           content: mContent,
-          isMcpResponse,
         });
 
         const botMessage: ChatMessage = createMessage({
           role: "assistant",
           streaming: true,
           model: modelConfig.model,
+          toolMode: "native",
         });
 
         // get recent messages
-        const recentMessages = await get().getMessagesWithMemory();
+        const recentMessages = await get().getMessagesWithMemory(session);
         const sendMessages = recentMessages.concat(userMessage);
         const messageIndex = session.messages.length + 1;
 
@@ -629,18 +601,24 @@ export const useChatStore = createPersistStore(
           messages: sendMessages,
           config: { ...modelConfig, stream: true },
           pluginIds,
+          enableTools: true,
+          onToolModeChange(mode) {
+            botMessage.toolMode = mode;
+          },
+          onTextToolFallback() {
+            showToast(Locale.Chat.ToolTextPluginUnavailable);
+          },
           onUpdate(message, _chunk, thinkingActive) {
             botMessage.streaming = true;
             botMessage.thinkingActive = thinkingActive;
-            if (message) {
-              botMessage.content = message;
-            }
+            botMessage.content = message;
             get().updateTargetSession(session, (session) => {
               session.messages = session.messages.concat();
             });
           },
           async onFinish(message) {
             botMessage.streaming = false;
+            botMessage.thinkingActive = false;
             if (message) {
               botMessage.content = message;
               botMessage.date = new Date().toLocaleString();
@@ -700,8 +678,8 @@ export const useChatStore = createPersistStore(
         });
       },
 
-      getMemoryPrompt() {
-        const session = get().currentSession();
+      getMemoryPrompt(targetSession?: ChatSession) {
+        const session = targetSession ?? get().currentSession();
 
         if (session.memoryPrompt.length) {
           return {
@@ -712,8 +690,8 @@ export const useChatStore = createPersistStore(
         }
       },
 
-      async getMessagesWithMemory() {
-        const session = get().currentSession();
+      async getMessagesWithMemory(targetSession?: ChatSession) {
+        const session = targetSession ?? get().currentSession();
         const modelConfig = session.mask.modelConfig;
         const clearContextIndex = session.clearContextIndex ?? 0;
         const messages = session.messages.slice();
@@ -728,34 +706,21 @@ export const useChatStore = createPersistStore(
           (session.mask.modelConfig.model.startsWith("gpt-") ||
             session.mask.modelConfig.model.startsWith("chatgpt-"));
 
-        const mcpEnabled = await isMcpEnabled();
-        const mcpSystemPrompt = mcpEnabled
-          ? await getMcpSystemPrompt(useAccessStore.getState().accessCode)
-          : "";
-
         var systemPrompts: ChatMessage[] = [];
 
         if (shouldInjectSystemPrompts) {
           systemPrompts = [
             createMessage({
               role: "system",
-              content:
-                fillTemplateWith("", {
-                  ...modelConfig,
-                  template: DEFAULT_SYSTEM_TEMPLATE,
-                }) + mcpSystemPrompt,
-            }),
-          ];
-        } else if (mcpEnabled) {
-          systemPrompts = [
-            createMessage({
-              role: "system",
-              content: mcpSystemPrompt,
+              content: fillTemplateWith("", {
+                ...modelConfig,
+                template: DEFAULT_SYSTEM_TEMPLATE,
+              }),
             }),
           ];
         }
 
-        const memoryPrompt = get().getMemoryPrompt();
+        const memoryPrompt = get().getMemoryPrompt(session);
         // long term memory
         const shouldSendLongTermMemory =
           modelConfig.sendMemory &&
@@ -807,7 +772,7 @@ export const useChatStore = createPersistStore(
           ...reversedRecentMessages.reverse(),
         ];
 
-        return stripThinkingFromMessages(recentMessages);
+        return cleanMcpHistory(stripThinkingFromMessages(recentMessages));
       },
 
       updateMessage(
@@ -836,7 +801,8 @@ export const useChatStore = createPersistStore(
         const config = useAppConfig.getState();
         const session = targetSession;
         const modelConfig = session.mask.modelConfig;
-        const messages = stripThinkingFromMessages(session.messages);
+        const originalMessages = stripThinkingFromMessages(session.messages);
+        const messages = cleanMcpHistory(originalMessages);
         const shouldGenerateTitle =
           (config.enableAutoGenerateTitle &&
             session.topic === DEFAULT_TOPIC &&
@@ -846,9 +812,9 @@ export const useChatStore = createPersistStore(
           session.lastSummarizeIndex,
           session.clearContextIndex ?? 0,
         );
-        let toBeSummarizedMsgs = messages
-          .filter((msg) => !msg.isError)
-          .slice(summarizeIndex);
+        let toBeSummarizedMsgs = cleanMcpHistory(
+          originalMessages.filter((msg) => !msg.isError).slice(summarizeIndex),
+        );
         const historyMsgLength = countMessages(toBeSummarizedMsgs);
         const shouldSummarize =
           historyMsgLength > modelConfig.compressMessageLengthThreshold &&
@@ -927,7 +893,7 @@ export const useChatStore = createPersistStore(
             Math.max(0, n - modelConfig.historyMessageCount),
           );
         }
-        const memoryPrompt = get().getMemoryPrompt();
+        const memoryPrompt = get().getMemoryPrompt(session);
         if (memoryPrompt) {
           // add memory prompt
           toBeSummarizedMsgs.unshift(memoryPrompt);
@@ -1005,39 +971,6 @@ export const useChatStore = createPersistStore(
         set({
           lastInput,
         });
-      },
-
-      /** check if the message contains MCP JSON and execute the MCP action */
-      async checkMcpJson(message: ChatMessage) {
-        const mcpEnabled = await isMcpEnabled();
-        if (!mcpEnabled) return;
-        const content = getMessageTextContentForContext(message);
-        if (isMcpJson(content)) {
-          try {
-            const mcpRequest = extractMcpJson(content);
-            if (mcpRequest) {
-              executeMcpAction(
-                mcpRequest.clientId,
-                mcpRequest.mcp,
-                useAccessStore.getState().accessCode,
-              )
-                .then((result) => {
-                  const mcpResponse =
-                    typeof result === "object"
-                      ? JSON.stringify(result)
-                      : String(result);
-                  get().onUserInput(
-                    `\`\`\`json:mcp-response:${mcpRequest.clientId}\n${mcpResponse}\n\`\`\``,
-                    [],
-                    true,
-                  );
-                })
-                .catch((error) => showToast("MCP execution failed", error));
-            }
-          } catch {
-            console.error("[MCP] Invalid tool request");
-          }
-        }
       },
     };
 

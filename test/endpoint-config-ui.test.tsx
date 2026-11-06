@@ -55,6 +55,10 @@ test("adds an interface, previews its URL, and saves manual and fetched models",
   fireEvent.change(screen.getByLabelText(labels.Protocol), {
     target: { value: "openai-responses" },
   });
+  expect(screen.getByLabelText(labels.ToolCalling)).toHaveValue("auto");
+  fireEvent.change(screen.getByLabelText(labels.ToolCalling), {
+    target: { value: "text" },
+  });
   fireEvent.change(screen.getByLabelText(labels.BaseUrl), {
     target: { value: "https://gateway.test/custom/v1" },
   });
@@ -77,6 +81,7 @@ test("adds an interface, previews its URL, and saves manual and fetched models",
   expect(useAppConfig.getState().endpoints[0]).toMatchObject({
     name: "Work",
     protocol: "openai-responses",
+    toolCalling: "text",
     apiKey: "secret",
     models: [
       { name: "manual" },

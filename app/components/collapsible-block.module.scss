@@ -1,9 +1,17 @@
 .block {
-  margin: 0 0 12px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
   border: var(--border-in-light);
   border-radius: 10px;
   background: var(--second);
+  line-height: 1.5;
   overflow: hidden;
+}
+
+:global(.markdown-body) > .block + * {
+  margin-top: 10px;
 }
 
 .toggle {
@@ -28,6 +36,7 @@
 
 .chevron {
   display: flex;
+  flex: none;
   transform: rotate(-90deg);
   transition: transform 150ms ease;
   svg {
@@ -40,6 +49,16 @@
   &[data-expanded="true"] {
     transform: rotate(0);
   }
+}
+
+.title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.status {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .content {

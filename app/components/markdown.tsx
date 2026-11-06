@@ -366,7 +366,7 @@ export function Markdown(
     streaming?: boolean;
     thinkingActive?: boolean;
     parseThoughts?: boolean;
-    fontSize?: number;
+    fontSize?: number | "inherit";
     fontFamily?: string;
     parentRef?: RefObject<HTMLDivElement>;
     defaultShow?: boolean;
@@ -378,7 +378,10 @@ export function Markdown(
     <div
       className="markdown-body"
       style={{
-        fontSize: `${props.fontSize ?? 14}px`,
+        fontSize:
+          props.fontSize === "inherit"
+            ? "inherit"
+            : `${props.fontSize ?? 14}px`,
         fontFamily: props.fontFamily || "inherit",
       }}
       ref={mdRef}

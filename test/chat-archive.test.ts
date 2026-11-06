@@ -229,11 +229,6 @@ describe("sending from an archived session", () => {
     expect(store().sessions[0].archiveUpdatedAt).toBeGreaterThan(5);
   });
 
-  test("a tool response does not", async () => {
-    load([session("a", { archived: true, archiveUpdatedAt: 5 })]);
-    await store().onUserInput("tool", [], true);
-    expect(store().sessions[0].archived).toBe(true);
-  });
 });
 
 describe("starting the app", () => {

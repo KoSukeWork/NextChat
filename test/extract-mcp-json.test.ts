@@ -1,15 +1,14 @@
-import { extractMcpJson } from "../app/mcp/utils";
+import { findMcpCall } from "../app/mcp/utils";
 
-describe("extractMcpJson", () => {
-  test("extracts the client id and parsed mcp payload", () => {
+describe("findMcpCall", () => {
+  test("extracts the client id and raw mcp payload", () => {
     const content = '```json:mcp:client-1\n{"tool":"x"}\n```';
-    expect(extractMcpJson(content)).toEqual({
-      clientId: "client-1",
-      mcp: { tool: "x" },
-    });
+    const match = findMcpCall(content);
+    expect(match?.clientId).toBe("client-1");
+    expect(JSON.parse(match!.raw)).toEqual({ tool: "x" });
   });
 
   test("returns null when there is no mcp block", () => {
-    expect(extractMcpJson("no mcp here")).toBeNull();
+    expect(findMcpCall("no mcp here")).toBeNull();
   });
 });

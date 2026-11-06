@@ -58,6 +58,9 @@ const en: LocaleType = {
     Pinned: "Pinned",
   },
   EndpointConfig: {
+    ToolCalling: "Tool calling",
+    ToolCallingAuto: "Automatic",
+    ToolCallingText: "Text only",
     Title: "API endpoints",
     Add: "Add endpoint",
     Edit: "Edit endpoint",
@@ -88,6 +91,22 @@ const en: LocaleType = {
       "API settings in the old backup were ignored; chats, masks, and prompts can still be imported.",
   },
   Chat: {
+    ToolTextPluginUnavailable:
+      "Text tool mode is active; plugin tools are unavailable for this request.",
+    ToolRoundsExceeded: "Too many consecutive tool calls",
+    ToolCard: {
+      Tool: "Tool",
+      ToolResult: "Tool result",
+      Server: "Server",
+      Separator: ": ",
+      Arguments: "Arguments",
+      Result: "Result",
+      Error: "Error",
+      Running: "Running",
+      Stopped: "Stopped",
+      Succeeded: "Completed",
+      Failed: "Failed",
+    },
     Thinking: {
       Title: "Thinking process",
       Active: "Thinking…",
@@ -428,6 +447,24 @@ const en: LocaleType = {
     },
 
     Model: "Model",
+    EnableParameter: (name: string) => `Enable ${name}`,
+    JoinParameterDescriptions: (...parts: string[]) =>
+      `${parts.map((part) => part.replace(/[。.!?\s]+$/u, "")).join(". ")}.`,
+    ParameterOptional:
+      "When off, this parameter is omitted and the model default is used.",
+    PenaltyProtocols: "Responses and Anthropic do not support this parameter.",
+    AnthropicMaxTokens:
+      "Anthropic requires this parameter; 16000 is used when off.",
+    ReasoningEffort: {
+      Title: "Reasoning effort",
+      SubTitle:
+        "Leave empty to use the model default. Enter a level or token budget; accepted values depend on the model. Unsupported values return an API error.",
+    },
+    ReasoningSummary: {
+      Title: "Request reasoning content",
+      SubTitle:
+        "When off, reasoning content is not requested; content returned by the API is still shown.",
+    },
     CompressModel: {
       Title: "Summary Model",
       SubTitle: "Model used to compress history and generate title",
@@ -601,6 +638,7 @@ const en: LocaleType = {
     Running: "Running",
     Stopped: "Stopped",
     Error: "Error",
+    ErrorSeparator: ": ",
     Updating: "Updating configuration…",
     Creating: "Creating MCP client…",
     Removing: "Removing server…",

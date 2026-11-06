@@ -19,6 +19,8 @@ export interface Endpoint {
   baseUrl: string;
   apiKey: string;
   models: EndpointModel[];
+  /** Older configurations omit this field and use automatic tool calling. */
+  toolCalling?: "auto" | "text";
 }
 
 export interface ModelSelection {

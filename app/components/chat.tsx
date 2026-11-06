@@ -30,7 +30,6 @@ import DeleteIcon from "../icons/clear.svg";
 import PinIcon from "../icons/pin.svg";
 import SessionPinIcon from "../icons/pin-upright.svg";
 import ConfirmIcon from "../icons/confirm.svg";
-import CloseIcon from "../icons/close.svg";
 import CancelIcon from "../icons/cancel.svg";
 
 import BottomIcon from "../icons/bottom.svg";
@@ -101,6 +100,10 @@ import { MultimodalContent } from "../client/api";
 import { speak, stop } from "../utils/local-tts";
 import { useLocalTTS } from "../utils/use-local-tts";
 import { showSpeechFallback } from "./tts-feedback";
+import { ToolCard } from "./tool-card";
+import { ThinkingBlock } from "./thinking";
+import { parseLegacyMcpResponse, splitLegacyMcpCalls } from "../mcp/utils";
+import { parseThinking } from "../utils/thinking";
 
 import clsx from "clsx";
 
@@ -1472,16 +1475,65 @@ function _Chat() {
                 }}
               >
                 {messages
-                  // TODO
-                  // .filter((m) => !m.isMcpResponse)
+                  // Render historical tool messages without changing stored data.
                   .map((message, i) => {
-                    const isUser = message.role === "user";
+                    const isToolResponse = !!message.isMcpResponse;
+                    const isUser = message.role === "user" && !isToolResponse;
                     const isContext = i + msgRenderIndex < context.length;
                     const showActions =
                       i > 0 &&
-                      !(message.preview || message.content.length === 0) &&
+                      !isToolResponse &&
+                      !(
+                        message.preview ||
+                        (message.content.length === 0 &&
+                          !message.streaming &&
+                          !message.tools?.length)
+                      ) &&
                       !isContext;
                     const showTyping = message.preview || message.streaming;
+                    const text = getMessageTextContent(message);
+                    const separated =
+                      message.role === "assistant"
+                        ? parseThinking(text, message.streaming)
+                        : [];
+                    const thoughtParts = separated.filter(
+                      (part) => part.type === "thinking",
+                    );
+                    const showThoughts =
+                      thoughtParts.some((part) => part.content.trim()) ||
+                      (!!message.streaming &&
+                        !!message.thinkingActive &&
+                        !!thoughtParts.length);
+                    const visibleText = separated.length
+                      ? separated
+                          .filter((part) => part.type === "text")
+                          .map((part) => part.content)
+                          .join("")
+                      : text;
+                    const legacyResponse = isToolResponse
+                      ? parseLegacyMcpResponse(text)
+                      : null;
+                    const contentParts =
+                      message.role === "assistant" &&
+                      message.toolMode !== "native"
+                        ? splitLegacyMcpCalls(visibleText)
+                        : [{ type: "text" as const, content: visibleText }];
+                    const hasLegacyCalls = contentParts.some(
+                      (part) => part.type === "call",
+                    );
+                    const visibleParts = hasLegacyCalls
+                      ? contentParts.filter(
+                          (part) =>
+                            part.type === "call" || !!part.content.trim(),
+                        )
+                      : contentParts;
+                    const showTypingStatus =
+                      !message.tools?.length && showTyping;
+                    const showBlocks =
+                      showTypingStatus ||
+                      showThoughts ||
+                      !!message.tools?.length ||
+                      !!legacyResponse;
 
                     const shouldShowClearContextDivider =
                       i === clearContextIndex - 1;
@@ -1647,92 +1699,183 @@ function _Chat() {
                                 </div>
                               )}
                             </div>
-                            {message?.tools?.length == 0 && showTyping && (
-                              <div className={styles["chat-message-status"]}>
-                                {Locale.Chat.Typing}
-                              </div>
-                            )}
-                            {/*@ts-ignore*/}
-                            {message?.tools?.length > 0 && (
-                              <div className={styles["chat-message-tools"]}>
-                                {message?.tools?.map((tool) => (
-                                  <div
-                                    key={tool.id}
-                                    title={tool?.errorMsg}
-                                    className={styles["chat-message-tool"]}
-                                  >
-                                    {tool.isError === false ? (
-                                      <ConfirmIcon />
-                                    ) : tool.isError === true ? (
-                                      <CloseIcon />
-                                    ) : (
-                                      <LoadingButtonIcon />
-                                    )}
-                                    <span>{tool?.function?.name}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            <div className={styles["chat-message-item"]}>
-                              <Markdown
-                                key={message.id}
-                                content={getMessageTextContent(message)}
-                                streaming={message.streaming}
-                                thinkingActive={message.thinkingActive}
-                                parseThoughts={message.role === "assistant"}
-                                loading={
-                                  (message.preview || message.streaming) &&
-                                  message.content.length === 0 &&
-                                  !isUser
-                                }
-                                //   onContextMenu={(e) => onRightClick(e, message)} // hard to use
-                                onDoubleClickCapture={() => {
-                                  if (!isMobileScreen) return;
-                                  setUserInput(
-                                    getMessageTextContentForContext(message),
-                                  );
+                            {showBlocks && (
+                              <div
+                                className={styles["chat-message-blocks"]}
+                                style={{
+                                  fontSize: `${fontSize}px`,
+                                  fontFamily: fontFamily || "inherit",
                                 }}
-                                fontSize={fontSize}
-                                fontFamily={fontFamily}
-                                parentRef={scrollRef}
-                                defaultShow={i >= messages.length - 6}
-                              />
-                              {getMessageImages(message).length == 1 && (
-                                <img
-                                  className={styles["chat-message-item-image"]}
-                                  src={getMessageImages(message)[0]}
-                                  alt=""
-                                />
-                              )}
-                              {getMessageImages(message).length > 1 && (
+                              >
+                                {showTypingStatus && (
+                                  <div
+                                    className={styles["chat-message-status"]}
+                                  >
+                                    {Locale.Chat.Typing}
+                                  </div>
+                                )}
+                                {showThoughts && (
+                                  <ThinkingBlock
+                                    thinking={
+                                      !!message.streaming &&
+                                      (message.thinkingActive ||
+                                        thoughtParts.some(
+                                          (part) => !part.closed,
+                                        ))
+                                    }
+                                  >
+                                    <Markdown
+                                      content={thoughtParts
+                                        .map((part) => part.content)
+                                        .join("\n\n")}
+                                      parseThoughts={false}
+                                      fontSize="inherit"
+                                      fontFamily={fontFamily}
+                                      parentRef={scrollRef}
+                                      defaultShow
+                                    />
+                                  </ThinkingBlock>
+                                )}
+                                {message.tools?.map((tool) => (
+                                  <ToolCard
+                                    key={tool.id}
+                                    tool={tool}
+                                    active={!!message.streaming}
+                                  />
+                                ))}
+                                {legacyResponse && (
+                                  <ToolCard
+                                    historical
+                                    tool={{
+                                      id: message.id,
+                                      display: {
+                                        source: "mcp",
+                                        server: legacyResponse.clientId,
+                                        name: Locale.Chat.ToolCard.ToolResult,
+                                      },
+                                      content: legacyResponse.content,
+                                    }}
+                                  />
+                                )}
+                              </div>
+                            )}
+                            {!isToolResponse &&
+                              (!!visibleText.trim() ||
+                                getMessageImages(message).length > 0 ||
+                                (!message.tools?.length &&
+                                  !thoughtParts.length)) && (
                                 <div
-                                  className={styles["chat-message-item-images"]}
-                                  style={
-                                    {
-                                      "--image-count":
-                                        getMessageImages(message).length,
-                                    } as React.CSSProperties
-                                  }
+                                  className={clsx(styles["chat-message-item"], {
+                                    [styles["chat-message-item-legacy"]]:
+                                      hasLegacyCalls,
+                                  })}
                                 >
-                                  {getMessageImages(message).map(
-                                    (image, index) => {
-                                      return (
-                                        <img
-                                          className={
-                                            styles[
-                                              "chat-message-item-image-multi"
-                                            ]
-                                          }
-                                          key={index}
-                                          src={image}
-                                          alt=""
-                                        />
-                                      );
-                                    },
+                                  {visibleParts.map((part, partIndex) =>
+                                    part.type === "call" ? (
+                                      (() => {
+                                        let request: any;
+                                        try {
+                                          request = JSON.parse(part.raw);
+                                        } catch {
+                                          request = {};
+                                        }
+                                        const name =
+                                          request?.params?.name ??
+                                          Locale.Chat.ToolCard.Tool;
+                                        return (
+                                          <ToolCard
+                                            key={partIndex}
+                                            historical
+                                            tool={{
+                                              id: `${message.id}-${partIndex}`,
+                                              function: {
+                                                name,
+                                                arguments: request?.params
+                                                  ?.arguments
+                                                  ? JSON.stringify(
+                                                      request.params.arguments,
+                                                    )
+                                                  : part.raw,
+                                              },
+                                              display: {
+                                                source: "mcp",
+                                                server: part.clientId,
+                                                name,
+                                              },
+                                            }}
+                                          />
+                                        );
+                                      })()
+                                    ) : (
+                                      <Markdown
+                                        key={`${message.id}-${partIndex}`}
+                                        content={part.content}
+                                        streaming={message.streaming}
+                                        thinkingActive={message.thinkingActive}
+                                        parseThoughts={false}
+                                        loading={
+                                          (message.preview ||
+                                            message.streaming) &&
+                                          message.content.length === 0 &&
+                                          !isUser
+                                        }
+                                        //   onContextMenu={(e) => onRightClick(e, message)} // hard to use
+                                        onDoubleClickCapture={() => {
+                                          if (!isMobileScreen) return;
+                                          setUserInput(
+                                            getMessageTextContentForContext(
+                                              message,
+                                            ),
+                                          );
+                                        }}
+                                        fontSize={fontSize}
+                                        fontFamily={fontFamily}
+                                        parentRef={scrollRef}
+                                        defaultShow={i >= messages.length - 6}
+                                      />
+                                    ),
+                                  )}
+                                  {getMessageImages(message).length == 1 && (
+                                    <img
+                                      className={
+                                        styles["chat-message-item-image"]
+                                      }
+                                      src={getMessageImages(message)[0]}
+                                      alt=""
+                                    />
+                                  )}
+                                  {getMessageImages(message).length > 1 && (
+                                    <div
+                                      className={
+                                        styles["chat-message-item-images"]
+                                      }
+                                      style={
+                                        {
+                                          "--image-count":
+                                            getMessageImages(message).length,
+                                        } as React.CSSProperties
+                                      }
+                                    >
+                                      {getMessageImages(message).map(
+                                        (image, index) => {
+                                          return (
+                                            <img
+                                              className={
+                                                styles[
+                                                  "chat-message-item-image-multi"
+                                                ]
+                                              }
+                                              key={index}
+                                              src={image}
+                                              alt=""
+                                            />
+                                          );
+                                        },
+                                      )}
+                                    </div>
                                   )}
                                 </div>
                               )}
-                            </div>
                             {message?.audio_url && (
                               <div className={styles["chat-message-audio"]}>
                                 <audio src={message.audio_url} controls />

@@ -5,3 +5,32 @@
     white-space: normal;
   }
 }
+
+.optional-parameter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  > div {
+    max-width: none;
+    width: 104px;
+    flex-shrink: 0;
+  }
+
+  > input[type="number"] {
+    width: 8.5em;
+    min-width: 8.5em;
+    max-width: none;
+    flex-shrink: 0;
+  }
+
+  > [aria-disabled="true"],
+  > input:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  > [aria-disabled="true"] input {
+    cursor: not-allowed;
+  }
+}

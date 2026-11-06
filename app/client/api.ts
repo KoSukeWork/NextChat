@@ -25,18 +25,30 @@ export interface LLMConfig {
   stream?: boolean;
   presence_penalty?: number;
   frequency_penalty?: number;
+  max_tokens?: number;
+  enableTemperature?: boolean;
+  enableTopP?: boolean;
+  enableMaxTokens?: boolean;
+  enablePresencePenalty?: boolean;
+  enableFrequencyPenalty?: boolean;
+  enableReasoningSummary?: boolean;
+  reasoningEffort?: string;
 }
 
 export interface ChatOptions {
   messages: RequestMessage[];
   config: LLMConfig;
   pluginIds?: string[];
+  /** Only the main conversation may invoke tools; title and memory requests may not. */
+  enableTools?: boolean;
   onUpdate?: (message: string, chunk: string, thinkingActive?: boolean) => void;
   onFinish: (message: string, response: Response) => void;
   onError?: (err: Error) => void;
   onController?: (controller: AbortController) => void;
   onBeforeTool?: (tool: ChatMessageTool) => void;
   onAfterTool?: (tool: ChatMessageTool) => void;
+  onTextToolFallback?: () => void;
+  onToolModeChange?: (mode: "native" | "text") => void;
 }
 
 export function validString(value: string): boolean {

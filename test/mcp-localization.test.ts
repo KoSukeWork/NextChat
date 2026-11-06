@@ -5,6 +5,15 @@ const { default: cn } = await import("../app/locales/cn");
 const { default: en } = await import("../app/locales/en");
 const { localizedMcpError } = await import("../app/mcp/error-message");
 
+test("MCP error labels have locale-appropriate punctuation", () => {
+  expect(`${cn.Mcp.Error}${cn.Mcp.ErrorSeparator}远程错误`).toBe(
+    "错误：远程错误",
+  );
+  expect(`${en.Mcp.Error}${en.Mcp.ErrorSeparator}Remote error`).toBe(
+    "Error: Remote error",
+  );
+});
+
 test.each([cn, en])(
   "MCP diagnostics use the selected language without exposing unknown text",
   (locale) => {

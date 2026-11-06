@@ -47,6 +47,7 @@ test("OpenAI chat builds vision and tool requests with reasoning-model token set
   const request = buildEndpointRequest(endpoint("openai-chat"), {
     ...input,
     model: "o1-mini",
+    enableMaxTokens: true,
   });
   expect(request.url).toBe("https://example.test/v1/chat/completions");
   expect(request.headers.authorization).toBe("Bearer secret");
@@ -65,7 +66,11 @@ test("Responses uses the documented image and function-tool shapes", () => {
     { type: "input_text", text: "look" },
     { type: "input_image", image_url: "data:image/png;base64,YWJj" },
   ]);
-  expect(request.body.tools[0]).toEqual({ type: "function", ...tool.function });
+  expect(request.body.tools[0]).toEqual({
+    type: "function",
+    ...tool.function,
+    strict: false,
+  });
 });
 
 test("Anthropic converts images and tools with its authentication headers", () => {
@@ -89,7 +94,47 @@ test("Gemini converts inline images and tools with its authentication header", (
   expect(request.body.contents[0].parts.at(-1)).toEqual({
     inline_data: { mime_type: "image/png", data: "YWJj" },
   });
-  expect(request.body.tools[0].functionDeclarations[0]).toEqual(tool.function);
+  expect(request.body.tools[0].functionDeclarations[0]).toEqual({
+    name: tool.function.name,
+    description: tool.function.description,
+  });
+});
+
+test("Gemini omits empty tool parameters and preserves a populated schema", () => {
+  const request = buildEndpointRequest(endpoint("gemini"), {
+    ...input,
+    tools: [
+      {
+        type: "function",
+        function: {
+          name: "empty",
+          parameters: { type: "object", properties: {} },
+        },
+      },
+      { type: "function", function: { name: "empty_implicit", parameters: { properties: {} } } },
+      {
+        type: "function",
+        function: {
+          name: "url",
+          parameters: {
+            type: "object",
+            properties: { url: { type: ["string", "null"], format: "uri" } },
+          },
+        },
+      },
+    ],
+  });
+  expect(request.body.tools[0].functionDeclarations).toEqual([
+    { name: "empty" },
+    { name: "empty_implicit" },
+    {
+      name: "url",
+      parameters: {
+        type: "object",
+        properties: { url: { type: "string", nullable: true, format: "uri" } },
+      },
+    },
+  ]);
 });
 
 test.each(["openai-chat", "openai-responses", "anthropic", "gemini"] as const)(
@@ -135,11 +180,6 @@ test.each([
       model: "custom",
       messages: [{ role: "user", content: "hello" }],
       stream: true,
-      temperature: 0.4,
-      top_p: 0.8,
-      presence_penalty: 0.1,
-      frequency_penalty: 0.2,
-      max_tokens: 123,
     },
   ],
   [
@@ -148,7 +188,8 @@ test.each([
       model: "custom",
       input: [{ role: "user", content: "hello" }],
       stream: true,
-      max_output_tokens: 123,
+      reasoning: { summary: "auto" },
+      include: ["reasoning.encrypted_content"],
     },
   ],
   [
@@ -157,16 +198,15 @@ test.each([
       model: "custom",
       messages: [{ role: "user", content: "hello" }],
       stream: true,
-      max_tokens: 123,
-      temperature: 0.4,
-      top_p: 0.8,
+      max_tokens: 16000,
+      thinking: { type: "adaptive", display: "summarized" },
     },
   ],
   [
     "gemini",
     {
       contents: [{ role: "user", parts: [{ text: "hello" }] }],
-      generationConfig: { temperature: 0.4, topP: 0.8, maxOutputTokens: 123 },
+      generationConfig: { thinkingConfig: { includeThoughts: true } },
     },
   ],
 ] as const)("%s keeps the plain-text wire format", (protocol, expected) => {

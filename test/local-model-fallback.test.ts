@@ -102,16 +102,14 @@ test("no local default prevents a request and preserves messages", async () => {
 });
 
 test("a remote mask resolves without mutating the saved mask", () => {
-  const mask = useMaskStore
-    .getState()
-    .create({
-      ...createEmptyMask(),
-      modelConfig: {
-        ...useAppConfig.getState().modelConfig,
-        model: "same",
-        endpointId: "remote",
-      },
-    });
+  const mask = useMaskStore.getState().create({
+    ...createEmptyMask(),
+    modelConfig: {
+      ...useAppConfig.getState().modelConfig,
+      model: "same",
+      endpointId: "remote",
+    },
+  });
   const before = JSON.stringify(mask);
   useChatStore.getState().newSession(mask);
   expect(
@@ -142,4 +140,31 @@ test("compression uses the same local model resolution", () => {
     compressModel: "same",
     compressEndpointId: "local",
   });
+  expect(chat.mock.calls.every(([options]) => !options.enableTools)).toBe(true);
+});
+
+test("tool callbacks keep updating the originating session after a switch", async () => {
+  const origin = useChatStore.getState().currentSession();
+  const pending = useChatStore.getState().onUserInput("hello");
+  useChatStore.getState().newSession();
+  const other = useChatStore.getState().currentSession();
+  await pending;
+  const options = chat.mock.calls[0][0];
+  expect(options.enableTools).toBe(true);
+  options.onBeforeTool?.({
+    id: "call",
+    function: { name: "lookup", arguments: "{}" },
+  });
+  options.onAfterTool?.({
+    id: "call",
+    function: { name: "lookup", arguments: "{}" },
+    content: "result",
+    isError: false,
+  });
+  options.onFinish("finished", { status: 200 } as Response);
+  expect(origin.messages.at(-1)).toMatchObject({
+    content: "finished",
+    tools: [{ id: "call", content: "result" }],
+  });
+  expect(other.messages).toHaveLength(0);
 });

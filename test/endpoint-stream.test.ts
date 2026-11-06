@@ -274,6 +274,44 @@ test("Responses preserves reasoning items and parallel calls for continuation", 
   ]);
 });
 
+test("Responses replays a returned reasoning item even when reasoning content was not requested", async () => {
+  const bodies: any[] = [];
+  const reasoning = { type: "reasoning", id: "rs-existing", summary: [] };
+  let round = 0;
+  await runEndpointChat(
+    endpoint,
+    { ...input, enableReasoningSummary: false },
+    { onFinish: jest.fn() },
+    { one: async () => "ok" },
+    async (_url, options) => {
+      bodies.push(JSON.parse(options?.body as string));
+      if (round++ === 0)
+        return sse(
+          {
+            type: "response.output_item.done",
+            output_index: 0,
+            item: reasoning,
+          },
+          {
+            type: "response.output_item.done",
+            output_index: 1,
+            item: {
+              type: "function_call",
+              call_id: "c1",
+              name: "one",
+              arguments: "{}",
+            },
+          },
+        );
+      return sse({ type: "response.output_text.delta", delta: "done" });
+    },
+  );
+  expect(bodies[0].reasoning).toBeUndefined();
+  expect(bodies[0].include).toBeUndefined();
+  expect(bodies[0].store).toBeUndefined();
+  expect(bodies[1].input).toContainEqual(reasoning);
+});
+
 test("Gemini continuation retains the model's thought signature", async () => {
   const bodies: any[] = [];
   let round = 0;

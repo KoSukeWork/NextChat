@@ -138,6 +138,24 @@ function EndpointEditor(props: { initial: Endpoint; onClose: () => void }) {
               ))}
             </Select>
           </ListItem>
+          <ListItem title={Locale.EndpointConfig.ToolCalling}>
+            <Select
+              aria-label={Locale.EndpointConfig.ToolCalling}
+              value={draft.toolCalling ?? "auto"}
+              onChange={(event) =>
+                update({
+                  toolCalling: event.currentTarget.value as "auto" | "text",
+                })
+              }
+            >
+              <option value="auto">
+                {Locale.EndpointConfig.ToolCallingAuto}
+              </option>
+              <option value="text">
+                {Locale.EndpointConfig.ToolCallingText}
+              </option>
+            </Select>
+          </ListItem>
           <ListItem title={Locale.EndpointConfig.BaseUrl}>
             <input
               aria-label={Locale.EndpointConfig.BaseUrl}

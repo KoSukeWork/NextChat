@@ -55,6 +55,9 @@ const cn = {
     Pinned: "已置顶",
   },
   EndpointConfig: {
+    ToolCalling: "工具调用",
+    ToolCallingAuto: "自动",
+    ToolCallingText: "仅文字",
     Title: "接口配置",
     Add: "添加接口",
     Edit: "编辑接口",
@@ -84,6 +87,21 @@ const cn = {
     LegacyImport: "旧备份中的接口配置已忽略；聊天、面具和提示词仍可导入。",
   },
   Chat: {
+    ToolTextPluginUnavailable: "当前使用文字工具模式，本次无法调用插件工具。",
+    ToolRoundsExceeded: "连续工具调用次数已达上限。",
+    ToolCard: {
+      Tool: "工具",
+      ToolResult: "工具结果",
+      Server: "服务",
+      Separator: "：",
+      Arguments: "参数",
+      Result: "结果",
+      Error: "错误",
+      Running: "运行中",
+      Stopped: "已停止",
+      Succeeded: "已完成",
+      Failed: "失败",
+    },
     Thinking: { Title: "思考过程", Active: "思考中…", Done: "已思考" },
     SubTitle: (count: number) => `共 ${count} 条对话`,
     EditMessage: {
@@ -408,6 +426,21 @@ const cn = {
     },
 
     Model: "模型 (model)",
+    EnableParameter: (name: string) => `启用 ${name}`,
+    JoinParameterDescriptions: (...parts: string[]) =>
+      `${parts.map((part) => part.replace(/[。.!?\s]+$/u, "")).join("。")}。`,
+    ParameterOptional: "关闭时不发送，使用模型默认值。",
+    PenaltyProtocols: "Responses、Anthropic 协议没有此参数。",
+    AnthropicMaxTokens: "Anthropic 协议必须发送，关闭时使用 16000。",
+    ReasoningEffort: {
+      Title: "思考档位",
+      SubTitle:
+        "留空则使用模型默认。可填档位或 Token 预算数字，取值以模型文档为准，不支持时会显示接口报错。",
+    },
+    ReasoningSummary: {
+      Title: "请求思考内容",
+      SubTitle: "关闭时不主动请求思考内容；接口返回的内容仍会显示。",
+    },
     CompressModel: {
       Title: "对话摘要模型",
       SubTitle: "用于压缩历史记录、生成对话标题的模型",
@@ -568,6 +601,7 @@ const cn = {
     Running: "运行中",
     Stopped: "已停止",
     Error: "错误",
+    ErrorSeparator: "：",
     Updating: "正在更新配置…",
     Creating: "正在创建 MCP 客户端…",
     Removing: "正在移除服务器…",
