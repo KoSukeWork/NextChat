@@ -53,7 +53,10 @@ export function restoreBackup(
     local,
     backup as AppState,
   );
-  mergeAppState(local, state, { restoreDeletedSessions: true });
+  mergeAppState(local, state, {
+    restoreDeletedSessions: true,
+    restoreDeletedItems: true,
+  });
 
   if (!legacyApiSettings && backup[StoreKey.Config] !== undefined) {
     const incoming = backup[StoreKey.Config];

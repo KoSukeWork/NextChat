@@ -112,6 +112,7 @@ const cn = {
       },
     },
     Actions: {
+      More: "更多",
       ChatList: "查看消息列表",
       CompressedHistory: "查看压缩后的历史 Prompt",
       Export: "导出聊天记录",
@@ -146,6 +147,7 @@ const cn = {
     },
     Rename: "重命名对话",
     Typing: "正在输入…",
+    MobileInput: "/ 触发补全，可粘贴图片",
     Input: (submitKey: string) => {
       var inputHints = `${submitKey} 发送`;
       if (submitKey === String(SubmitKey.Enter)) {
@@ -570,6 +572,17 @@ const cn = {
     Revert: "恢复上下文",
   },
   Mcp: {
+    Login: "登录",
+    Logout: "退出登录",
+    LoginRequired: "需要登录",
+    OAuthUnsupportedShort: "不支持登录",
+    OAuthUnsupported: "该服务需要预先注册的客户端，暂不支持。",
+    OAuthFailed: "登录未完成，请重试。",
+    OAuthTimeout: "登录超时，请重试。",
+    OAuthPopupBlocked: "无法打开登录页，请允许弹出窗口。",
+    OAuthSignedOut: "已退出登录",
+    LoggingIn: "正在登录…",
+    LoggingOut: "正在退出登录…",
     Name: "MCP",
     Market: "MCP 市场",
     Configured: (count: number) => `已配置 ${count} 个服务器`,

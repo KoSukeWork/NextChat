@@ -12,6 +12,7 @@ import {
 } from "./types";
 import { createRemoteClient } from "./remote";
 import { z } from "zod";
+import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 
 const logger = new MCPClientLogger();
 
@@ -27,10 +28,12 @@ export function getMcpChildEnvironment(
 export async function createClient(
   id: string,
   config: ServerConfig,
+  authProvider?: OAuthClientProvider,
 ): Promise<Client> {
   logger.info(`Creating client for ${id}...`);
 
-  if (isRemoteServer(config)) return createRemoteClient(id, config);
+  if (isRemoteServer(config))
+    return createRemoteClient(id, config, undefined, authProvider);
 
   const transport = new StdioClientTransport({
     command: config.command,

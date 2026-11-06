@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import { StoreKey } from "../constant";
 import { getLang } from "../locales";
 import { createPersistStore } from "../utils/store";
+import { validTimestamp } from "../utils/chat-deletion";
 
 export interface Prompt {
   id: string;
@@ -10,6 +11,7 @@ export interface Prompt {
   title: string;
   content: string;
   createdAt: number;
+  updatedAt?: number;
 }
 
 export const SearchService = {
@@ -41,6 +43,11 @@ export const SearchService = {
     this.userEngine.add(prompt);
   },
 
+  setUserPrompts(prompts: Prompt[]) {
+    this.userEngine.setCollection(prompts);
+    this.allPrompts = prompts.concat(this.builtinPrompts);
+  },
+
   search(text: string) {
     const userResults = this.userEngine.search(text);
     const builtinResults = this.builtinEngine.search(text);
@@ -52,6 +59,7 @@ export const usePromptStore = createPersistStore(
   {
     counter: 0,
     prompts: {} as Record<string, Prompt>,
+    deletedPrompts: {} as Record<string, number>,
   },
 
   (set, get) => ({
@@ -60,7 +68,10 @@ export const usePromptStore = createPersistStore(
       prompt.id = nanoid();
       prompt.isUser = true;
       prompt.createdAt = Date.now();
+      prompt.updatedAt = prompt.createdAt;
       prompts[prompt.id] = prompt;
+
+      SearchService.add(prompt);
 
       set(() => ({
         prompts: prompts,
@@ -81,6 +92,9 @@ export const usePromptStore = createPersistStore(
 
     remove(id: string) {
       const prompts = get().prompts;
+      const target =
+        prompts[id] ?? Object.values(prompts).find((p) => p.id === id);
+      if (!target) return;
       delete prompts[id];
 
       Object.entries(prompts).some(([key, prompt]) => {
@@ -95,6 +109,14 @@ export const usePromptStore = createPersistStore(
 
       set(() => ({
         prompts,
+        deletedPrompts: {
+          ...get().deletedPrompts,
+          [id]: Math.max(
+            Date.now(),
+            validTimestamp(target.updatedAt ?? target.createdAt) + 1,
+            validTimestamp(get().deletedPrompts?.[id]) + 1,
+          ),
+        },
         counter: get().counter + 1,
       }));
     },
@@ -108,17 +130,28 @@ export const usePromptStore = createPersistStore(
     },
 
     updatePrompt(id: string, updater: (prompt: Prompt) => void) {
-      const prompt = get().prompts[id] ?? {
-        title: "",
-        content: "",
-        id,
-      };
+      const previous = get().prompts[id];
+      const prompt = previous
+        ? { ...previous }
+        : {
+            title: "",
+            content: "",
+            id,
+            createdAt: Date.now(),
+          };
 
       SearchService.remove(id);
       updater(prompt);
+      prompt.updatedAt = Math.max(
+        Date.now(),
+        validTimestamp(previous?.updatedAt ?? previous?.createdAt) + 1,
+        validTimestamp(get().deletedPrompts?.[id]) + 1,
+      );
       const prompts = get().prompts;
       prompts[id] = prompt;
-      set(() => ({ prompts }));
+      const deletedPrompts = { ...get().deletedPrompts };
+      delete deletedPrompts[id];
+      set(() => ({ prompts, deletedPrompts }));
       SearchService.add(prompt);
     },
 
@@ -132,15 +165,35 @@ export const usePromptStore = createPersistStore(
   }),
   {
     name: StoreKey.Prompt,
-    version: 3,
+    version: 4,
 
     migrate(state, version) {
       const newState = JSON.parse(JSON.stringify(state)) as {
         prompts: Record<string, Prompt>;
+        deletedPrompts?: Record<string, number>;
       };
 
       if (version < 3) {
         Object.values(newState.prompts).forEach((p) => (p.id = nanoid()));
+      }
+
+      if (version < 4) {
+        const prompts: Record<string, Prompt> = Object.create(null);
+        Object.entries(newState.prompts ?? {}).forEach(([key, prompt]) => {
+          prompt.id ||= key;
+          prompt.updatedAt = validTimestamp(
+            prompt.updatedAt ?? prompt.createdAt,
+          );
+          const existing = prompts[prompt.id];
+          if (
+            !existing ||
+            validTimestamp(prompt.updatedAt) >
+              validTimestamp(existing.updatedAt)
+          )
+            prompts[prompt.id] = prompt;
+        });
+        newState.prompts = prompts;
+        newState.deletedPrompts ??= {};
       }
 
       return newState as any;

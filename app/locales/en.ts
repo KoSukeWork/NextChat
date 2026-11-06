@@ -121,6 +121,7 @@ const en: LocaleType = {
       },
     },
     Actions: {
+      More: "More",
       ChatList: "Go To Chat List",
       CompressedHistory: "Compressed History Memory Prompt",
       Export: "Export All Messages as Markdown",
@@ -155,6 +156,7 @@ const en: LocaleType = {
     },
     Rename: "Rename Chat",
     Typing: "Typing…",
+    MobileInput: "/ for prompts, paste images",
     Input: (submitKey: string) => {
       var inputHints = `${submitKey} to send`;
       if (submitKey === String(SubmitKey.Enter)) {
@@ -607,6 +609,19 @@ const en: LocaleType = {
     Revert: "Revert",
   },
   Mcp: {
+    Login: "Sign in",
+    Logout: "Sign out",
+    LoginRequired: "Sign-in required",
+    OAuthUnsupportedShort: "Sign-in unsupported",
+    OAuthUnsupported:
+      "This service requires a pre-registered client, which is not supported yet.",
+    OAuthFailed: "Sign-in did not complete. Please try again.",
+    OAuthTimeout: "Sign-in timed out. Please try again.",
+    OAuthPopupBlocked:
+      "Could not open the sign-in page. Allow pop-ups and try again.",
+    OAuthSignedOut: "Signed out",
+    LoggingIn: "Signing in…",
+    LoggingOut: "Signing out…",
     Name: "MCP",
     Market: "MCP Market",
     Configured: (count: number) => `${count} servers configured`,

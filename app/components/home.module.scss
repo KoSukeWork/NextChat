@@ -526,6 +526,10 @@
       min-height: 44px;
     }
   }
+
+  .chat-sidebar:not(.sidebar-show) {
+    clip-path: inset(0);
+  }
 }
 
 .loading-content {

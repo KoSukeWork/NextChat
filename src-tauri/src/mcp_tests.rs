@@ -16,6 +16,29 @@ struct Fixture {
     state: Arc<McpState>,
     directory: PathBuf,
 }
+
+#[test]
+fn oauth_credentials_are_separate_and_removed_when_the_server_changes() {
+    let fixture = Fixture::new();
+    let mut config: McpConfig = serde_json::from_value(json!({"mcpServers": {"remote": {
+        "url": "http://127.0.0.1:45670/mcp"
+    }}})).unwrap();
+    fixture.state.write_config(config.clone(), |_| true).unwrap();
+    let url = "http://127.0.0.1:45670/mcp";
+    let credentials = json!({"serverUrl": url, "redirectUri": "http://127.0.0.1:45671/callback", "tokens": {"access_token": "synthetic"}});
+    fixture.state.write_oauth("remote", url, credentials.clone()).unwrap();
+    assert_eq!(fixture.state.read_oauth("remote", url).unwrap(), Some(credentials.clone()));
+    assert!(!fs::read_to_string(&fixture.state.config_path).unwrap().contains("synthetic"));
+    assert_eq!(fixture.state.read_oauth("remote", "http://127.0.0.1:45670/other").unwrap(), None);
+    config.mcp_servers.get_mut("remote").unwrap().status = Some(ServerStatus::Paused);
+    fixture.state.write_config(config.clone(), |_| true).unwrap();
+    assert_eq!(fixture.state.read_oauth("remote", url).unwrap(), Some(credentials.clone()));
+    assert!(fixture.state.write_oauth("remote", url, credentials.clone()).is_err());
+    config.mcp_servers.get_mut("remote").unwrap().status = Some(ServerStatus::Active);
+    config.mcp_servers.get_mut("remote").unwrap().url = Some("http://127.0.0.1:45670/other".into());
+    fixture.state.write_config(config, |_| true).unwrap();
+    assert!(!fs::read_to_string(fixture.state.oauth_path()).unwrap().contains("synthetic"));
+}
 impl Fixture {
     fn new() -> Self {
         let directory = std::env::temp_dir().join(format!(

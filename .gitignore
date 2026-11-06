@@ -49,3 +49,5 @@ masks.json
 
 # mcp config
 app/mcp/mcp_config.json
+app/mcp/mcp_oauth.json
+app/mcp/.mcp-oauth-*.tmp

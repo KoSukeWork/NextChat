@@ -5,7 +5,7 @@ import {
   useChatStore,
 } from "../store";
 import { useMaskStore } from "../store/mask";
-import { usePromptStore } from "../store/prompt";
+import { SearchService, usePromptStore } from "../store/prompt";
 import { StoreKey } from "../constant";
 import { merge } from "./merge";
 import {
@@ -86,6 +86,9 @@ export function setCloudAppState(state: CloudState) {
   CloudStoreKeys.forEach(<K extends keyof CloudState>(key: K) => {
     LocalStateSetters[key](state[key]);
   });
+  SearchService.setUserPrompts(
+    Object.values(state[StoreKey.Prompt].prompts ?? {}),
+  );
 }
 
 export function mergeCloudAppState(
@@ -127,6 +130,99 @@ function mergeTombstones(...sources: unknown[]): Record<string, number> {
     }
   }
   return result;
+}
+
+type ModifiedItem = { id?: string; createdAt?: number; updatedAt?: number };
+
+/** Merge individual user records and their deletion clocks without mutating imports. */
+function mergeUserItems<T extends ModifiedItem>(
+  localItems: Record<string, T> | undefined,
+  remoteItems: Record<string, T> | undefined,
+  localDeleted: Record<string, number> | undefined,
+  remoteDeleted: Record<string, number> | undefined,
+  restoreImport = false,
+) {
+  const items: Record<string, T> = Object.create(null);
+  const tombstones = mergeTombstones(localDeleted, remoteDeleted);
+  const modifiedAt = (item: T) =>
+    validTimestamp(item.updatedAt ?? item.createdAt);
+  const recordId = (key: string, item: T) =>
+    typeof item.id === "string" && item.id ? item.id : key;
+  const normalize = (id: string, item: T): T => ({
+    ...item,
+    id,
+    updatedAt: modifiedAt(item),
+  });
+
+  for (const [key, item] of Object.entries(localItems ?? {})) {
+    const id = recordId(key, item);
+    if (!items[id] || modifiedAt(item) > modifiedAt(items[id]))
+      items[id] = normalize(id, item);
+  }
+  for (const [key, incoming] of Object.entries(remoteItems ?? {})) {
+    const id = recordId(key, incoming);
+    let item = normalize(id, incoming);
+    const local = items[id];
+    const hasDeletion = Object.prototype.hasOwnProperty.call(tombstones, id);
+    if (
+      restoreImport &&
+      hasDeletion &&
+      modifiedAt(item) <= tombstones[id] &&
+      (!local || modifiedAt(local) <= tombstones[id])
+    ) {
+      item = {
+        ...item,
+        updatedAt: Math.max(
+          Date.now(),
+          modifiedAt(item) + 1,
+          tombstones[id] + 1,
+        ),
+      };
+      delete tombstones[id];
+    }
+    if (!local || modifiedAt(item) > modifiedAt(local)) items[id] = item;
+  }
+
+  for (const [id, item] of Object.entries(items)) {
+    if (!Object.prototype.hasOwnProperty.call(tombstones, id)) continue;
+    if (modifiedAt(item) > tombstones[id]) delete tombstones[id];
+    else delete items[id];
+  }
+  return { items, tombstones };
+}
+
+function mergePromptStates(
+  local: AppState[StoreKey.Prompt],
+  remote: AppState[StoreKey.Prompt],
+  restoreImport = false,
+) {
+  const merged = mergeUserItems(
+    local.prompts,
+    remote.prompts,
+    local.deletedPrompts,
+    remote.deletedPrompts,
+    restoreImport,
+  );
+  local.prompts = merged.items;
+  local.deletedPrompts = merged.tombstones;
+  return local;
+}
+
+function mergeMaskStates(
+  local: AppState[StoreKey.Mask],
+  remote: AppState[StoreKey.Mask],
+  restoreImport = false,
+) {
+  const merged = mergeUserItems(
+    local.masks,
+    remote.masks,
+    local.deletedMasks,
+    remote.deletedMasks,
+    restoreImport,
+  );
+  local.masks = merged.items;
+  local.deletedMasks = merged.tombstones;
+  return local;
 }
 
 function mergeChatStates(
@@ -251,20 +347,8 @@ function mergeChatStates(
 const MergeStates: StateMerger = {
   [StoreKey.Chat]: (localState, remoteState) =>
     mergeChatStates(localState, remoteState),
-  [StoreKey.Prompt]: (localState, remoteState) => {
-    localState.prompts = {
-      ...remoteState.prompts,
-      ...localState.prompts,
-    };
-    return localState;
-  },
-  [StoreKey.Mask]: (localState, remoteState) => {
-    localState.masks = {
-      ...remoteState.masks,
-      ...localState.masks,
-    };
-    return localState;
-  },
+  [StoreKey.Prompt]: mergePromptStates,
+  [StoreKey.Mask]: mergeMaskStates,
   [StoreKey.Config]: mergeWithUpdate<AppState[StoreKey.Config]>,
   [StoreKey.Access]: mergeWithUpdate<AppState[StoreKey.Access]>,
 };
@@ -283,12 +367,15 @@ export function setLocalAppState(appState: AppState) {
   Object.entries(LocalStateSetters).forEach(([key, setter]) => {
     setter(appState[key as keyof AppState]);
   });
+  SearchService.setUserPrompts(
+    Object.values(appState[StoreKey.Prompt].prompts ?? {}),
+  );
 }
 
 export function mergeAppState(
   localState: AppState,
   remoteState: AppState,
-  options?: { restoreDeletedSessions?: boolean },
+  options?: { restoreDeletedSessions?: boolean; restoreDeletedItems?: boolean },
 ) {
   Object.keys(localState).forEach(<T extends keyof AppState>(k: string) => {
     const key = k as T;
@@ -297,6 +384,22 @@ export function mergeAppState(
       mergeChatStates(
         localState[StoreKey.Chat],
         remoteState[StoreKey.Chat],
+        true,
+      );
+      return;
+    }
+    if (key === StoreKey.Prompt && options?.restoreDeletedItems) {
+      mergePromptStates(
+        localState[StoreKey.Prompt],
+        remoteState[StoreKey.Prompt],
+        true,
+      );
+      return;
+    }
+    if (key === StoreKey.Mask && options?.restoreDeletedItems) {
+      mergeMaskStates(
+        localState[StoreKey.Mask],
+        remoteState[StoreKey.Mask],
         true,
       );
       return;

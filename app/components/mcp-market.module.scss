@@ -229,6 +229,11 @@
           flex-shrink: 0;
           min-width: 180px;
           justify-content: flex-end;
+
+          .oauth-cancel {
+            position: relative;
+            z-index: 1;
+          }
         }
       }
     }

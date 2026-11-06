@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod mcp;
+mod mcp_oauth;
 mod stream;
 mod sync_http;
 mod zoom;
@@ -10,6 +11,14 @@ use std::sync::Arc;
 use tauri::Manager;
 
 fn main() {
+    let mut context = tauri::generate_context!();
+    // Tests can isolate all Tauri config/state paths as well as WebView2 and MCP.
+    // No path changes when this explicit environment variable is absent.
+    if let Some(directory) = std::env::var_os("NEXTCHAT_TEST_APP_DIR") {
+        let directory = std::path::PathBuf::from(directory);
+        assert!(directory.is_absolute(), "NEXTCHAT_TEST_APP_DIR must be absolute");
+        context.config_mut().tauri.bundle.identifier = directory.to_string_lossy().into_owned();
+    }
     tauri::Builder::default()
         .setup(|app| {
             let directory = app
@@ -28,6 +37,7 @@ fn main() {
             app.manage(Arc::new(mcp::McpState::new(
                 mcp_directory.join("mcp_config.json"),
             )));
+            app.manage(Arc::new(mcp_oauth::OAuthCallbacks::default()));
             app.manage(Arc::new(stream::StreamState::default()));
             app.manage(tts::setup(app)?);
             Ok(())
@@ -38,6 +48,13 @@ fn main() {
             sync_http::sync_http,
             mcp::mcp_read_config,
             mcp::mcp_write_config,
+            mcp::mcp_oauth_read,
+            mcp::mcp_oauth_write,
+            mcp::mcp_oauth_remove,
+            mcp_oauth::mcp_oauth_listen,
+            mcp_oauth::mcp_oauth_wait,
+            mcp_oauth::mcp_oauth_cancel,
+            mcp_oauth::mcp_oauth_open,
             mcp::mcp_spawn,
             mcp::mcp_send,
             mcp::mcp_kill,
@@ -52,7 +69,7 @@ fn main() {
             tts::melo_synthesize
         ])
         .plugin(tauri_plugin_window_state::Builder::default().build())
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
@@ -60,4 +77,16 @@ fn main() {
                 app.state::<Arc<tts::TtsState>>().shutdown();
             }
         });
+}
+
+#[cfg(test)]
+mod isolation_tests {
+    #[test]
+    fn absolute_test_directory_is_used_for_native_state_paths() {
+        let mut context = tauri::generate_context!();
+        let isolated = std::env::temp_dir().join("nextchat-isolation-check");
+        context.config_mut().tauri.bundle.identifier = isolated.to_string_lossy().into_owned();
+        assert_eq!(tauri::api::path::app_config_dir(context.config()), Some(isolated.clone()));
+        assert_eq!(tauri::api::path::app_local_data_dir(context.config()), Some(isolated));
+    }
 }

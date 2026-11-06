@@ -141,6 +141,7 @@ struct RunningProcess {
 pub struct McpState {
     config_path: PathBuf,
     config_lock: Mutex<()>,
+    oauth_lock: Mutex<()>,
     processes: Mutex<HashMap<String, RunningProcess>>,
     next_run: AtomicU64,
 }
@@ -150,6 +151,7 @@ impl McpState {
         Self {
             config_path,
             config_lock: Mutex::new(()),
+            oauth_lock: Mutex::new(()),
             processes: Mutex::new(HashMap::new()),
             next_run: AtomicU64::new(1),
         }
@@ -168,6 +170,79 @@ impl McpState {
     pub fn read_config(&self) -> Result<McpConfig, String> {
         let _guard = self.config_lock.lock().map_err(|e| e.to_string())?;
         self.read_disk()
+    }
+
+    fn oauth_path(&self) -> PathBuf {
+        self.config_path.with_file_name("mcp_oauth.json")
+    }
+
+    fn oauth_entries(&self) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+        match fs::read(self.oauth_path()) {
+            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|_| "OAuth credentials are unavailable".into()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Default::default()),
+            Err(_) => Err("OAuth credentials are unavailable".into()),
+        }
+    }
+
+    fn write_oauth_entries(&self, entries: &serde_json::Map<String, serde_json::Value>) -> Result<(), String> {
+        let target = self.oauth_path();
+        let parent = target.parent().ok_or("OAuth credentials are unavailable")?;
+        fs::create_dir_all(parent).map_err(|_| "OAuth credentials could not be saved")?;
+        let temporary = target.with_extension("json.tmp");
+        let bytes = serde_json::to_vec(entries).map_err(|_| "OAuth credentials could not be saved")?;
+        let result = (|| -> std::io::Result<()> {
+            let mut options = fs::OpenOptions::new();
+            options.write(true).create(true).truncate(true);
+            #[cfg(unix)]
+            { use std::os::unix::fs::OpenOptionsExt; options.mode(0o600); }
+            let mut file = options.open(&temporary)?;
+            file.write_all(&bytes)?;
+            file.sync_all()?;
+            drop(file);
+            fs::rename(&temporary, &target)
+        })();
+        if result.is_err() { let _ = fs::remove_file(&temporary); }
+        result.map_err(|_| "OAuth credentials could not be saved".into())
+    }
+
+    fn remove_oauth_entries(&self, ids: &[String]) -> Result<(), String> {
+        if ids.is_empty() { return Ok(()); }
+        let _guard = self.oauth_lock.lock().map_err(|_| "OAuth credentials are unavailable")?;
+        let mut entries = self.oauth_entries()?;
+        let mut changed = false;
+        for id in ids { changed |= entries.remove(id).is_some(); }
+        if changed { self.write_oauth_entries(&entries)?; }
+        Ok(())
+    }
+
+    fn oauth_server_matches(&self, id: &str, url: &str, allow_paused: bool) -> Result<bool, String> {
+        let config = self.read_disk()?;
+        let requested = reqwest::Url::parse(url).map_err(|_| "Invalid OAuth server")?;
+        Ok(config.mcp_servers.get(id).map_or(false, |server| {
+            (allow_paused || server.status != Some(ServerStatus::Paused))
+                && server.url.as_ref().and_then(|u| reqwest::Url::parse(u).ok()).as_ref() == Some(&requested)
+                && !server.headers.keys().any(|name| name.eq_ignore_ascii_case("authorization"))
+        }))
+    }
+
+    fn read_oauth(&self, id: &str, url: &str) -> Result<Option<serde_json::Value>, String> {
+        let _config_guard = self.config_lock.lock().map_err(|_| "OAuth credentials are unavailable")?;
+        if !self.oauth_server_matches(id, url, true)? { return Ok(None); }
+        let _guard = self.oauth_lock.lock().map_err(|_| "OAuth credentials are unavailable")?;
+        let entries = self.oauth_entries()?;
+        Ok(entries.get(id).filter(|item| item.get("serverUrl").and_then(|v| v.as_str()) == Some(url)).cloned())
+    }
+
+    fn write_oauth(&self, id: &str, url: &str, credentials: serde_json::Value) -> Result<(), String> {
+        let _config_guard = self.config_lock.lock().map_err(|_| "OAuth credentials are unavailable")?;
+        if !self.oauth_server_matches(id, url, false)? || credentials.get("serverUrl").and_then(|v| v.as_str()) != Some(url)
+            || !credentials.is_object() || credentials.to_string().len() > 1024 * 1024 {
+            return Err("Invalid OAuth credentials".into());
+        }
+        let _guard = self.oauth_lock.lock().map_err(|_| "OAuth credentials are unavailable")?;
+        let mut entries = self.oauth_entries()?;
+        entries.insert(id.to_owned(), credentials);
+        self.write_oauth_entries(&entries)
     }
 
     #[cfg(test)]
@@ -231,6 +306,14 @@ impl McpState {
         if !changes.is_empty() && !confirm(&format!("{}\n\n{}", text.intro, changes.join("\n\n"))) {
             return Err("MCP configuration was not approved. No changes were saved.".into());
         }
+        let expired: Vec<String> = old.mcp_servers.iter().filter_map(|(id, previous)| {
+            let next = config.mcp_servers.get(id);
+            let previous_url = previous.url.as_ref().and_then(|u| reqwest::Url::parse(u).ok());
+            let next_url = next.and_then(|server| server.url.as_ref()).and_then(|u| reqwest::Url::parse(u).ok());
+            let manual = next.map_or(false, |server| server.headers.keys().any(|name| name.eq_ignore_ascii_case("authorization")));
+            if previous_url.is_some() && (previous_url != next_url || manual) { Some(id.clone()) } else { None }
+        }).collect();
+        self.remove_oauth_entries(&expired)?;
         let parent = self
             .config_path
             .parent()
@@ -552,6 +635,24 @@ pub async fn mcp_read_config(state: tauri::State<'_, Arc<McpState>>) -> Result<M
     tauri::async_runtime::spawn_blocking(move || state.read_config())
         .await
         .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn mcp_oauth_read(state: tauri::State<'_, Arc<McpState>>, id: String, url: String) -> Result<Option<serde_json::Value>, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || state.read_oauth(&id, &url)).await.map_err(|_| "OAuth credentials are unavailable")?
+}
+
+#[tauri::command]
+pub async fn mcp_oauth_write(state: tauri::State<'_, Arc<McpState>>, id: String, url: String, credentials: serde_json::Value) -> Result<(), String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || state.write_oauth(&id, &url, credentials)).await.map_err(|_| "OAuth credentials could not be saved")?
+}
+
+#[tauri::command]
+pub async fn mcp_oauth_remove(state: tauri::State<'_, Arc<McpState>>, id: String) -> Result<(), String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || state.remove_oauth_entries(&[id])).await.map_err(|_| "OAuth credentials could not be removed")?
 }
 
 #[tauri::command]

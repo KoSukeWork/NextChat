@@ -20,6 +20,8 @@ export function IconButton(props: {
   autoFocus?: boolean;
   style?: CSSProperties;
   aria?: string;
+  ariaExpanded?: boolean;
+  ariaHaspopup?: "menu";
 }) {
   return (
     <button
@@ -41,6 +43,8 @@ export function IconButton(props: {
       autoFocus={props.autoFocus}
       style={props.style}
       aria-label={props.aria}
+      aria-expanded={props.ariaExpanded}
+      aria-haspopup={props.ariaHaspopup}
     >
       {props.icon && (
         <div

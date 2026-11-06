@@ -26,8 +26,14 @@ const nextConfig = {
       config.plugins.push(
         new webpack.NormalModuleReplacementPlugin(
           /[\\/]mcp[\\/]actions$/,
+          fileURLToPath(new URL("./app/mcp/actions-tauri.ts", import.meta.url)),
+        ),
+      );
+      config.plugins.push(
+        new webpack.NormalModuleReplacementPlugin(
+          /[\\/]api[\\/]mcp[\\/]oauth[\\/]callback[\\/]route(?:\.ts)?$/,
           fileURLToPath(
-            new URL("./app/mcp/actions-tauri.ts", import.meta.url),
+            new URL("./app/mcp/oauth-callback-static.ts", import.meta.url),
           ),
         ),
       );

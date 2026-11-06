@@ -2,8 +2,20 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js";
+import {
+  discoverOAuthServerInfo,
+  extractWWWAuthenticateParams,
+  type OAuthClientProvider,
+} from "@modelcontextprotocol/sdk/client/auth.js";
 import { fetch as nativeFetch } from "../utils/stream";
 import { RemoteServerConfig } from "./types";
+import {
+  hasManualAuthorization,
+  httpUrl,
+  McpOAuthProvider,
+  OAuthLoginNeeded,
+  OAuthPreRegisteredClientRequired,
+} from "./oauth";
 
 function statusOf(error: unknown): number | undefined {
   const code = (error as { code?: unknown })?.code;
@@ -45,18 +57,65 @@ export const nativeMcpFetch: FetchLike = async (input, init) => {
       body: request.body ? await request.text() : undefined,
     });
   }
-  return nativeFetch(String(input), init);
+  // OAuth token requests use URLSearchParams; the Rust bridge accepts strings.
+  return nativeFetch(
+    String(input),
+    init?.body instanceof URLSearchParams
+      ? { ...init, body: init.body.toString() }
+      : init,
+  );
 };
 
 export async function createRemoteClient(
   id: string,
   config: RemoteServerConfig,
   fetchImpl?: FetchLike,
+  authProvider?: OAuthClientProvider,
 ): Promise<Client> {
-  const url = new URL(config.url);
+  const url = httpUrl(config.url);
+  const manualAuthorization = hasManualAuthorization(config.headers);
+  let unauthorized = false;
+  let resourceMetadataUrl: URL | undefined;
+  const guardedFetch: FetchLike = async (input, init) => {
+    const target = httpUrl(
+      input instanceof Request ? input.url : String(input),
+    );
+    const headers = new Headers(
+      input instanceof Request ? input.headers : undefined,
+    );
+    new Headers(init?.headers).forEach((value, name) =>
+      headers.set(name, value),
+    );
+    // SDK discovery/token requests must not inherit user-supplied MCP headers.
+    if (target.href !== url.href && (!authProvider || manualAuthorization)) {
+      for (const name of Object.keys(config.headers ?? {}))
+        headers.delete(name);
+    } else if (
+      target.href === url.href &&
+      authProvider &&
+      !manualAuthorization
+    ) {
+      // OAuth discovery must not inherit these headers through requestInit.
+      for (const [name, value] of Object.entries(config.headers ?? {})) {
+        if (!headers.has(name)) headers.set(name, value);
+      }
+    }
+    const response = await (fetchImpl ?? fetch)(input, { ...init, headers });
+    if (target.href === url.href && response.status === 401) {
+      unauthorized = true;
+      resourceMetadataUrl =
+        extractWWWAuthenticateParams(response).resourceMetadataUrl;
+      if (authProvider instanceof McpOAuthProvider)
+        authProvider.setResourceMetadataUrl(resourceMetadataUrl);
+    }
+    return response;
+  };
   const options = {
-    requestInit: { headers: config.headers ?? {} },
-    fetch: fetchImpl,
+    requestInit: {
+      headers: authProvider && !manualAuthorization ? {} : config.headers ?? {},
+    },
+    fetch: guardedFetch,
+    authProvider: manualAuthorization ? undefined : authProvider,
   };
   const newClient = () =>
     new Client(
@@ -77,6 +136,29 @@ export async function createRemoteClient(
       if (firstError === undefined) {
         firstError = error;
       } else {
+        if (unauthorized && !manualAuthorization) {
+          try {
+            const info = await discoverOAuthServerInfo(url, {
+              resourceMetadataUrl,
+              fetchFn: guardedFetch,
+            });
+            const metadata = info.authorizationServerMetadata;
+            if (metadata?.authorization_endpoint && metadata.token_endpoint) {
+              httpUrl(metadata.authorization_endpoint);
+              httpUrl(metadata.token_endpoint);
+              if (!metadata.registration_endpoint)
+                throw new OAuthPreRegisteredClientRequired();
+              httpUrl(metadata.registration_endpoint);
+              throw new OAuthLoginNeeded(resourceMetadataUrl?.href);
+            }
+          } catch (discoveryError) {
+            if (
+              discoveryError instanceof OAuthLoginNeeded ||
+              discoveryError instanceof OAuthPreRegisteredClientRequired
+            )
+              throw discoveryError;
+          }
+        }
         const firstStatus = statusOf(firstError);
         const secondStatus = statusOf(error);
         const chosen =

@@ -405,7 +405,58 @@
   stroke: white !important;
 }
 
+.chat-mobile-actions {
+  position: relative;
+}
+
+.chat-mobile-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  min-width: 180px;
+  max-width: calc(100vw - 24px);
+  padding: 6px;
+  border: var(--border-in-light);
+  border-radius: 10px;
+  background: var(--white);
+  box-shadow: var(--card-shadow);
+
+  button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--black);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover,
+    &:focus-visible {
+      background: var(--second);
+    }
+  }
+}
+
+.chat-mobile-menu-icon {
+  display: flex;
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
 @media only screen and (max-width: 600px) {
+  .chat-mobile-actions > button {
+    width: 34px;
+    height: 34px;
+    padding: 8px;
+  }
+
   .chat-header {
     padding: 10px 12px;
 

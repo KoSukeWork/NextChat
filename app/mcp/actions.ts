@@ -17,21 +17,54 @@ import {
 } from "./types";
 import { parseMcpConfig } from "./config";
 import { safeRemoteError } from "./remote";
+import {
+  hasManualAuthorization,
+  httpUrl,
+  OAuthLoginNeeded,
+  OAuthPreRegisteredClientRequired,
+} from "./oauth";
+import {
+  backgroundServerOAuth,
+  beginServerOAuth,
+  invalidateServerOAuth,
+  oauthRuntime,
+} from "./oauth-server";
+import { MCP_CONFIG_PATH as CONFIG_PATH, MCP_OAUTH_PATH } from "./server-paths";
+import { headers as requestHeaders } from "next/headers";
 import fs from "fs/promises";
 import path from "path";
 import md5 from "spark-md5";
 
 const logger = new MCPClientLogger("MCP Actions");
-const configDirectory = process.env.NEXTCHAT_MCP_CONFIG_DIR;
-if (configDirectory && !path.isAbsolute(configDirectory)) {
-  throw new Error("NEXTCHAT_MCP_CONFIG_DIR must be an absolute path");
-}
-const CONFIG_PATH = path.join(
-  configDirectory ?? path.join(process.cwd(), "app/mcp"),
-  "mcp_config.json",
-);
+const oauth = oauthRuntime(MCP_OAUTH_PATH);
 
-const clientsMap = new Map<string, McpClientData>();
+const clientMapsKey = Symbol.for("nextchat.mcp.server.clients");
+const sharedClients = globalThis as typeof globalThis & {
+  [clientMapsKey]?: Map<string, Map<string, McpClientData>>;
+};
+const clientMaps: Map<string, Map<string, McpClientData>> = (sharedClients[
+  clientMapsKey
+] ??= new Map<string, Map<string, McpClientData>>());
+const clientsMap: Map<string, McpClientData> =
+  clientMaps.get(CONFIG_PATH) ?? new Map();
+clientMaps.set(CONFIG_PATH, clientsMap);
+
+async function isCurrentOAuthServer(clientId: string, serverUrl: string) {
+  try {
+    const current = parseMcpConfig(
+      JSON.parse(await fs.readFile(CONFIG_PATH, "utf8")),
+    ).mcpServers[clientId];
+    return (
+      !!current &&
+      isRemoteServer(current) &&
+      httpUrl(current.url).href === serverUrl &&
+      current.status !== "paused" &&
+      !hasManualAuthorization(current.headers)
+    );
+  } catch {
+    return false;
+  }
+}
 
 // Every exported function in this "use server" module is directly callable over
 // HTTP. MCP therefore requires both an explicit feature flag and a configured,
@@ -76,12 +109,30 @@ export async function getClientsStatus(
     }
 
     if (serverConfig.status === "paused") {
-      result[clientId] = { status: "paused", errorMsg: null };
+      const saved =
+        isRemoteServer(serverConfig) &&
+        !hasManualAuthorization(serverConfig.headers)
+          ? await oauth.store.read(clientId, httpUrl(serverConfig.url).href)
+          : undefined;
+      result[clientId] = {
+        status: "paused",
+        errorMsg: null,
+        ...(saved?.tokens && saved.client ? { oauthAuthenticated: true } : {}),
+      };
       continue;
     }
 
     if (!status) {
       result[clientId] = { status: "undefined", errorMsg: null };
+      continue;
+    }
+
+    if (status.oauthStatus) {
+      result[clientId] = {
+        status: status.oauthStatus,
+        errorMsg: null,
+        ...(status.oauthAuthenticated ? { oauthAuthenticated: true } : {}),
+      };
       continue;
     }
 
@@ -100,7 +151,11 @@ export async function getClientsStatus(
     }
 
     if (status.client) {
-      result[clientId] = { status: "active", errorMsg: null };
+      result[clientId] = {
+        status: "active",
+        errorMsg: null,
+        ...(status.oauthAuthenticated ? { oauthAuthenticated: true } : {}),
+      };
       continue;
     }
 
@@ -159,11 +214,25 @@ async function initializeSingleClient(
   };
   clientsMap.set(clientId, pending);
   let client: Awaited<ReturnType<typeof createClient>> | undefined;
+  let oauthAuthenticated = false;
   try {
     if (previous) await removeClient(previous);
     // A pause, removal or newer start can supersede this background operation.
     if (clientsMap.get(clientId) !== pending) return;
-    client = await createClient(clientId, serverConfig);
+    const provider =
+      isRemoteServer(serverConfig) &&
+      !hasManualAuthorization(serverConfig.headers)
+        ? await backgroundServerOAuth(
+            oauth,
+            clientId,
+            httpUrl(serverConfig.url).href,
+            () =>
+              isCurrentOAuthServer(clientId, httpUrl(serverConfig.url).href),
+          )
+        : undefined;
+    if (clientsMap.get(clientId) !== pending) return;
+    oauthAuthenticated = !!provider;
+    client = await createClient(clientId, serverConfig, provider);
     if (clientsMap.get(clientId) !== pending) {
       await removeClient(client);
       return;
@@ -173,7 +242,29 @@ async function initializeSingleClient(
       await removeClient(client);
       return;
     }
-    clientsMap.set(clientId, { client, tools, errorMsg: null });
+    clientsMap.set(clientId, {
+      client,
+      tools,
+      errorMsg: null,
+      oauthAuthenticated,
+    });
+    const connectedClient = client;
+    connectedClient.onerror = (error) => {
+      if (
+        error instanceof OAuthLoginNeeded &&
+        clientsMap.get(clientId)?.client === connectedClient
+      ) {
+        clientsMap.set(clientId, {
+          client: null,
+          tools: null,
+          errorMsg: "OAuth login required",
+          oauthStatus: "login-required",
+          oauthAuthenticated: true,
+          oauthMetadataUrl: error.resourceMetadataUrl,
+        });
+        void removeClient(connectedClient).catch(() => {});
+      }
+    };
     logger.success(`Client [${clientId}] initialized successfully`);
   } catch (error) {
     if (client) await removeClient(client).catch(() => {});
@@ -183,7 +274,23 @@ async function initializeSingleClient(
       : error instanceof Error
       ? error.message
       : String(error);
-    clientsMap.set(clientId, { client: null, tools: null, errorMsg: message });
+    const oauthStatus =
+      error instanceof OAuthLoginNeeded
+        ? "login-required"
+        : error instanceof OAuthPreRegisteredClientRequired
+        ? "oauth-unsupported"
+        : undefined;
+    clientsMap.set(clientId, {
+      client: null,
+      tools: null,
+      errorMsg: message,
+      oauthStatus,
+      oauthAuthenticated,
+      oauthMetadataUrl:
+        error instanceof OAuthLoginNeeded
+          ? error.resourceMetadataUrl
+          : undefined,
+    });
     logger.error(`Failed to initialize client [${clientId}]: ${message}`);
   }
 }
@@ -300,15 +407,8 @@ export async function resumeMcpServer(
       throw new Error(`Server ${clientId} not found`);
     }
 
-    // 先尝试初始化客户端
     logger.info(`Trying to initialize client [${clientId}]...`);
     try {
-      const client = await createClient(clientId, serverConfig);
-      const tools = await listTools(client);
-      clientsMap.set(clientId, { client, tools, errorMsg: null });
-      logger.success(`Client [${clientId}] initialized successfully`);
-
-      // 初始化成功后更新配置
       const newConfig: McpConfigData = {
         ...currentConfig,
         mcpServers: {
@@ -320,6 +420,11 @@ export async function resumeMcpServer(
         },
       };
       await updateMcpConfig(newConfig);
+      await initializeSingleClient(clientId, newConfig.mcpServers[clientId]);
+      const started = clientsMap.get(clientId);
+      if (!started?.client)
+        throw new Error(started?.errorMsg ?? "MCP server disconnected");
+      logger.success(`Client [${clientId}] initialized successfully`);
     } catch (error) {
       const currentConfig = await getMcpConfigFromFile(accessCode);
       const serverConfig = currentConfig.mcpServers[clientId];
@@ -331,16 +436,18 @@ export async function resumeMcpServer(
       }
 
       // 初始化失败
-      const message = isRemoteServer(serverConfig)
-        ? safeRemoteError(error)
-        : error instanceof Error
-        ? error.message
-        : String(error);
-      clientsMap.set(clientId, {
-        client: null,
-        tools: null,
-        errorMsg: message,
-      });
+      const message =
+        serverConfig && isRemoteServer(serverConfig)
+          ? safeRemoteError(error)
+          : error instanceof Error
+          ? error.message
+          : String(error);
+      if (!clientsMap.has(clientId))
+        clientsMap.set(clientId, {
+          client: null,
+          tools: null,
+          errorMsg: message,
+        });
       logger.error(`Failed to initialize client [${clientId}]: ${message}`);
       throw new Error(message);
     }
@@ -470,15 +577,111 @@ export async function mergeMcpServers(
   return merged;
 }
 
+/** Begin only from a code-authorized request for a server that challenged us. */
+export async function beginMcpOAuth(
+  clientId: string,
+  origin: string,
+  accessCode: string,
+) {
+  await assertMcpAuthorized(accessCode);
+  const config = await getMcpConfigFromFile(accessCode);
+  const server = config.mcpServers[clientId];
+  const entry = clientsMap.get(clientId);
+  if (
+    !server ||
+    !isRemoteServer(server) ||
+    hasManualAuthorization(server.headers) ||
+    entry?.oauthStatus !== "login-required"
+  )
+    throw new Error("OAuth login is unavailable");
+  const requestedOrigin = httpUrl(origin).origin;
+  const request = requestHeaders();
+  const headerOrigin = request.get("origin");
+  const host = (request.get("x-forwarded-host") ?? request.get("host") ?? "")
+    .split(",")[0]
+    .trim();
+  if (
+    !headerOrigin ||
+    httpUrl(headerOrigin).origin !== requestedOrigin ||
+    new URL(requestedOrigin).host.toLowerCase() !== host.toLowerCase()
+  )
+    throw new Error("Invalid OAuth callback origin");
+  const serverUrl = httpUrl(server.url).href;
+  const isCurrent = () => isCurrentOAuthServer(clientId, serverUrl);
+  try {
+    const url = await beginServerOAuth(oauth, {
+      id: clientId,
+      serverUrl,
+      redirectUri: `${requestedOrigin}/api/mcp/oauth/callback`,
+      resourceMetadataUrl: entry.oauthMetadataUrl,
+      isCurrent,
+      onSuccess: async () => {
+        if (await isCurrent()) {
+          const current = parseMcpConfig(
+            JSON.parse(await fs.readFile(CONFIG_PATH, "utf8")),
+          ).mcpServers[clientId];
+          if (current) await initializeSingleClient(clientId, current);
+        }
+      },
+    });
+    return { url };
+  } catch (error) {
+    if (error instanceof OAuthPreRegisteredClientRequired)
+      throw new Error("OAuth server requires a pre-registered client");
+    throw new Error("OAuth login could not start");
+  }
+}
+
+export async function cancelMcpOAuth(clientId: string, accessCode: string) {
+  await assertMcpAuthorized(accessCode);
+  invalidateServerOAuth(oauth, clientId);
+}
+
+export async function logoutMcpOAuth(clientId: string, accessCode: string) {
+  await assertMcpAuthorized(accessCode);
+  const config = await getMcpConfigFromFile(accessCode);
+  const server = config.mcpServers[clientId];
+  if (!server || !isRemoteServer(server))
+    throw new Error("OAuth login is unavailable");
+  invalidateServerOAuth(oauth, clientId);
+  await oauth.store.remove(clientId);
+  const old = clientsMap.get(clientId)?.client;
+  clientsMap.delete(clientId);
+  if (old) await removeClient(old).catch(() => {});
+  if (server.status !== "paused")
+    await initializeSingleClient(clientId, server);
+}
+
 // 更新 MCP 配置文件
 async function updateMcpConfig(config: McpConfigData): Promise<void> {
-  try {
+  await oauth.store.withConfiguration(async (removeCredentials) => {
+    let old: McpConfigData = DEFAULT_MCP_CONFIG;
+    try {
+      old = parseMcpConfig(JSON.parse(await fs.readFile(CONFIG_PATH, "utf8")));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
+    }
+    const removed: string[] = [];
+    for (const [id, previous] of Object.entries(old.mcpServers)) {
+      const next = config.mcpServers[id];
+      if (!next || next.status === "paused") invalidateServerOAuth(oauth, id);
+      if (
+        isRemoteServer(previous) &&
+        (!next ||
+          !isRemoteServer(next) ||
+          httpUrl(next.url).href !== httpUrl(previous.url).href ||
+          (!hasManualAuthorization(previous.headers) &&
+            hasManualAuthorization(next.headers)))
+      ) {
+        invalidateServerOAuth(oauth, id);
+        removed.push(id);
+      }
+    }
+    await removeCredentials(removed);
     // 确保目录存在
     await fs.mkdir(path.dirname(CONFIG_PATH), { recursive: true });
     await fs.writeFile(CONFIG_PATH, JSON.stringify(config, null, 2));
-  } catch (error) {
-    throw error;
-  }
+  });
 }
 
 // 检查 MCP 是否启用

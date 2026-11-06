@@ -73,10 +73,15 @@ export interface ListToolsResponse {
   };
 }
 
-export type McpClientData =
+export type McpClientData = (
   | McpActiveClient
   | McpErrorClient
-  | McpInitializingClient;
+  | McpInitializingClient
+) & {
+  oauthStatus?: "login-required" | "oauth-unsupported";
+  oauthAuthenticated?: boolean;
+  oauthMetadataUrl?: string;
+};
 
 interface McpInitializingClient {
   client: null;
@@ -102,11 +107,14 @@ export type ServerStatus =
   | "active"
   | "paused"
   | "error"
+  | "login-required"
+  | "oauth-unsupported"
   | "initializing";
 
 export interface ServerStatusResponse {
   status: ServerStatus;
   errorMsg: string | null;
+  oauthAuthenticated?: boolean;
 }
 
 // MCP 服务器配置相关类型

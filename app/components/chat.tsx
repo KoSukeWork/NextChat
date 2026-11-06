@@ -534,6 +534,136 @@ function ChatPluginAction() {
   );
 }
 
+function MobileChatActions(props: {
+  onRefresh: () => void;
+  onEdit: () => void;
+  onExport: () => void;
+}) {
+  const navigate = useNavigate();
+  const chatStore = useChatStore();
+  const pluginStore = usePluginStore();
+  const session = chatStore.currentSession();
+  const [open, setOpen] = useState(false);
+  const [showPluginSelector, setShowPluginSelector] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open]);
+
+  const actions = [
+    {
+      label: Locale.Chat.Actions.RefreshTitle,
+      icon: <ReloadIcon />,
+      run: props.onRefresh,
+    },
+    {
+      label: Locale.Chat.EditMessage.Title,
+      icon: <RenameIcon />,
+      run: props.onEdit,
+    },
+    {
+      label: Locale.Plugin.Name,
+      icon: <PluginIcon />,
+      run: () => {
+        if (pluginStore.getAll().length === 0) navigate(Path.Plugins);
+        else setShowPluginSelector(true);
+      },
+    },
+    {
+      label: Locale.Chat.Actions.Export,
+      icon: <ExportIcon />,
+      run: props.onExport,
+    },
+    ...((session.messages.length > 0 || session.pinned) && !session.archived
+      ? [
+          {
+            label: session.pinned ? Locale.Pin.Undo : Locale.Pin.Action,
+            icon: <SessionPinIcon />,
+            run: () => chatStore.togglePinSession(session.id),
+          },
+        ]
+      : []),
+    ...(session.messages.length > 0 && !session.archived
+      ? [
+          {
+            label: Locale.Archive.Action,
+            icon: <ArchiveIcon />,
+            run: () => chatStore.archiveSession(session.id),
+          },
+        ]
+      : []),
+  ];
+
+  return (
+    <>
+      <div className={styles["chat-mobile-actions"]} ref={menuRef}>
+        <IconButton
+          icon={
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <circle cx="4" cy="12" r="2" fill="currentColor" />
+              <circle cx="12" cy="12" r="2" fill="currentColor" />
+              <circle cx="20" cy="12" r="2" fill="currentColor" />
+            </svg>
+          }
+          bordered
+          title={Locale.Chat.Actions.More}
+          aria={Locale.Chat.Actions.More}
+          ariaHaspopup="menu"
+          ariaExpanded={open}
+          onClick={() => setOpen((value) => !value)}
+        />
+        {open && (
+          <div className={styles["chat-mobile-menu"]} role="menu">
+            {actions.map(({ label, icon, run }) => (
+              <button
+                key={label}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  run();
+                }}
+              >
+                <div className={styles["chat-mobile-menu-icon"]}>{icon}</div>
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {showPluginSelector && (
+        <Selector
+          multiple
+          defaultSelectedValue={session.mask?.plugin}
+          items={pluginStore.getAll().map((item) => ({
+            title: `${item?.title}@${item?.version}`,
+            value: item?.id,
+          }))}
+          onClose={() => setShowPluginSelector(false)}
+          onSelection={(selected) => {
+            chatStore.updateTargetSession(session, (target) => {
+              target.mask.plugin = selected as string[];
+            });
+          }}
+        />
+      )}
+    </>
+  );
+}
+
 export function EditMessageModal(props: { onClose: () => void }) {
   const chatStore = useChatStore();
   const session = chatStore.currentSession();
@@ -1358,83 +1488,100 @@ function _Chat() {
               {Locale.Chat.SubTitle(session.messages.length)}
             </div>
           </div>
-          <div className="window-actions">
-            <div className="window-action-button">
-              <IconButton
-                icon={<ReloadIcon />}
-                bordered
-                title={Locale.Chat.Actions.RefreshTitle}
-                aria={Locale.Chat.Actions.RefreshTitle}
-                onClick={() => {
+          {isMobileScreen ? (
+            <div className="window-actions">
+              <MobileChatActions
+                onRefresh={() => {
                   showToast(Locale.Chat.Actions.RefreshToast);
                   chatStore.summarizeSession(true, session);
                 }}
+                onEdit={() => setIsEditingMessage(true)}
+                onExport={() => setShowExport(true)}
               />
             </div>
-            <div className="window-action-button">
-              <IconButton
-                icon={<RenameIcon />}
-                bordered
-                title={Locale.Chat.EditMessage.Title}
-                aria={Locale.Chat.EditMessage.Title}
-                onClick={() => setIsEditingMessage(true)}
-              />
-            </div>
-            <ChatPluginAction />
-            <div className="window-action-button">
-              <IconButton
-                icon={<ExportIcon />}
-                bordered
-                title={Locale.Chat.Actions.Export}
-                aria={Locale.Chat.Actions.Export}
-                onClick={() => {
-                  setShowExport(true);
-                }}
-              />
-            </div>
-            {(session.messages.length > 0 || session.pinned) &&
-              !session.archived && (
-                <div className="window-action-button">
-                  <IconButton
-                    icon={<SessionPinIcon />}
-                    bordered
-                    type={session.pinned ? "primary" : undefined}
-                    className={clsx(styles["chat-session-pin"], {
-                      [styles["chat-session-pin-active"]]: session.pinned,
-                    })}
-                    title={session.pinned ? Locale.Pin.Undo : Locale.Pin.Action}
-                    aria={session.pinned ? Locale.Pin.Undo : Locale.Pin.Action}
-                    onClick={() => chatStore.togglePinSession(session.id)}
-                  />
-                </div>
-              )}
-            {session.messages.length > 0 && !session.archived && (
+          ) : (
+            <div className="window-actions">
               <div className="window-action-button">
                 <IconButton
-                  icon={<ArchiveIcon />}
+                  icon={<ReloadIcon />}
                   bordered
-                  title={Locale.Archive.Action}
-                  aria={Locale.Archive.Action}
-                  onClick={() => chatStore.archiveSession(session.id)}
-                />
-              </div>
-            )}
-            {showMaxIcon && (
-              <div className="window-action-button">
-                <IconButton
-                  icon={config.tightBorder ? <MinIcon /> : <MaxIcon />}
-                  bordered
-                  title={Locale.Chat.Actions.FullScreen}
-                  aria={Locale.Chat.Actions.FullScreen}
+                  title={Locale.Chat.Actions.RefreshTitle}
+                  aria={Locale.Chat.Actions.RefreshTitle}
                   onClick={() => {
-                    config.update(
-                      (config) => (config.tightBorder = !config.tightBorder),
-                    );
+                    showToast(Locale.Chat.Actions.RefreshToast);
+                    chatStore.summarizeSession(true, session);
                   }}
                 />
               </div>
-            )}
-          </div>
+              <div className="window-action-button">
+                <IconButton
+                  icon={<RenameIcon />}
+                  bordered
+                  title={Locale.Chat.EditMessage.Title}
+                  aria={Locale.Chat.EditMessage.Title}
+                  onClick={() => setIsEditingMessage(true)}
+                />
+              </div>
+              <ChatPluginAction />
+              <div className="window-action-button">
+                <IconButton
+                  icon={<ExportIcon />}
+                  bordered
+                  title={Locale.Chat.Actions.Export}
+                  aria={Locale.Chat.Actions.Export}
+                  onClick={() => {
+                    setShowExport(true);
+                  }}
+                />
+              </div>
+              {(session.messages.length > 0 || session.pinned) &&
+                !session.archived && (
+                  <div className="window-action-button">
+                    <IconButton
+                      icon={<SessionPinIcon />}
+                      bordered
+                      type={session.pinned ? "primary" : undefined}
+                      className={clsx(styles["chat-session-pin"], {
+                        [styles["chat-session-pin-active"]]: session.pinned,
+                      })}
+                      title={
+                        session.pinned ? Locale.Pin.Undo : Locale.Pin.Action
+                      }
+                      aria={
+                        session.pinned ? Locale.Pin.Undo : Locale.Pin.Action
+                      }
+                      onClick={() => chatStore.togglePinSession(session.id)}
+                    />
+                  </div>
+                )}
+              {session.messages.length > 0 && !session.archived && (
+                <div className="window-action-button">
+                  <IconButton
+                    icon={<ArchiveIcon />}
+                    bordered
+                    title={Locale.Archive.Action}
+                    aria={Locale.Archive.Action}
+                    onClick={() => chatStore.archiveSession(session.id)}
+                  />
+                </div>
+              )}
+              {showMaxIcon && (
+                <div className="window-action-button">
+                  <IconButton
+                    icon={config.tightBorder ? <MinIcon /> : <MaxIcon />}
+                    bordered
+                    title={Locale.Chat.Actions.FullScreen}
+                    aria={Locale.Chat.Actions.FullScreen}
+                    onClick={() => {
+                      config.update(
+                        (config) => (config.tightBorder = !config.tightBorder),
+                      );
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           <PromptToast
             showToast={!hitBottom}
@@ -1920,9 +2067,13 @@ function _Chat() {
                     id="chat-input"
                     ref={inputRef}
                     className={styles["chat-input"]}
-                    placeholder={`${Locale.Chat.Input(submitKey)}${
-                      Locale.Chat.ImageInputHint
-                    }`}
+                    placeholder={
+                      isMobileScreen
+                        ? Locale.Chat.MobileInput
+                        : `${Locale.Chat.Input(submitKey)}${
+                            Locale.Chat.ImageInputHint
+                          }`
+                    }
                     onInput={(e) => onInput(e.currentTarget.value)}
                     value={userInput}
                     onKeyDown={onInputKeyDown}

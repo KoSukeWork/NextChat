@@ -10,7 +10,7 @@ import EyeIcon from "../icons/eye.svg";
 import GithubIcon from "../icons/github.svg";
 import { List, ListItem, Modal, showToast } from "./ui-lib";
 import { useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   addMcpServer,
   getClientsStatus,
@@ -22,6 +22,9 @@ import {
   resumeMcpServer,
   removeMcpServer,
   mergeMcpServers,
+  beginMcpOAuth,
+  cancelMcpOAuth,
+  logoutMcpOAuth,
 } from "../mcp/actions";
 import {
   ListToolsResponse,
@@ -40,6 +43,8 @@ import StopIcon from "../icons/pause.svg";
 import { Path } from "../constant";
 import { useAccessStore } from "../store";
 import { fetch } from "../utils/stream";
+import { isTauri } from "../mcp/tauri-api";
+import { httpUrl } from "../mcp/oauth";
 
 interface ConfigProperty {
   type: string;
@@ -54,6 +59,8 @@ type Operation =
   | "removing"
   | "stopping"
   | "starting"
+  | "logging-in"
+  | "logging-out"
   | "restarting";
 
 export function McpMarketPage() {
@@ -86,6 +93,7 @@ export function McpMarketPage() {
   const [loadingStates, setLoadingStates] = useState<Record<string, Operation>>(
     {},
   );
+  const loginAttempts = useRef<Record<string, number>>({});
 
   // 检查 MCP 是否启用
   useEffect(() => {
@@ -415,6 +423,65 @@ export function McpMarketPage() {
     }
   };
 
+  const signIn = async (id: string) => {
+    const desktop = isTauri();
+    const popup = desktop ? null : window.open("about:blank", "_blank");
+    if (!desktop && !popup) {
+      showToast(Locale.Mcp.OAuthPopupBlocked);
+      return;
+    }
+    const attempt = (loginAttempts.current[id] ?? 0) + 1;
+    loginAttempts.current[id] = attempt;
+    const isCurrent = () => loginAttempts.current[id] === attempt;
+    try {
+      updateLoadingState(id, "logging-in");
+      const result = await beginMcpOAuth(
+        id,
+        window.location.origin,
+        accessCode,
+      );
+      if (!isCurrent()) return;
+      if (popup) {
+        if (!result.url) throw new Error("Missing OAuth authorization URL");
+        const target = httpUrl(result.url);
+        popup.opener = null;
+        popup.location.replace(target.href);
+      }
+    } catch (error) {
+      popup?.close();
+      if (!isCurrent()) return;
+      showToast(
+        error instanceof Error &&
+          error.message === "OAuth server requires a pre-registered client"
+          ? Locale.Mcp.OAuthUnsupported
+          : error instanceof Error && error.message === "OAuth login timed out"
+          ? Locale.Mcp.OAuthTimeout
+          : Locale.Mcp.OAuthFailed,
+      );
+    } finally {
+      if (isCurrent()) updateLoadingState(id, null);
+    }
+  };
+
+  const cancelSignIn = (id: string) => {
+    loginAttempts.current[id] = (loginAttempts.current[id] ?? 0) + 1;
+    // Queue cancellation before enabling a new attempt for this server.
+    void cancelMcpOAuth(id, accessCode).catch(() => {});
+    updateLoadingState(id, null);
+  };
+
+  const signOut = async (id: string) => {
+    try {
+      updateLoadingState(id, "logging-out");
+      await logoutMcpOAuth(id, accessCode);
+      showToast(Locale.Mcp.OAuthSignedOut);
+    } catch {
+      showToast(Locale.Mcp.OAuthFailed);
+    } finally {
+      updateLoadingState(id, null);
+    }
+  };
+
   // Restart all clients
   const handleRestartAll = async () => {
     try {
@@ -532,6 +599,19 @@ export function McpMarketPage() {
       active: (
         <span className={styles["server-status"]}>{Locale.Mcp.Running}</span>
       ),
+      "login-required": (
+        <span className={clsx(styles["server-status"], styles["initializing"])}>
+          {Locale.Mcp.LoginRequired}
+        </span>
+      ),
+      "oauth-unsupported": (
+        <span
+          className={clsx(styles["server-status"], styles["error"])}
+          title={Locale.Mcp.OAuthUnsupported}
+        >
+          {Locale.Mcp.OAuthUnsupportedShort}
+        </span>
+      ),
       error: (
         <span className={clsx(styles["server-status"], styles["error"])}>
           {Locale.Mcp.Error}
@@ -559,6 +639,8 @@ export function McpMarketPage() {
     stopping: Locale.Mcp.Stopping,
     starting: Locale.Mcp.Starting,
     restarting: Locale.Mcp.Restarting,
+    "logging-in": Locale.Mcp.LoggingIn,
+    "logging-out": Locale.Mcp.LoggingOut,
   };
 
   // 渲染服务器列表
@@ -720,6 +802,29 @@ export function McpMarketPage() {
                       }}
                     />
                   )}
+                  {isTauri() && loadingStates[server.id] === "logging-in" ? (
+                    <IconButton
+                      className={styles["oauth-cancel"]}
+                      text={Locale.UI.Cancel}
+                      onClick={() => cancelSignIn(server.id)}
+                    />
+                  ) : (
+                    checkServerStatus(server.id).status ===
+                      "login-required" && (
+                      <IconButton
+                        text={Locale.Mcp.Login}
+                        onClick={() => signIn(server.id)}
+                        disabled={isLoading}
+                      />
+                    )
+                  )}
+                  {checkServerStatus(server.id).oauthAuthenticated && (
+                    <IconButton
+                      text={Locale.Mcp.Logout}
+                      onClick={() => signOut(server.id)}
+                      disabled={isLoading}
+                    />
+                  )}
                   {checkServerStatus(server.id).status === "paused" ? (
                     <>
                       <IconButton
@@ -746,7 +851,7 @@ export function McpMarketPage() {
                         }}
                         disabled={
                           isLoading ||
-                          checkServerStatus(server.id).status === "error"
+                          checkServerStatus(server.id).status !== "active"
                         }
                       />
                       <IconButton

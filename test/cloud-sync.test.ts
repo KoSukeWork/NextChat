@@ -212,7 +212,7 @@ test("local file import requests explicit restoration of deleted sessions", asyn
     expect(merge).toHaveBeenCalledWith(
       expect.objectContaining(local),
       { imported: true },
-      { restoreDeletedSessions: true },
+      { restoreDeletedSessions: true, restoreDeletedItems: true },
     );
     expect(setLocal).toHaveBeenCalled();
   } finally {

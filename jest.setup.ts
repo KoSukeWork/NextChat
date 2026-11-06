@@ -7,6 +7,8 @@ import {
   WritableStream,
 } from "node:stream/web";
 
+export const nativeFetch = globalThis.fetch;
+
 if (!globalThis.ReadableStream) Object.assign(globalThis, { ReadableStream });
 if (!globalThis.TransformStream) Object.assign(globalThis, { TransformStream });
 if (!globalThis.WritableStream) Object.assign(globalThis, { WritableStream });

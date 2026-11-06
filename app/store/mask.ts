@@ -5,10 +5,12 @@ import { ModelConfig, useAppConfig } from "./config";
 import { StoreKey } from "../constant";
 import { nanoid } from "nanoid";
 import { createPersistStore } from "../utils/store";
+import { validTimestamp } from "../utils/chat-deletion";
 
 export type Mask = {
   id: string;
   createdAt: number;
+  updatedAt?: number;
   avatar: string;
   name: string;
   hideContext?: boolean;
@@ -24,6 +26,7 @@ export type Mask = {
 
 export const DEFAULT_MASK_STATE = {
   masks: {} as Record<string, Mask>,
+  deletedMasks: {} as Record<string, number>,
   language: undefined as Lang | undefined,
 };
 
@@ -43,6 +46,7 @@ export const createEmptyMask = () =>
     lang: getLang(),
     builtin: false,
     createdAt: Date.now(),
+    updatedAt: Date.now(),
     plugin: [],
   }) as Mask;
 
@@ -58,6 +62,7 @@ export const useMaskStore = createPersistStore(
         ...mask,
         id,
         builtin: false,
+        updatedAt: Date.now(),
       };
 
       set(() => ({ masks }));
@@ -71,14 +76,31 @@ export const useMaskStore = createPersistStore(
       if (!mask) return;
       const updateMask = { ...mask };
       updater(updateMask);
+      updateMask.updatedAt = Math.max(
+        Date.now(),
+        validTimestamp(mask.updatedAt ?? mask.createdAt) + 1,
+        validTimestamp(get().deletedMasks?.[id]) + 1,
+      );
       masks[id] = updateMask;
-      set(() => ({ masks }));
+      const deletedMasks = { ...get().deletedMasks };
+      delete deletedMasks[id];
+      set(() => ({ masks, deletedMasks }));
       get().markUpdate();
     },
     delete(id: string) {
       const masks = get().masks;
+      const mask = masks[id];
+      if (!mask) return;
       delete masks[id];
-      set(() => ({ masks }));
+      const deletedMasks = {
+        ...get().deletedMasks,
+        [id]: Math.max(
+          Date.now(),
+          validTimestamp(mask.updatedAt ?? mask.createdAt) + 1,
+          validTimestamp(get().deletedMasks?.[id]) + 1,
+        ),
+      };
+      set(() => ({ masks, deletedMasks }));
       get().markUpdate();
     },
 
@@ -114,7 +136,7 @@ export const useMaskStore = createPersistStore(
   }),
   {
     name: StoreKey.Mask,
-    version: 3.1,
+    version: 3.2,
 
     migrate(state, version) {
       const newState = JSON.parse(JSON.stringify(state)) as MaskState;
@@ -130,6 +152,22 @@ export const useMaskStore = createPersistStore(
           updatedMasks[m.id] = m;
         });
         newState.masks = updatedMasks;
+      }
+
+      if (version < 3.2) {
+        const masks: Record<string, Mask> = Object.create(null);
+        Object.entries(newState.masks ?? {}).forEach(([key, mask]) => {
+          mask.id ||= key;
+          mask.updatedAt = validTimestamp(mask.updatedAt ?? mask.createdAt);
+          const existing = masks[mask.id];
+          if (
+            !existing ||
+            validTimestamp(mask.updatedAt) > validTimestamp(existing.updatedAt)
+          )
+            masks[mask.id] = mask;
+        });
+        newState.masks = masks;
+        newState.deletedMasks ??= {};
       }
 
       return newState as any;

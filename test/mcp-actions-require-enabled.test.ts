@@ -13,6 +13,9 @@ import {
   executeMcpAction,
   getMcpConfigFromFile,
   mergeMcpServers,
+  beginMcpOAuth,
+  cancelMcpOAuth,
+  logoutMcpOAuth,
 } from "../app/mcp/actions";
 
 // Regression coverage for the unauthenticated MCP server actions: every one of
@@ -69,6 +72,9 @@ describe("MCP server actions require MCP to be enabled", () => {
       ["executeMcpAction", () => executeMcpAction("x", {} as any, "")],
       ["getMcpConfigFromFile", () => getMcpConfigFromFile("")],
       ["mergeMcpServers", () => mergeMcpServers({ mcpServers: {} }, "")],
+      ["beginMcpOAuth", () => beginMcpOAuth("x", "http://127.0.0.1", "")],
+      ["cancelMcpOAuth", () => cancelMcpOAuth("x", "")],
+      ["logoutMcpOAuth", () => logoutMcpOAuth("x", "")],
     ])("%s rejects instead of running", async (_name, callAction) => {
       await expect(callAction()).rejects.toThrow("MCP is not enabled");
     });
@@ -98,6 +104,18 @@ describe("MCP server actions require MCP to be enabled", () => {
       await expect(
         mergeMcpServers({ mcpServers: {} }, "wrong-code"),
       ).rejects.toThrow("Unauthorized MCP request");
+    });
+
+    test("OAuth actions require the access code", async () => {
+      await expect(
+        beginMcpOAuth("x", "http://127.0.0.1", "wrong-code"),
+      ).rejects.toThrow("Unauthorized MCP request");
+      await expect(logoutMcpOAuth("x", "wrong-code")).rejects.toThrow(
+        "Unauthorized MCP request",
+      );
+      await expect(cancelMcpOAuth("x", "wrong-code")).rejects.toThrow(
+        "Unauthorized MCP request",
+      );
     });
 
     test("MCP fails closed when CODE is not configured", async () => {
