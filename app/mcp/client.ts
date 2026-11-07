@@ -13,6 +13,11 @@ import {
 import { createRemoteClient } from "./remote";
 import { z } from "zod";
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
+import {
+  McpReconnectTimeout,
+  McpRequestNotSent,
+  untilAborted,
+} from "./reconnect";
 
 const logger = new MCPClientLogger();
 
@@ -29,11 +34,12 @@ export async function createClient(
   id: string,
   config: ServerConfig,
   authProvider?: OAuthClientProvider,
+  signal?: AbortSignal,
 ): Promise<Client> {
   logger.info(`Creating client for ${id}...`);
 
   if (isRemoteServer(config))
-    return createRemoteClient(id, config, undefined, authProvider);
+    return createRemoteClient(id, config, undefined, authProvider, signal);
 
   const transport = new StdioClientTransport({
     command: config.command,
@@ -50,7 +56,22 @@ export async function createClient(
       capabilities: {},
     },
   );
-  await client.connect(transport);
+  const send = transport.send.bind(transport);
+  transport.send = async (message) => {
+    if (transport.pid === null) throw new McpRequestNotSent("closed");
+    try {
+      await send(message);
+    } catch (error) {
+      // This exact SDK error occurs before stdin.write is called.
+      if (error instanceof Error && error.message === "Not connected")
+        throw new McpRequestNotSent("closed");
+      throw error;
+    }
+  };
+  if (signal?.aborted) throw new McpReconnectTimeout();
+  await untilAborted(client.connect(transport), signal, () => {
+    void client.close().catch(() => {});
+  });
   return client;
 }
 
@@ -59,8 +80,13 @@ export async function removeClient(client: Client) {
   await client.close();
 }
 
-export async function listTools(client: Client): Promise<ListToolsResponse> {
-  return client.listTools();
+export async function listTools(
+  client: Client,
+  signal?: AbortSignal,
+): Promise<ListToolsResponse> {
+  return untilAborted(client.listTools(undefined, { signal }), signal, () => {
+    void client.close().catch(() => {});
+  });
 }
 
 export async function executeRequest(

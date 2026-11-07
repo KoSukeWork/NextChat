@@ -20,6 +20,7 @@ function deferred<T>() {
 
 const attempts: Array<ReturnType<typeof deferred<{ url: string }>>> = [];
 const cancel = jest.fn(async () => {});
+const reconnect = jest.fn(async () => {});
 const toast = jest.fn();
 let status = "login-required";
 const config = {
@@ -29,6 +30,7 @@ jest.unstable_mockModule("@/app/mcp/actions", () => ({
   isMcpEnabled: async () => true,
   getMcpConfigFromFile: async () => config,
   getClientsStatus: async () => ({ example: { status, errorMsg: null } }),
+  reconnectMcpErrors: reconnect,
   beginMcpOAuth: () => {
     const attempt = deferred<{ url: string }>();
     attempts.push(attempt);
@@ -103,6 +105,7 @@ beforeEach(() => {
   status = "login-required";
   attempts.length = 0;
   cancel.mockClear();
+  reconnect.mockClear();
   toast.mockClear();
 });
 afterEach(cleanup);
@@ -154,4 +157,12 @@ test("unsupported sign-in uses a short badge with the full explanation", async (
   setup();
   const badge = await screen.findByText(Locale.Mcp.OAuthUnsupportedShort);
   expect(badge).toHaveAttribute("title", Locale.Mcp.OAuthUnsupported);
+});
+
+test("opening the page retries once; later status polling does not retry", async () => {
+  setup();
+  await screen.findByRole("button", { name: Locale.Mcp.Login });
+  expect(reconnect).toHaveBeenCalledTimes(1);
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1100)); });
+  expect(reconnect).toHaveBeenCalledTimes(1);
 });

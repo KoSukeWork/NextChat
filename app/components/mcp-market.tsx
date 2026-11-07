@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   addMcpServer,
   getClientsStatus,
+  reconnectMcpErrors,
   getClientTools,
   getMcpConfigFromFile,
   isMcpEnabled,
@@ -155,6 +156,8 @@ export function McpMarketPage() {
         const config = await getMcpConfigFromFile(accessCode);
         setConfig(config);
 
+        // Retry failed servers only on page entry, never from status polling.
+        await reconnectMcpErrors(accessCode);
         // 获取所有客户端的状态
         const statuses = await getClientsStatus(accessCode);
         setClientStatuses(statuses);

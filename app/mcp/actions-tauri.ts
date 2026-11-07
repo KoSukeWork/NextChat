@@ -25,6 +25,15 @@ import {
 import { invoke, isTauri } from "./tauri-api";
 import { TauriStdioTransport } from "./tauri-transport";
 import { getLang } from "../locales";
+import {
+  isLocalMcpRequestTimeout,
+  isMcpConnectionFailure,
+  McpCallTracker,
+  McpReconnectTimeout,
+  McpRequestNotSent,
+  ReconnectCoordinator,
+  untilAborted,
+} from "./reconnect";
 
 interface Entry {
   client: Client | null;
@@ -43,12 +52,23 @@ interface Entry {
 const clients = new Map<string, Entry>();
 const pendingOAuth = new Map<string, string>();
 const oauthEpochs = new Map<string, number>();
+const callTracker = new McpCallTracker();
+const safeOrigins = new WeakSet<Entry>();
 let mutations: Promise<unknown> = Promise.resolve();
 let oauthMutations: Promise<unknown> = Promise.resolve();
+let pendingUserMutations = 0;
 
 // Keep read/modify/write and start/stop operations ordered, including concurrent UI clicks.
-function mutate<T>(operation: () => Promise<T>): Promise<T> {
-  const result = mutations.then(operation);
+function mutate<T>(
+  operation: () => Promise<T>,
+  preempt?: string | "*",
+): Promise<T> {
+  if (preempt === "*") reconnects.cancel();
+  else if (preempt !== undefined) reconnects.cancel(preempt);
+  pendingUserMutations++;
+  const result = mutations.then(operation).finally(() => {
+    pendingUserMutations--;
+  });
   mutations = result.catch(() => {});
   return result;
 }
@@ -80,8 +100,7 @@ async function stop(id: string) {
   else await invoke("mcp_kill", { id });
 }
 
-async function start(id: string, server: ServerConfig) {
-  await stop(id);
+async function start(id: string, server: ServerConfig, signal?: AbortSignal) {
   const remote = isRemoteServer(server);
   const entry: Entry = {
     client: null,
@@ -90,14 +109,35 @@ async function start(id: string, server: ServerConfig) {
     status: "initializing",
     errorMsg: null,
   };
-  clients.set(id, entry);
   let client: Client | null = null;
   try {
+    if (signal) {
+      if (signal.aborted) throw new McpReconnectTimeout();
+      const previous = clients.get(id);
+      clients.set(id, entry);
+      // Close only the old client generation. A future native spawn itself
+      // replaces any stale process, without an unscoped late kill.
+      if (previous?.client) {
+        if (previous.remote) {
+          const old = previous.client;
+          callTracker.retire(old, () => {
+            void old.close().catch(() => {});
+          });
+        } else await untilAborted(previous.client.close(), signal);
+      }
+    } else {
+      await stop(id);
+      clients.set(id, entry);
+    }
+    if (signal?.aborted) throw new McpReconnectTimeout();
     if (remote) {
       const url = httpUrl(server.url).href;
       const epoch = oauthEpochs.get(id) ?? 0;
       const credentials = !hasManualAuthorization(server.headers)
-        ? await invoke<OAuthCredentials | null>("mcp_oauth_read", { id, url })
+        ? await untilAborted(
+            invoke<OAuthCredentials | null>("mcp_oauth_read", { id, url }),
+            signal,
+          )
         : null;
       const provider =
         credentials?.tokens &&
@@ -119,14 +159,30 @@ async function start(id: string, server: ServerConfig) {
             )
           : undefined;
       entry.oauthAuthenticated = !!provider;
-      client = await createRemoteClient(id, server, nativeMcpFetch, provider);
+      const connecting = createRemoteClient(
+        id,
+        server,
+        nativeMcpFetch,
+        provider,
+        signal,
+      );
+      client = await untilAborted(connecting, signal, () => {
+        void connecting.then((late) => late.close()).catch(() => {});
+      });
     } else {
       client = new Client(
         { name: `nextchat-mcp-client-${id}`, version: "1.0.0" },
         { capabilities: {} },
       );
-      await client.connect(new TauriStdioTransport(id));
+      await untilAborted(
+        client.connect(new TauriStdioTransport(id)),
+        signal,
+        () => {
+          void client?.close().catch(() => {});
+        },
+      );
     }
+    if (signal?.aborted) throw new McpReconnectTimeout();
     entry.client = client;
     client.onerror = (error) => {
       if (error instanceof OAuthLoginNeeded) {
@@ -134,13 +190,26 @@ async function start(id: string, server: ServerConfig) {
         entry.oauthMetadataUrl = error.resourceMetadataUrl;
         entry.tools = null;
         entry.errorMsg = "OAuth login required";
-      } else {
+      } else if (error instanceof OAuthPreRegisteredClientRequired) {
+        entry.status = "oauth-unsupported";
+        entry.tools = null;
+        entry.errorMsg = "OAuth server requires a pre-registered client";
+      } else if (
+        clients.get(id) === entry &&
+        isMcpConnectionFailure(error, client ?? undefined)
+      ) {
+        entry.status = "error";
+        entry.tools = null;
         entry.errorMsg = remote ? safeRemoteError(error) : error.message;
       }
     };
     client.onclose = () => {
       if (clients.get(id) === entry) {
-        if (entry.status !== "login-required") entry.status = "error";
+        if (
+          entry.status !== "login-required" &&
+          entry.status !== "oauth-unsupported"
+        )
+          entry.status = "error";
         entry.tools = null;
         entry.errorMsg ??= "MCP server disconnected";
       }
@@ -149,7 +218,13 @@ async function start(id: string, server: ServerConfig) {
     let cursor: string | undefined;
     const seen = new Set<string>();
     do {
-      const page = await client.listTools(cursor ? { cursor } : undefined);
+      const page = await untilAborted(
+        client.listTools(cursor ? { cursor } : undefined, { signal }),
+        signal,
+        () => {
+          void client?.close().catch(() => {});
+        },
+      );
       tools.push(...page.tools);
       cursor = page.nextCursor;
       if (cursor && seen.has(cursor))
@@ -175,7 +250,8 @@ async function start(id: string, server: ServerConfig) {
       : error instanceof Error
       ? error.message
       : String(error);
-    await client?.close().catch(() => {});
+    if (signal?.aborted) void client?.close().catch(() => {});
+    else await client?.close().catch(() => {});
     throw new Error(entry.errorMsg);
   }
 }
@@ -190,6 +266,36 @@ async function startConfigured(config: McpConfigData) {
         }),
       ),
   );
+}
+
+const reconnects = new ReconnectCoordinator(async (ids, signal) => {
+  if (signal.aborted || pendingUserMutations) return;
+  const config = await untilAborted(readConfig(), signal);
+  await Promise.all(
+    ids.map(async (id) => {
+      const server = config.mcpServers[id];
+      if (
+        !signal.aborted &&
+        !pendingUserMutations &&
+        server &&
+        server.status !== "paused" &&
+        clients.get(id)?.status === "error"
+      )
+        await start(id, server, signal).catch(() => {});
+    }),
+  );
+});
+
+function retryFailed(ids?: string[]) {
+  const selected = ids ?? [
+    ...new Set([
+      ...[...clients.entries()]
+        .filter(([, entry]) => entry.status === "error")
+        .map(([id]) => id),
+      ...reconnects.pendingIds(),
+    ]),
+  ];
+  return reconnects.reconnect(selected);
 }
 
 export const isMcpEnabled: typeof ServerActions.isMcpEnabled = async () =>
@@ -241,10 +347,15 @@ export const getAvailableClientsCount: typeof ServerActions.getAvailableClientsC
     [...clients.values()].filter((entry) => entry.status === "active").length;
 export const getAllTools: typeof ServerActions.getAllTools = async (
   _accessCode,
-) =>
-  [...clients.entries()]
+) => {
+  await retryFailed();
+  return [...clients.entries()]
     .filter(([, entry]) => entry.status === "active" && entry.tools !== null)
     .map(([clientId, entry]) => ({ clientId, tools: entry.tools! }));
+};
+
+export const reconnectMcpErrors: typeof ServerActions.reconnectMcpErrors =
+  async (_accessCode) => retryFailed();
 
 export const initializeMcpSystem: typeof ServerActions.initializeMcpSystem =
   async (_accessCode) =>
@@ -252,7 +363,7 @@ export const initializeMcpSystem: typeof ServerActions.initializeMcpSystem =
       const config = await readConfig();
       await startConfigured(config);
       return config;
-    });
+    }, "*");
 
 export const addMcpServer: typeof ServerActions.addMcpServer = async (
   id,
@@ -274,7 +385,7 @@ export const addMcpServer: typeof ServerActions.addMcpServer = async (
     if (server.status === "paused") await stop(id);
     else await start(id, config.mcpServers[id]).catch(() => {});
     return config;
-  });
+  }, id);
 
 export const pauseMcpServer: typeof ServerActions.pauseMcpServer = async (
   id,
@@ -290,7 +401,7 @@ export const pauseMcpServer: typeof ServerActions.pauseMcpServer = async (
     });
     await stop(id);
     return config;
-  });
+  }, id);
 
 export const resumeMcpServer: typeof ServerActions.resumeMcpServer = async (
   id,
@@ -305,7 +416,7 @@ export const resumeMcpServer: typeof ServerActions.resumeMcpServer = async (
       await invalidateOAuth(id);
     });
     await start(id, config.mcpServers[id]);
-  });
+  }, id);
 
 export const removeMcpServer: typeof ServerActions.removeMcpServer = async (
   id,
@@ -320,7 +431,7 @@ export const removeMcpServer: typeof ServerActions.removeMcpServer = async (
     });
     await stop(id);
     return config;
-  });
+  }, id);
 
 export const restartAllClients: typeof ServerActions.restartAllClients = async (
   _accessCode,
@@ -330,23 +441,100 @@ export const restartAllClients: typeof ServerActions.restartAllClients = async (
     const config = await readConfig();
     await startConfigured(config);
     return config;
-  });
+  }, "*");
 
 export const executeMcpAction: typeof ServerActions.executeMcpAction = async (
   id,
   request,
   _accessCode,
 ) => {
-  const entry = clients.get(id);
+  const initialServer = (await readConfig()).mcpServers[id];
+  if (!initialServer || initialServer.status === "paused")
+    throw new Error(`MCP server ${id} is not connected`);
+  const initialEpoch = oauthEpochs.get(id) ?? 0;
+  let entry = clients.get(id);
+  if (entry?.status === "error" || reconnects.pendingIds().includes(id)) {
+    await retryFailed([id]);
+    entry = clients.get(id);
+  }
   if (!entry || entry.status !== "active")
     throw new Error(`MCP server ${id} is not connected`);
+  const markError = (current: Entry, error: unknown) => {
+    if (
+      clients.get(id) !== current ||
+      current.status === "login-required" ||
+      current.status === "oauth-unsupported"
+    )
+      return false;
+    if (error instanceof OAuthLoginNeeded) {
+      current.status = "login-required";
+      current.oauthMetadataUrl = error.resourceMetadataUrl;
+      current.errorMsg = "OAuth login required";
+      current.tools = null;
+      return false;
+    }
+    if (error instanceof OAuthPreRegisteredClientRequired) {
+      current.status = "oauth-unsupported";
+      current.errorMsg = "OAuth server requires a pre-registered client";
+      current.tools = null;
+      return false;
+    }
+    if (!isMcpConnectionFailure(error, current.client ?? undefined))
+      return false;
+    current.status = "error";
+    current.tools = null;
+    current.errorMsg = current.remote
+      ? safeRemoteError(error)
+      : error instanceof Error
+      ? error.message
+      : String(error);
+    return true;
+  };
+  const callOnce = async (current: Entry) => {
+    const client = current.client!;
+    return callTracker.run(client, async () => {
+      if (clients.get(id) !== current || current.status !== "active")
+        throw new Error("MCP server changed");
+      if ("transport" in client && !client.transport)
+        throw new McpRequestNotSent("closed");
+      const call = client.request as (
+        requestMessage: typeof request,
+        schema: unknown,
+      ) => Promise<unknown>;
+      return await call.call(client, request, z.any());
+    });
+  };
   try {
-    const call = entry.client!.request as (
-      requestMessage: typeof request,
-      schema: unknown,
-    ) => Promise<unknown>;
-    return await call.call(entry.client, request, z.any());
+    return await callOnce(entry);
   } catch (error) {
+    const marked = markError(entry, error);
+    if (marked && error instanceof McpRequestNotSent) safeOrigins.add(entry);
+    const retry =
+      error instanceof McpRequestNotSent &&
+      safeOrigins.has(entry) &&
+      (marked || reconnects.pendingIds().includes(id));
+    if (retry) {
+      await retryFailed([id]);
+      const replacement = clients.get(id);
+      const latest = (await readConfig()).mcpServers[id];
+      if (
+        replacement?.status === "active" &&
+        latest &&
+        latest.status !== "paused" &&
+        JSON.stringify(latest) === JSON.stringify(initialServer) &&
+        (oauthEpochs.get(id) ?? 0) === initialEpoch
+      ) {
+        try {
+          return await callOnce(replacement);
+        } catch (retryError) {
+          markError(replacement, retryError);
+          if (isLocalMcpRequestTimeout(retryError)) throw retryError;
+          if (replacement.remote) throw new Error(safeRemoteError(retryError));
+          throw retryError;
+        }
+      }
+    }
+    if (isLocalMcpRequestTimeout(error)) throw error;
     if (entry.remote) throw new Error(safeRemoteError(error));
     throw error;
   }
@@ -378,13 +566,14 @@ export const mergeMcpServers: typeof ServerActions.mergeMcpServers = async (
       );
     }).catch(() => {});
     return merged;
-  });
+  }, "*");
 
 export const beginMcpOAuth: typeof ServerActions.beginMcpOAuth = async (
   id,
   _origin,
   _accessCode,
 ) => {
+  reconnects.cancel(id);
   const epoch = await mutateOAuth(async () => {
     await invalidateOAuth(id);
     return oauthEpochs.get(id) ?? 0;
@@ -520,7 +709,10 @@ export const beginMcpOAuth: typeof ServerActions.beginMcpOAuth = async (
 export const cancelMcpOAuth: typeof ServerActions.cancelMcpOAuth = async (
   id,
   _accessCode,
-) => mutateOAuth(() => invalidateOAuth(id));
+) => {
+  reconnects.cancel(id);
+  return mutateOAuth(() => invalidateOAuth(id));
+};
 
 export const logoutMcpOAuth: typeof ServerActions.logoutMcpOAuth = async (
   id,
@@ -537,4 +729,4 @@ export const logoutMcpOAuth: typeof ServerActions.logoutMcpOAuth = async (
     });
     await stop(id);
     if (server.status !== "paused") await start(id, server).catch(() => {});
-  });
+  }, id);

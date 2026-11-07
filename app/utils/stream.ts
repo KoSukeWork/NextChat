@@ -17,13 +17,39 @@ type StreamResponse = {
   status: number;
   status_text: string;
   headers: Record<string, string>;
+  network_error?: string | null;
+  request_not_sent?: boolean | null;
 };
+
+/** The native HTTP response ended because its body stream failed. */
+export class NativeStreamError extends Error {
+  constructor() {
+    super("Native HTTP response stream disconnected");
+    this.name = "NativeStreamError";
+  }
+}
+
+// The reason comes from native IPC, not from an untrusted HTTP response.
+const nativeNetworkErrors = new WeakMap<
+  Response,
+  { reason: string; requestNotSent: boolean }
+>();
+export function getNativeNetworkError(response: Response) {
+  return nativeNetworkErrors.get(response)?.reason;
+}
+export function isNativeRequestNotSent(response: Response) {
+  return nativeNetworkErrors.get(response)?.requestNotSent === true;
+}
 
 let nextCancelId = 0;
 const abortError = () =>
   new DOMException("The request was aborted", "AbortError");
 
-export function fetch(url: string, options?: RequestInit): Promise<Response> {
+export function fetch(
+  url: string,
+  options?: RequestInit,
+  nativeOptions?: { failOnBodyError?: boolean },
+): Promise<Response> {
   if (window.__TAURI__) {
     const {
       signal,
@@ -94,6 +120,12 @@ export function fetch(url: string, options?: RequestInit): Promise<Response> {
           } else if (status === 0) {
             // end of body
             close();
+          } else if (status === 1) {
+            close(
+              nativeOptions?.failOnBodyError
+                ? new NativeStreamError()
+                : undefined,
+            );
           }
         }),
       )
@@ -141,6 +173,11 @@ export function fetch(url: string, options?: RequestInit): Promise<Response> {
           statusText,
           headers,
         });
+        if (res.network_error)
+          nativeNetworkErrors.set(response, {
+            reason: res.network_error,
+            requestNotSent: res.request_not_sent === true,
+          });
         return response;
       })
       .catch((e) => {

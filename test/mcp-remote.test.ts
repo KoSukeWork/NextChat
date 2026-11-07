@@ -3,11 +3,13 @@ import { jest } from "@jest/globals";
 const attempts: string[] = [];
 const options: any[] = [];
 let closeCount = 0;
-let failure: "first" | "both" = "first";
+let failure: "first" | "both" | "refused" = "first";
+const { McpRequestNotSent } = await import("../app/mcp/reconnect");
 jest.unstable_mockModule("@modelcontextprotocol/sdk/client/index.js", () => ({
   Client: class {
     async connect(transport: { kind: string }) {
       attempts.push(transport.kind);
+      if (failure === "refused") throw new McpRequestNotSent("refused");
       if (transport.kind === "http" || failure === "both") {
         throw Object.assign(new Error("HTTP 401 Bearer do-not-log"), {
           code: failure === "both" ? 401 : 405,
@@ -47,6 +49,14 @@ beforeEach(() => {
   options.length = 0;
   closeCount = 0;
   failure = "first";
+});
+
+test("does not try SSE when Streamable HTTP proves the connection was refused", async () => {
+  failure = "refused";
+  await expect(createRemoteClient("id", { url: "http://127.0.0.1:45670/mcp" }))
+    .rejects.toBeInstanceOf(McpRequestNotSent);
+  expect(attempts).toEqual(["http"]);
+  expect(closeCount).toBe(1);
 });
 
 test("tries Streamable HTTP before SSE and forwards request headers to both", async () => {

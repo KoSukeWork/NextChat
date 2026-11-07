@@ -1,6 +1,7 @@
 import {
   isMcpEnabled,
   getClientsStatus,
+  reconnectMcpErrors,
   getClientTools,
   getAvailableClientsCount,
   getAllTools,
@@ -49,6 +50,7 @@ describe("MCP server actions require MCP to be enabled", () => {
 
     test.each<[string, () => Promise<unknown>]>([
       ["getClientsStatus", () => getClientsStatus("")],
+      ["reconnectMcpErrors", () => reconnectMcpErrors("")],
       ["getClientTools", () => getClientTools("x", "")],
       ["getAvailableClientsCount", () => getAvailableClientsCount("")],
       ["getAllTools", () => getAllTools("")],
@@ -96,6 +98,12 @@ describe("MCP server actions require MCP to be enabled", () => {
 
     test("getMcpConfigFromFile rejects an invalid access code", async () => {
       await expect(getMcpConfigFromFile("wrong-code")).rejects.toThrow(
+        "Unauthorized MCP request",
+      );
+    });
+
+    test("on-demand reconnect requires the access code", async () => {
+      await expect(reconnectMcpErrors("wrong-code")).rejects.toThrow(
         "Unauthorized MCP request",
       );
     });

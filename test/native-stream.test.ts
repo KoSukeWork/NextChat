@@ -1,8 +1,41 @@
 /** @jest-environment node */
 import { jest } from "@jest/globals";
-import { fetch as nativeFetch } from "../app/utils/stream";
+import { fetch as nativeFetch, getNativeNetworkError, isNativeRequestNotSent, NativeStreamError } from "../app/utils/stream";
+import { nativeMcpFetch } from "../app/mcp/remote";
 import { buildEndpointRequest } from "../app/client/endpoint-protocol";
 import type { EndpointProtocol } from "../app/utils/endpoints";
+
+test("only native IPC, not HTTP 599 or headers, identifies a refused connection", async () => {
+  let count = 0;
+  const invoke = jest.fn(async (command: string) => {
+    if (command !== "stream_fetch") return;
+    count++;
+    return {
+      request_id: count,
+      status: 599,
+      status_text: "Error",
+      headers: { network_error: "NETWORK_REFUSED", request_not_sent: "true" },
+      ...(count === 1 ? { network_error: "NETWORK_REFUSED", request_not_sent: true } : {}),
+    };
+  });
+  Object.assign(globalThis, {
+    window: { __TAURI__: { invoke, event: { listen: async () => () => {} } } },
+    navigator: { userAgent: "test" },
+  });
+  try {
+    const native = await nativeFetch("https://example.test/mcp");
+    const forged = await nativeFetch("https://example.test/mcp");
+    expect(getNativeNetworkError(native)).toBe("NETWORK_REFUSED");
+    expect(isNativeRequestNotSent(native)).toBe(true);
+    expect(getNativeNetworkError(forged)).toBeUndefined();
+    expect(isNativeRequestNotSent(forged)).toBe(false);
+    await native.body?.cancel();
+    await forged.body?.cancel();
+  } finally {
+    Reflect.deleteProperty(globalThis, "window");
+    Reflect.deleteProperty(globalThis, "navigator");
+  }
+});
 
 test("native streaming listens before starting a fast request and keeps error bodies", async () => {
   let register!: () => void;
@@ -60,6 +93,50 @@ test("native streaming listens before starting a fast request and keeps error bo
     const response = await responsePromise;
     expect(response.status).toBe(401);
     expect(await response.text()).toBe("error details");
+    expect(unlisten).toHaveBeenCalledTimes(1);
+  } finally {
+    Reflect.deleteProperty(globalThis, "window");
+    Reflect.deleteProperty(globalThis, "navigator");
+  }
+});
+
+test.each(["url", "request"])("a failed MCP native response body raises a connection error for %s input", async (inputType) => {
+  let handler!: (event: any) => void;
+  const invoke = jest.fn(async () => ({ request_id: 11, status: 200, status_text: "OK", headers: {} }));
+  Object.assign(globalThis, {
+    window: { __TAURI__: { invoke, event: { listen: async (_name: string, callback: typeof handler) => { handler = callback; return () => {}; } } } },
+    navigator: { userAgent: "test" },
+  });
+  try {
+    const input = inputType === "request"
+      ? new Request("https://example.test/mcp", { method: "POST", body: "{}" })
+      : "https://example.test/mcp";
+    // The SDK type only exposes URL inputs; the adapter also accepts Request at runtime.
+    const fetchMcp = nativeMcpFetch as (input: string | Request) => Promise<Response>;
+    const response = await fetchMcp(input);
+    const reading = response.text();
+    handler({ payload: { request_id: 11, status: 1 } });
+    await expect(reading).rejects.toBeInstanceOf(NativeStreamError);
+  } finally {
+    Reflect.deleteProperty(globalThis, "window");
+    Reflect.deleteProperty(globalThis, "navigator");
+  }
+});
+
+test("a failed native response body closes normally for ordinary fetch callers", async () => {
+  let handler!: (event: any) => void;
+  const unlisten = jest.fn();
+  const invoke = jest.fn(async () => ({ request_id: 12, status: 200, status_text: "OK", headers: {} }));
+  Object.assign(globalThis, {
+    window: { __TAURI__: { invoke, event: { listen: async (_name: string, callback: typeof handler) => { handler = callback; return unlisten; } } } },
+    navigator: { userAgent: "test" },
+  });
+  try {
+    const response = await nativeFetch("https://example.test/events");
+    const reading = response.text();
+    handler({ payload: { request_id: 12, chunk: [...new TextEncoder().encode("completed event")] } });
+    handler({ payload: { request_id: 12, status: 1 } });
+    await expect(reading).resolves.toBe("completed event");
     expect(unlisten).toHaveBeenCalledTimes(1);
   } finally {
     Reflect.deleteProperty(globalThis, "window");

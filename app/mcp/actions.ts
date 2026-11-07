@@ -34,6 +34,15 @@ import { headers as requestHeaders } from "next/headers";
 import fs from "fs/promises";
 import path from "path";
 import md5 from "spark-md5";
+import {
+  isLocalMcpRequestTimeout,
+  isMcpConnectionFailure,
+  McpCallTracker,
+  McpReconnectTimeout,
+  McpRequestNotSent,
+  ReconnectCoordinator,
+  untilAborted,
+} from "./reconnect";
 
 const logger = new MCPClientLogger("MCP Actions");
 const oauth = oauthRuntime(MCP_OAUTH_PATH);
@@ -48,6 +57,25 @@ const clientMaps: Map<string, Map<string, McpClientData>> = (sharedClients[
 const clientsMap: Map<string, McpClientData> =
   clientMaps.get(CONFIG_PATH) ?? new Map();
 clientMaps.set(CONFIG_PATH, clientsMap);
+const callsKey = Symbol.for("nextchat.mcp.server.calls");
+const callsShared = globalThis as typeof globalThis & {
+  [callsKey]?: Map<
+    string,
+    {
+      tracker: McpCallTracker;
+      safeOrigins: WeakSet<McpClientData>;
+      closedOrigins: WeakMap<McpClientData, McpClientData>;
+    }
+  >;
+};
+const callsMaps = (callsShared[callsKey] ??= new Map());
+const callsState = callsMaps.get(CONFIG_PATH) ?? {
+  tracker: new McpCallTracker(),
+  safeOrigins: new WeakSet<McpClientData>(),
+  closedOrigins: new WeakMap<McpClientData, McpClientData>(),
+};
+callsState.closedOrigins ??= new WeakMap();
+callsMaps.set(CONFIG_PATH, callsState);
 
 async function isCurrentOAuthServer(clientId: string, serverUrl: string) {
   try {
@@ -182,6 +210,7 @@ export async function getAvailableClientsCount(accessCode: string) {
 // 获取所有客户端工具
 export async function getAllTools(accessCode: string) {
   await assertMcpAuthorized(accessCode);
+  await retryFailed();
   const result = [];
   for (const [clientId, status] of clientsMap.entries()) {
     if (!status.client || status.errorMsg || !status.tools) continue;
@@ -193,10 +222,17 @@ export async function getAllTools(accessCode: string) {
   return result;
 }
 
+/** Called once when the MCP page opens; status polling itself never reconnects. */
+export async function reconnectMcpErrors(accessCode: string) {
+  await assertMcpAuthorized(accessCode);
+  await retryFailed();
+}
+
 // 初始化单个客户端
 async function initializeSingleClient(
   clientId: string,
   serverConfig: ServerConfig,
+  signal?: AbortSignal,
 ) {
   // 如果服务器状态是暂停，则不初始化
   if (serverConfig.status === "paused") {
@@ -216,28 +252,39 @@ async function initializeSingleClient(
   let client: Awaited<ReturnType<typeof createClient>> | undefined;
   let oauthAuthenticated = false;
   try {
-    if (previous) await removeClient(previous);
+    if (signal?.aborted) throw new McpReconnectTimeout();
+    if (previous) await untilAborted(removeClient(previous), signal);
     // A pause, removal or newer start can supersede this background operation.
     if (clientsMap.get(clientId) !== pending) return;
     const provider =
       isRemoteServer(serverConfig) &&
       !hasManualAuthorization(serverConfig.headers)
-        ? await backgroundServerOAuth(
-            oauth,
-            clientId,
-            httpUrl(serverConfig.url).href,
-            () =>
-              isCurrentOAuthServer(clientId, httpUrl(serverConfig.url).href),
+        ? await untilAborted(
+            backgroundServerOAuth(
+              oauth,
+              clientId,
+              httpUrl(serverConfig.url).href,
+              () =>
+                isCurrentOAuthServer(clientId, httpUrl(serverConfig.url).href),
+            ),
+            signal,
           )
         : undefined;
     if (clientsMap.get(clientId) !== pending) return;
     oauthAuthenticated = !!provider;
-    client = await createClient(clientId, serverConfig, provider);
+    if (signal?.aborted) throw new McpReconnectTimeout();
+    const connecting = createClient(clientId, serverConfig, provider, signal);
+    client = await untilAborted(connecting, signal, () => {
+      void connecting.then((late) => removeClient(late)).catch(() => {});
+    });
     if (clientsMap.get(clientId) !== pending) {
       await removeClient(client);
       return;
     }
-    const tools = await listTools(client);
+    const tools = await untilAborted(listTools(client, signal), signal, () => {
+      if (client) void removeClient(client).catch(() => {});
+    });
+    if (signal?.aborted) throw new McpReconnectTimeout();
     if (clientsMap.get(clientId) !== pending) {
       await removeClient(client);
       return;
@@ -250,24 +297,68 @@ async function initializeSingleClient(
     });
     const connectedClient = client;
     connectedClient.onerror = (error) => {
+      const current = clientsMap.get(clientId);
       if (
-        error instanceof OAuthLoginNeeded &&
-        clientsMap.get(clientId)?.client === connectedClient
+        (error instanceof OAuthLoginNeeded ||
+          error instanceof OAuthPreRegisteredClientRequired) &&
+        current?.client === connectedClient
       ) {
         clientsMap.set(clientId, {
           client: null,
           tools: null,
-          errorMsg: "OAuth login required",
-          oauthStatus: "login-required",
-          oauthAuthenticated: true,
-          oauthMetadataUrl: error.resourceMetadataUrl,
+          errorMsg:
+            error instanceof OAuthLoginNeeded
+              ? "OAuth login required"
+              : "OAuth server requires a pre-registered client",
+          oauthStatus:
+            error instanceof OAuthLoginNeeded
+              ? "login-required"
+              : "oauth-unsupported",
+          oauthAuthenticated,
+          oauthMetadataUrl:
+            error instanceof OAuthLoginNeeded
+              ? error.resourceMetadataUrl
+              : undefined,
         });
         void removeClient(connectedClient).catch(() => {});
+      } else if (
+        current?.client === connectedClient &&
+        isMcpConnectionFailure(error, connectedClient)
+      ) {
+        const failed: McpClientData = {
+          client: null,
+          tools: null,
+          errorMsg: isRemoteServer(serverConfig)
+            ? safeRemoteError(error)
+            : error.message,
+          oauthAuthenticated,
+        };
+        callsState.closedOrigins.set(current, failed);
+        clientsMap.set(clientId, failed);
+        callsState.tracker.retire(connectedClient, () => {
+          void removeClient(connectedClient).catch(() => {});
+        });
+      }
+    };
+    connectedClient.onclose = () => {
+      const previous = clientsMap.get(clientId);
+      if (previous?.client === connectedClient) {
+        const closed: McpClientData = {
+          client: null,
+          tools: null,
+          errorMsg: "MCP server disconnected",
+          oauthAuthenticated,
+        };
+        callsState.closedOrigins.set(previous, closed);
+        clientsMap.set(clientId, closed);
       }
     };
     logger.success(`Client [${clientId}] initialized successfully`);
   } catch (error) {
-    if (client) await removeClient(client).catch(() => {});
+    if (client) {
+      if (signal?.aborted) void removeClient(client).catch(() => {});
+      else await removeClient(client).catch(() => {});
+    }
     if (clientsMap.get(clientId) !== pending) return;
     const message = isRemoteServer(serverConfig)
       ? safeRemoteError(error)
@@ -293,6 +384,44 @@ async function initializeSingleClient(
     });
     logger.error(`Failed to initialize client [${clientId}]: ${message}`);
   }
+}
+
+const reconnectKey = Symbol.for("nextchat.mcp.server.reconnects");
+const reconnectShared = globalThis as typeof globalThis & {
+  [reconnectKey]?: Map<string, ReconnectCoordinator>;
+};
+const reconnectMaps = (reconnectShared[reconnectKey] ??= new Map());
+const reconnects =
+  reconnectMaps.get(CONFIG_PATH) ??
+  new ReconnectCoordinator(async (ids, signal) => {
+    const config = await untilAborted(readMcpConfig(), signal);
+    await Promise.all(
+      ids.map(async (id) => {
+        const server = config.mcpServers[id];
+        const current = clientsMap.get(id);
+        if (
+          !signal.aborted &&
+          server &&
+          server.status !== "paused" &&
+          current?.errorMsg &&
+          !current.oauthStatus
+        )
+          await initializeSingleClient(id, server, signal);
+      }),
+    );
+  });
+reconnectMaps.set(CONFIG_PATH, reconnects);
+
+function retryFailed(ids?: string[]) {
+  const selected = ids ?? [
+    ...new Set([
+      ...[...clientsMap.entries()]
+        .filter(([, entry]) => !!entry.errorMsg && !entry.oauthStatus)
+        .map(([id]) => id),
+      ...reconnects.pendingIds(),
+    ]),
+  ];
+  return reconnects.reconnect(selected);
 }
 
 // 初始化系统
@@ -328,6 +457,7 @@ export async function addMcpServer(
   try {
     const validated = parseMcpConfig({ mcpServers: { [clientId]: config } });
     config = validated.mcpServers[clientId];
+    reconnects.cancel(clientId);
     const currentConfig = await getMcpConfigFromFile(accessCode);
     const isNewServer = !(clientId in currentConfig.mcpServers);
 
@@ -344,10 +474,16 @@ export async function addMcpServer(
       },
     };
     await updateMcpConfig(newConfig);
+    reconnects.cancel(clientId);
 
     // 只有新服务器或状态为 active 的服务器才初始化
     if (config.status !== "paused") {
       await initializeSingleClient(clientId, config);
+    } else {
+      // An edit can retain a paused status while an older reconnect is pending.
+      const previous = clientsMap.get(clientId);
+      clientsMap.delete(clientId);
+      if (previous?.client) await removeClient(previous.client);
     }
 
     return newConfig;
@@ -360,6 +496,7 @@ export async function addMcpServer(
 // 暂停服务器
 export async function pauseMcpServer(clientId: string, accessCode: string) {
   await assertMcpAuthorized(accessCode);
+  reconnects.cancel(clientId);
   try {
     const currentConfig = await getMcpConfigFromFile(accessCode);
     const serverConfig = currentConfig.mcpServers[clientId];
@@ -379,6 +516,7 @@ export async function pauseMcpServer(clientId: string, accessCode: string) {
       },
     };
     await updateMcpConfig(newConfig);
+    reconnects.cancel(clientId);
 
     // 然后关闭客户端
     const client = clientsMap.get(clientId);
@@ -400,6 +538,7 @@ export async function resumeMcpServer(
   accessCode: string,
 ): Promise<void> {
   await assertMcpAuthorized(accessCode);
+  reconnects.cancel(clientId);
   try {
     const currentConfig = await getMcpConfigFromFile(accessCode);
     const serverConfig = currentConfig.mcpServers[clientId];
@@ -420,6 +559,7 @@ export async function resumeMcpServer(
         },
       };
       await updateMcpConfig(newConfig);
+      reconnects.cancel(clientId);
       await initializeSingleClient(clientId, newConfig.mcpServers[clientId]);
       const started = clientsMap.get(clientId);
       if (!started?.client)
@@ -460,6 +600,7 @@ export async function resumeMcpServer(
 // 移除服务器
 export async function removeMcpServer(clientId: string, accessCode: string) {
   await assertMcpAuthorized(accessCode);
+  reconnects.cancel(clientId);
   try {
     const currentConfig = await getMcpConfigFromFile(accessCode);
     const { [clientId]: _, ...rest } = currentConfig.mcpServers;
@@ -468,6 +609,7 @@ export async function removeMcpServer(clientId: string, accessCode: string) {
       mcpServers: rest,
     };
     await updateMcpConfig(newConfig);
+    reconnects.cancel(clientId);
 
     // 关闭并移除客户端
     const client = clientsMap.get(clientId);
@@ -486,6 +628,7 @@ export async function removeMcpServer(clientId: string, accessCode: string) {
 // 重启所有客户端
 export async function restartAllClients(accessCode: string) {
   await assertMcpAuthorized(accessCode);
+  reconnects.cancel();
   logger.info("Restarting all clients...");
   try {
     // 关闭所有客户端
@@ -516,32 +659,127 @@ export async function executeMcpAction(
   accessCode: string,
 ) {
   await assertMcpAuthorized(accessCode);
+  const config = await readMcpConfig();
+  const server = config.mcpServers[clientId];
+  const initialEpoch = oauth.epochs.get(clientId) ?? 0;
+  let entry = clientsMap.get(clientId);
+  if (
+    server?.status !== "paused" &&
+    ((entry?.errorMsg && !entry.oauthStatus) ||
+      reconnects.pendingIds().includes(clientId))
+  ) {
+    await retryFailed([clientId]);
+    entry = clientsMap.get(clientId);
+  }
+  if (
+    !server ||
+    server.status === "paused" ||
+    !entry?.client ||
+    entry.errorMsg ||
+    entry.oauthStatus
+  )
+    throw new Error(`Client ${clientId} not found`);
+
+  const remote = isRemoteServer(server);
+  const messageFor = (error: unknown) =>
+    remote
+      ? safeRemoteError(error)
+      : error instanceof Error
+      ? error.message
+      : String(error);
+  const markError = (current: McpClientData, error: unknown) => {
+    if (clientsMap.get(clientId) !== current || current.oauthStatus)
+      return false;
+    const client = current.client;
+    const oauthStatus =
+      error instanceof OAuthLoginNeeded
+        ? "login-required"
+        : error instanceof OAuthPreRegisteredClientRequired
+        ? "oauth-unsupported"
+        : undefined;
+    if (!oauthStatus && !isMcpConnectionFailure(error, client ?? undefined))
+      return false;
+    clientsMap.set(clientId, {
+      client: null,
+      tools: null,
+      errorMsg:
+        oauthStatus === "login-required"
+          ? "OAuth login required"
+          : oauthStatus === "oauth-unsupported"
+          ? "OAuth server requires a pre-registered client"
+          : messageFor(error),
+      oauthStatus,
+      oauthAuthenticated: current.oauthAuthenticated,
+      oauthMetadataUrl:
+        error instanceof OAuthLoginNeeded
+          ? error.resourceMetadataUrl
+          : undefined,
+    });
+    if (client)
+      callsState.tracker.retire(client, () => {
+        void removeClient(client).catch(() => {});
+      });
+    return !oauthStatus;
+  };
+  const callOnce = async (current: McpClientData) => {
+    const client = current.client!;
+    return callsState.tracker.run(client, async () => {
+      if (
+        clientsMap.get(clientId) !== current ||
+        current.errorMsg ||
+        current.oauthStatus
+      )
+        throw new Error("MCP server changed");
+      if ("transport" in client && !client.transport)
+        throw new McpRequestNotSent("closed");
+      return await executeRequest(client, request);
+    });
+  };
   try {
-    const client = clientsMap.get(clientId);
-    if (!client?.client) {
-      throw new Error(`Client ${clientId} not found`);
-    }
-    logger.info(`Executing request for [${clientId}]`);
-    return await executeRequest(client.client, request);
+    return await callOnce(entry);
   } catch (error) {
-    const config = await getMcpConfigFromFile(accessCode);
-    const server = config.mcpServers[clientId];
-    const message =
-      server && isRemoteServer(server)
-        ? safeRemoteError(error)
-        : error instanceof Error
-        ? error.message
-        : String(error);
+    const marked = markError(entry, error);
+    const closedEntry = callsState.closedOrigins.get(entry);
+    const closedByTransport =
+      !!closedEntry && closedEntry === clientsMap.get(clientId);
+    if ((marked || closedByTransport) && error instanceof McpRequestNotSent)
+      callsState.safeOrigins.add(entry);
+    const retry =
+      error instanceof McpRequestNotSent &&
+      callsState.safeOrigins.has(entry) &&
+      (marked ||
+        closedByTransport ||
+        reconnects.pendingIds().includes(clientId));
+    if (retry) {
+      await retryFailed([clientId]);
+      const replacement = clientsMap.get(clientId);
+      const latest = (await readMcpConfig()).mcpServers[clientId];
+      if (
+        replacement?.client &&
+        !replacement.errorMsg &&
+        !replacement.oauthStatus &&
+        latest &&
+        latest.status !== "paused" &&
+        JSON.stringify(latest) === JSON.stringify(server) &&
+        (oauth.epochs.get(clientId) ?? 0) === initialEpoch
+      ) {
+        try {
+          return await callOnce(replacement);
+        } catch (retryError) {
+          markError(replacement, retryError);
+          if (isLocalMcpRequestTimeout(retryError)) throw retryError;
+          throw new Error(messageFor(retryError));
+        }
+      }
+    }
+    const message = messageFor(error);
     logger.error(`Failed to execute request for [${clientId}]: ${message}`);
+    if (isLocalMcpRequestTimeout(error)) throw error;
     throw new Error(message);
   }
 }
 
-// 获取 MCP 配置文件
-export async function getMcpConfigFromFile(
-  accessCode: string,
-): Promise<McpConfigData> {
-  await assertMcpAuthorized(accessCode);
+async function readMcpConfig(): Promise<McpConfigData> {
   try {
     const configStr = await fs.readFile(CONFIG_PATH, "utf-8");
     return parseMcpConfig(JSON.parse(configStr));
@@ -552,6 +790,14 @@ export async function getMcpConfigFromFile(
   }
 }
 
+// 获取 MCP 配置文件
+export async function getMcpConfigFromFile(
+  accessCode: string,
+): Promise<McpConfigData> {
+  await assertMcpAuthorized(accessCode);
+  return readMcpConfig();
+}
+
 /** Merge an imported or pasted config only after authorization and validation. */
 export async function mergeMcpServers(
   incoming: McpConfigData,
@@ -559,12 +805,14 @@ export async function mergeMcpServers(
 ) {
   await assertMcpAuthorized(accessCode);
   const additions = parseMcpConfig(incoming);
+  for (const id of Object.keys(additions.mcpServers)) reconnects.cancel(id);
   const current = await getMcpConfigFromFile(accessCode);
   const merged = parseMcpConfig({
     mcpServers: { ...current.mcpServers, ...additions.mcpServers },
   });
   await updateMcpConfig(merged);
   for (const [id, server] of Object.entries(additions.mcpServers)) {
+    reconnects.cancel(id);
     if (server.status === "paused") {
       const old = clientsMap.get(id)?.client;
       clientsMap.delete(id);
@@ -584,6 +832,7 @@ export async function beginMcpOAuth(
   accessCode: string,
 ) {
   await assertMcpAuthorized(accessCode);
+  reconnects.cancel(clientId);
   const config = await getMcpConfigFromFile(accessCode);
   const server = config.mcpServers[clientId];
   const entry = clientsMap.get(clientId);
@@ -620,7 +869,10 @@ export async function beginMcpOAuth(
           const current = parseMcpConfig(
             JSON.parse(await fs.readFile(CONFIG_PATH, "utf8")),
           ).mcpServers[clientId];
-          if (current) await initializeSingleClient(clientId, current);
+          if (current) {
+            reconnects.cancel(clientId);
+            await initializeSingleClient(clientId, current);
+          }
         }
       },
     });
@@ -634,17 +886,20 @@ export async function beginMcpOAuth(
 
 export async function cancelMcpOAuth(clientId: string, accessCode: string) {
   await assertMcpAuthorized(accessCode);
+  reconnects.cancel(clientId);
   invalidateServerOAuth(oauth, clientId);
 }
 
 export async function logoutMcpOAuth(clientId: string, accessCode: string) {
   await assertMcpAuthorized(accessCode);
+  reconnects.cancel(clientId);
   const config = await getMcpConfigFromFile(accessCode);
   const server = config.mcpServers[clientId];
   if (!server || !isRemoteServer(server))
     throw new Error("OAuth login is unavailable");
   invalidateServerOAuth(oauth, clientId);
   await oauth.store.remove(clientId);
+  reconnects.cancel(clientId);
   const old = clientsMap.get(clientId)?.client;
   clientsMap.delete(clientId);
   if (old) await removeClient(old).catch(() => {});

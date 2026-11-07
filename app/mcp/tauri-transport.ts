@@ -4,6 +4,7 @@ import {
   type JSONRPCMessage,
 } from "@modelcontextprotocol/sdk/types.js";
 import { invoke, listen } from "./tauri-api";
+import { McpRequestNotSent } from "./reconnect";
 
 interface ProcessEvent {
   id: string;
@@ -87,12 +88,22 @@ export class TauriStdioTransport implements Transport {
 
   async send(message: JSONRPCMessage) {
     if (this.closed || this.runId === undefined)
-      throw new Error("MCP connection is closed");
-    await invoke("mcp_send", {
-      id: this.id,
-      runId: this.runId,
-      line: JSON.stringify(message),
-    });
+      throw new McpRequestNotSent("closed");
+    try {
+      await invoke("mcp_send", {
+        id: this.id,
+        runId: this.runId,
+        line: JSON.stringify(message),
+      });
+    } catch (error) {
+      // Rust returns this only when no matching process exists, before any write.
+      if (
+        error instanceof Error &&
+        error.message === "MCP connection is closed"
+      )
+        throw new McpRequestNotSent("closed");
+      throw error;
+    }
   }
 
   close(): Promise<void> {
