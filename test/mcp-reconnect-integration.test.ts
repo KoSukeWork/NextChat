@@ -187,11 +187,15 @@ test("a five-second reconnect continues after the caller's deadline and is share
     expect(elapsed).toBeLessThan(4500);
     expect(tools.some((item) => item.clientId === id)).toBe(false);
     expect((await actions.getClientsStatus(code))[id].status).toBe("initializing");
-    const again = actions.getAllTools(code);
+    const secondStarted = performance.now();
+    const again = await actions.getAllTools(code);
+    expect(performance.now() - secondStarted).toBeLessThan(500);
+    expect(again.some((item) => item.clientId === id)).toBe(false);
     await new Promise<void>((resolve) => setTimeout(resolve, 2000));
     expect(mock.stats.initialize).toBe(1);
     gate.release();
-    expect((await again).find((item) => item.clientId === id)?.tools.tools).toHaveLength(1);
+    await actions.reconnectMcpErrors(code);
+    expect((await actions.getAllTools(code)).find((item) => item.clientId === id)?.tools.tools).toHaveLength(1);
     expect((await actions.getClientsStatus(code))[id].status).toBe("active");
     expect(mock.stats.initialize).toBe(1);
   } finally {

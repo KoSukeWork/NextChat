@@ -152,18 +152,50 @@ export function untilAborted<T>(
   });
 }
 
+/** Track consecutive failed attempts without scheduling background work. */
+export class ReconnectBackoff {
+  private readonly failures = new Map<
+    string,
+    { count: number; until: number }
+  >();
+
+  constructor(private readonly now: () => number = () => Date.now()) {}
+
+  recordFailure(id: string) {
+    const count = Math.min((this.failures.get(id)?.count ?? 0) + 1, 5);
+    const delay = Math.min(30_000 * 2 ** (count - 1), 300_000);
+    this.failures.set(id, { count, until: this.now() + delay });
+  }
+
+  reset(id?: string) {
+    if (id === undefined) this.failures.clear();
+    else this.failures.delete(id);
+  }
+
+  inCooldown(id: string) {
+    const state = this.failures.get(id);
+    return !!state && this.now() < state.until;
+  }
+}
+
+type ReconnectOutcome = "success" | "failure" | "skipped";
+type ReconnectFlight = {
+  controller: AbortController;
+  done: Promise<void>;
+  cancelled: boolean;
+  messageWaitExpired: boolean;
+};
+
 /** Single-flight per id; different ids in one request are started in parallel. */
 export class ReconnectCoordinator {
-  private readonly inFlight = new Map<
-    string,
-    { controller: AbortController; done: Promise<void> }
-  >();
+  private readonly inFlight = new Map<string, ReconnectFlight>();
+  private readonly backoff = new ReconnectBackoff();
 
   constructor(
     private readonly start: (
       ids: string[],
       signal: AbortSignal,
-    ) => Promise<void>,
+    ) => Promise<ReconnectOutcome | void>,
   ) {}
 
   pendingIds() {
@@ -171,49 +203,83 @@ export class ReconnectCoordinator {
   }
 
   cancel(id?: string) {
+    // All callers of cancel are user operations; they also clear the cooldown.
+    this.backoff.reset(id);
     const ids = id === undefined ? this.pendingIds() : [id];
     for (const selected of ids) {
       const flight = this.inFlight.get(selected);
       if (!flight) continue;
       this.inFlight.delete(selected);
+      flight.cancelled = true;
       flight.controller.abort();
     }
   }
 
-  async reconnect(ids: string[]) {
+  reset(id: string) {
+    this.backoff.reset(id);
+  }
+
+  async reconnect(ids: string[], mode: "message" | "force" = "force") {
     ids = [...new Set(ids)];
+    if (mode === "message") {
+      ids = ids.filter(
+        (id) =>
+          !this.backoff.inCooldown(id) &&
+          !this.inFlight.get(id)?.messageWaitExpired,
+      );
+    }
     if (!ids.length) return;
     const fresh = ids.filter((id) => !this.inFlight.has(id));
     for (const id of fresh) {
       const controller = new AbortController();
       const deadline = setTimeout(() => controller.abort(), 60000);
-      const flight = { controller, done: Promise.resolve() };
+      const flight: ReconnectFlight = {
+        controller,
+        done: Promise.resolve(),
+        cancelled: false,
+        messageWaitExpired: false,
+      };
       flight.done = Promise.resolve()
-        .then(() => {
+        .then(async () => {
           if (controller.signal.aborted) return;
-          return untilAborted(
+          const outcome = await untilAborted(
             this.start([id], controller.signal),
             controller.signal,
           );
+          if (flight.cancelled) return;
+          if (outcome === "success") this.backoff.reset(id);
+          else if (outcome === "failure") this.backoff.recordFailure(id);
         })
-        .catch(() => {})
+        .catch(() => {
+          // The 60 s overall deadline is a failed attempt; user cancellation is not.
+          if (controller.signal.aborted && !flight.cancelled)
+            this.backoff.recordFailure(id);
+        })
         .finally(() => {
           clearTimeout(deadline);
           if (this.inFlight.get(id) === flight) this.inFlight.delete(id);
         });
       this.inFlight.set(id, flight);
     }
-    const flights = ids
-      .map((id) => this.inFlight.get(id)?.done)
-      .filter(Boolean);
+    const flights = ids.map((id) => [id, this.inFlight.get(id)!] as const);
+    const wait = new AbortController();
+    const waitDeadline = setTimeout(() => wait.abort(), 3000);
     try {
       // Only this caller stops waiting; the shared attempt continues for up to 60 s.
       await untilAborted(
-        Promise.all(flights).then(() => {}),
-        AbortSignal.timeout(3000),
+        Promise.all(flights.map(([, flight]) => flight.done)).then(() => {}),
+        wait.signal,
       );
     } catch {
+      if (mode === "message" && wait.signal.aborted) {
+        for (const [id, flight] of flights) {
+          if (this.inFlight.get(id) === flight)
+            flight.messageWaitExpired = true;
+        }
+      }
       // A failed or timed-out reconnect must not prevent the user's message.
+    } finally {
+      clearTimeout(waitDeadline);
     }
   }
 }

@@ -57,13 +57,15 @@ const safeOrigins = new WeakSet<Entry>();
 let mutations: Promise<unknown> = Promise.resolve();
 let oauthMutations: Promise<unknown> = Promise.resolve();
 let pendingUserMutations = 0;
+const allServers = Symbol("all MCP servers");
 
 // Keep read/modify/write and start/stop operations ordered, including concurrent UI clicks.
 function mutate<T>(
   operation: () => Promise<T>,
-  preempt?: string | "*",
+  preempt?: string | string[] | typeof allServers,
 ): Promise<T> {
-  if (preempt === "*") reconnects.cancel();
+  if (Array.isArray(preempt)) preempt.forEach((id) => reconnects.cancel(id));
+  else if (preempt === allServers) reconnects.cancel();
   else if (preempt !== undefined) reconnects.cancel(preempt);
   pendingUserMutations++;
   const result = mutations.then(operation).finally(() => {
@@ -236,6 +238,7 @@ async function start(id: string, server: ServerConfig, signal?: AbortSignal) {
     entry.tools = { tools };
     entry.status = "active";
     entry.errorMsg = null;
+    reconnects.reset(id);
   } catch (error) {
     entry.status =
       error instanceof OAuthLoginNeeded
@@ -269,24 +272,27 @@ async function startConfigured(config: McpConfigData) {
 }
 
 const reconnects = new ReconnectCoordinator(async (ids, signal) => {
-  if (signal.aborted || pendingUserMutations) return;
+  if (signal.aborted || pendingUserMutations) return "skipped";
   const config = await untilAborted(readConfig(), signal);
-  await Promise.all(
-    ids.map(async (id) => {
-      const server = config.mcpServers[id];
-      if (
-        !signal.aborted &&
-        !pendingUserMutations &&
-        server &&
-        server.status !== "paused" &&
-        clients.get(id)?.status === "error"
-      )
-        await start(id, server, signal).catch(() => {});
-    }),
-  );
+  const id = ids[0];
+  const server = config.mcpServers[id];
+  if (
+    signal.aborted ||
+    pendingUserMutations ||
+    !server ||
+    server.status === "paused" ||
+    clients.get(id)?.status !== "error"
+  )
+    return "skipped";
+  try {
+    await start(id, server, signal);
+    return "success";
+  } catch {
+    return signal.aborted ? "skipped" : "failure";
+  }
 });
 
-function retryFailed(ids?: string[]) {
+function retryFailed(ids?: string[], mode: "message" | "force" = "force") {
   const selected = ids ?? [
     ...new Set([
       ...[...clients.entries()]
@@ -295,7 +301,7 @@ function retryFailed(ids?: string[]) {
       ...reconnects.pendingIds(),
     ]),
   ];
-  return reconnects.reconnect(selected);
+  return reconnects.reconnect(selected, mode);
 }
 
 export const isMcpEnabled: typeof ServerActions.isMcpEnabled = async () =>
@@ -348,7 +354,7 @@ export const getAvailableClientsCount: typeof ServerActions.getAvailableClientsC
 export const getAllTools: typeof ServerActions.getAllTools = async (
   _accessCode,
 ) => {
-  await retryFailed();
+  await retryFailed(undefined, "message");
   return [...clients.entries()]
     .filter(([, entry]) => entry.status === "active" && entry.tools !== null)
     .map(([clientId, entry]) => ({ clientId, tools: entry.tools! }));
@@ -363,7 +369,7 @@ export const initializeMcpSystem: typeof ServerActions.initializeMcpSystem =
       const config = await readConfig();
       await startConfigured(config);
       return config;
-    }, "*");
+    });
 
 export const addMcpServer: typeof ServerActions.addMcpServer = async (
   id,
@@ -441,7 +447,7 @@ export const restartAllClients: typeof ServerActions.restartAllClients = async (
     const config = await readConfig();
     await startConfigured(config);
     return config;
-  }, "*");
+  }, allServers);
 
 export const executeMcpAction: typeof ServerActions.executeMcpAction = async (
   id,
@@ -544,29 +550,32 @@ export const mergeMcpServers: typeof ServerActions.mergeMcpServers = async (
   incoming,
   _accessCode,
 ) =>
-  mutate(async () => {
-    const additions = parseMcpConfig(incoming);
-    const config = await readConfig();
-    const merged = parseMcpConfig({
-      mcpServers: { ...config.mcpServers, ...additions.mcpServers },
-    });
-    await mutateOAuth(async () => {
-      await writeConfig(merged);
-      for (const id of Object.keys(additions.mcpServers))
-        await invalidateOAuth(id);
-    });
-    // Queue connection work after this mutation without holding up the import.
-    // Keeping it on the same queue serializes it with later edits and stops.
-    void mutate(async () => {
-      await Promise.all(
-        Object.entries(additions.mcpServers).map(async ([id, server]) => {
-          if (server.status === "paused") await stop(id).catch(() => {});
-          else await start(id, server).catch(() => {});
-        }),
-      );
-    }).catch(() => {});
-    return merged;
-  }, "*");
+  mutate(
+    async () => {
+      const additions = parseMcpConfig(incoming);
+      const config = await readConfig();
+      const merged = parseMcpConfig({
+        mcpServers: { ...config.mcpServers, ...additions.mcpServers },
+      });
+      await mutateOAuth(async () => {
+        await writeConfig(merged);
+        for (const id of Object.keys(additions.mcpServers))
+          await invalidateOAuth(id);
+      });
+      // Queue connection work after this mutation without holding up the import.
+      // Keeping it on the same queue serializes it with later edits and stops.
+      void mutate(async () => {
+        await Promise.all(
+          Object.entries(additions.mcpServers).map(async ([id, server]) => {
+            if (server.status === "paused") await stop(id).catch(() => {});
+            else await start(id, server).catch(() => {});
+          }),
+        );
+      }).catch(() => {});
+      return merged;
+    },
+    Object.keys(incoming?.mcpServers ?? {}),
+  );
 
 export const beginMcpOAuth: typeof ServerActions.beginMcpOAuth = async (
   id,

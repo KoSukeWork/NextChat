@@ -2,12 +2,12 @@
 import { jest } from "@jest/globals";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { McpConnectionError, McpRequestNotSent } from "../app/mcp/reconnect";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 const { OAuthLoginNeeded, OAuthPreRegisteredClientRequired } = await import("../app/mcp/oauth");
-type Mode = "error" | "ready" | "login" | "unsupported" | "gate";
+type Mode = "error" | "ready" | "login" | "unsupported" | "gate" | "gate-fail";
 const modes = new Map<string, Mode>();
 const attempts = new Map<string, number>();
 const removedClients: { id: string; attempt: number }[] = [];
@@ -25,9 +25,10 @@ const createClient = jest.fn(async (id: string, server: { url: string }) => {
   if (mode === "login") throw new OAuthLoginNeeded();
   if (mode === "unsupported") throw new OAuthPreRegisteredClientRequired();
   if (mode === "error") throw new Error("synthetic failure");
-  if (mode === "gate") {
+  if (mode === "gate" || mode === "gate-fail") {
     notifyStarted(id);
     await gate;
+    if (mode === "gate-fail") throw new Error("synthetic failure after waiting");
   }
   const client = { id, attempt, url: server.url, close: async () => {} };
   connectedClients.set(id, client);
@@ -97,6 +98,29 @@ test("paused and OAuth-specific states are not reconnected; status reads do not 
   expect(attempts.get("unsupported")).toBe(1);
 });
 
+test("a web startup failure does not delay the first demand reconnect", async () => {
+  created.push("startup");
+  modes.set("startup", "error");
+  await writeFile(path.join(process.env.NEXTCHAT_MCP_CONFIG_DIR!, "mcp_config.json"), JSON.stringify({
+    mcpServers: { startup: { url: "http://127.0.0.1:45670/mcp" } },
+  }));
+  await actions.initializeMcpSystem(code);
+  expect(attempts.get("startup")).toBe(1);
+  await actions.getAllTools(code);
+  expect(attempts.get("startup")).toBe(2);
+  await actions.getAllTools(code);
+  expect(attempts.get("startup")).toBe(2);
+});
+
+test("repeated web initialization preserves an existing cooldown", async () => {
+  await add("existing", "error");
+  await actions.getAllTools(code);
+  expect(attempts.get("existing")).toBe(2);
+  await actions.initializeMcpSystem(code);
+  await actions.getAllTools(code);
+  expect(attempts.get("existing")).toBe(2);
+});
+
 test("different failed servers reconnect in parallel", async () => {
   await add("a", "error");
   await add("b", "error");
@@ -116,6 +140,136 @@ test("different failed servers reconnect in parallel", async () => {
   }
   const tools = await reconnecting;
   expect(tools.map((item) => item.clientId).sort()).toEqual(["a", "b"]);
+});
+
+test("web message cooldown grows, forced actions bypass it, and success or user edits reset it", async () => {
+  jest.useFakeTimers({ doNotFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "setImmediate", "clearImmediate", "nextTick", "queueMicrotask", "performance"] });
+  try {
+    await add("cooldown", "error");
+    expect(attempts.get("cooldown")).toBe(1);
+    await actions.getAllTools(code);
+    expect(attempts.get("cooldown")).toBe(2);
+    await actions.getAllTools(code);
+    jest.advanceTimersByTime(29_999);
+    await actions.getAllTools(code);
+    expect(attempts.get("cooldown")).toBe(2);
+    jest.advanceTimersByTime(1);
+    await actions.getAllTools(code);
+    expect(attempts.get("cooldown")).toBe(3);
+    jest.advanceTimersByTime(30_000);
+    await actions.getAllTools(code);
+    expect(attempts.get("cooldown")).toBe(3);
+
+    await expect(actions.executeMcpAction("cooldown", { method: "tools/call" }, code)).rejects.toThrow();
+    expect(attempts.get("cooldown")).toBe(4);
+    await actions.reconnectMcpErrors(code);
+    expect(attempts.get("cooldown")).toBe(5);
+
+    modes.set("cooldown", "ready");
+    await actions.reconnectMcpErrors(code);
+    expect(attempts.get("cooldown")).toBe(6);
+    connectedClients.get("cooldown")?.onerror?.(new McpConnectionError("disconnected"));
+    modes.set("cooldown", "error");
+    await actions.getAllTools(code);
+    expect(attempts.get("cooldown")).toBe(7);
+    jest.advanceTimersByTime(29_999);
+    await actions.getAllTools(code);
+    expect(attempts.get("cooldown")).toBe(7);
+    jest.advanceTimersByTime(1);
+    await actions.getAllTools(code);
+    expect(attempts.get("cooldown")).toBe(8);
+
+    await actions.addMcpServer("cooldown", { url: "http://127.0.0.1:45671/mcp" }, code);
+    expect(attempts.get("cooldown")).toBe(9);
+    await actions.getAllTools(code);
+    expect(attempts.get("cooldown")).toBe(10);
+    await actions.pauseMcpServer("cooldown", code);
+    await expect(actions.resumeMcpServer("cooldown", code)).rejects.toThrow();
+    expect(attempts.get("cooldown")).toBe(11);
+    await actions.getAllTools(code);
+    expect(attempts.get("cooldown")).toBe(12);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("web slow failure counts once after the background attempt ends", async () => {
+  jest.useFakeTimers({ doNotFake: ["setImmediate", "clearImmediate", "nextTick", "queueMicrotask", "performance"] });
+  let release: () => void = () => {};
+  try {
+    await add("slow-failure", "error");
+    modes.set("slow-failure", "gate-fail");
+    gate = new Promise<void>((resolve) => { release = resolve; });
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => { started = resolve; });
+    notifyStarted = () => started();
+    const first = actions.getAllTools(code);
+    await startedPromise;
+    await jest.advanceTimersByTimeAsync(3000);
+    expect(await first).toEqual([]);
+    expect(await actions.getAllTools(code)).toEqual([]);
+    expect(attempts.get("slow-failure")).toBe(2);
+    let pageFinished = false;
+    const page = actions.reconnectMcpErrors(code).then(() => { pageFinished = true; });
+    await jest.advanceTimersByTimeAsync(1);
+    expect(pageFinished).toBe(false);
+    release();
+    await page;
+    await jest.advanceTimersByTimeAsync(0);
+    expect((await actions.getClientsStatus(code))["slow-failure"].status).toBe("error");
+    await actions.getAllTools(code);
+    jest.advanceTimersByTime(29_999);
+    await actions.getAllTools(code);
+    expect(attempts.get("slow-failure")).toBe(2);
+    jest.advanceTimersByTime(1);
+    await actions.getAllTools(code);
+    expect(attempts.get("slow-failure")).toBe(3);
+    jest.advanceTimersByTime(30_000);
+    await actions.getAllTools(code);
+    expect(attempts.get("slow-failure")).toBe(3);
+  } finally {
+    release();
+    jest.useRealTimers();
+  }
+});
+
+test("web user preemption does not count the cancelled attempt as a failure", async () => {
+  jest.useFakeTimers({ doNotFake: ["setImmediate", "clearImmediate", "nextTick", "queueMicrotask", "performance"] });
+  let release: () => void = () => {};
+  try {
+    await add("cancelled", "error");
+    modes.set("cancelled", "gate-fail");
+    gate = new Promise<void>((resolve) => { release = resolve; });
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => { started = resolve; });
+    notifyStarted = () => started();
+    const attempt = actions.getAllTools(code);
+    await startedPromise;
+    await jest.advanceTimersByTimeAsync(3000);
+    await attempt;
+    await actions.pauseMcpServer("cancelled", code);
+    release();
+    modes.set("cancelled", "error");
+    await expect(actions.resumeMcpServer("cancelled", code)).rejects.toThrow();
+    await actions.getAllTools(code);
+    expect(attempts.get("cancelled")).toBe(4);
+    jest.advanceTimersByTime(30_000);
+    await actions.getAllTools(code);
+    expect(attempts.get("cancelled")).toBe(5);
+  } finally {
+    release();
+    jest.useRealTimers();
+  }
+});
+
+test("editing one web server does not reset another server's cooldown", async () => {
+  await add("edited", "error");
+  await add("other", "error");
+  await actions.getAllTools(code);
+  await actions.addMcpServer("edited", { url: "http://127.0.0.1:45671/mcp" }, code);
+  await actions.getAllTools(code);
+  expect(attempts.get("edited")).toBe(4);
+  expect(attempts.get("other")).toBe(2);
 });
 
 test.each(["timeout", "rpc", "is-error"])("%s leaves the web connection active and reusable", async (mode) => {

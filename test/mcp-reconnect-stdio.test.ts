@@ -35,7 +35,9 @@ test("slow stdio startup continues once and tool errors reuse its process", asyn
     expect((await events()).filter((event) => event === "spawn")).toHaveLength(2);
 
     const second = await actions.getAllTools(code);
-    expect(second.find((item) => item.clientId === id)?.tools.tools).toHaveLength(1);
+    expect(second).toEqual([]);
+    await actions.reconnectMcpErrors(code);
+    expect((await actions.getAllTools(code)).find((item) => item.clientId === id)?.tools.tools).toHaveLength(1);
     expect((await events()).filter((event) => event === "spawn")).toHaveLength(2);
 
     expect(await actions.executeMcpAction(id, call("error"), code)).toMatchObject({ isError: true });

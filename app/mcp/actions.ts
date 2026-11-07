@@ -210,7 +210,7 @@ export async function getAvailableClientsCount(accessCode: string) {
 // 获取所有客户端工具
 export async function getAllTools(accessCode: string) {
   await assertMcpAuthorized(accessCode);
-  await retryFailed();
+  await retryFailed(undefined, "message");
   const result = [];
   for (const [clientId, status] of clientsMap.entries()) {
     if (!status.client || status.errorMsg || !status.tools) continue;
@@ -353,7 +353,9 @@ async function initializeSingleClient(
         clientsMap.set(clientId, closed);
       }
     };
+    reconnects.reset(clientId);
     logger.success(`Client [${clientId}] initialized successfully`);
+    return true;
   } catch (error) {
     if (client) {
       if (signal?.aborted) void removeClient(client).catch(() => {});
@@ -383,6 +385,7 @@ async function initializeSingleClient(
           : undefined,
     });
     logger.error(`Failed to initialize client [${clientId}]: ${message}`);
+    return false;
   }
 }
 
@@ -395,24 +398,27 @@ const reconnects =
   reconnectMaps.get(CONFIG_PATH) ??
   new ReconnectCoordinator(async (ids, signal) => {
     const config = await untilAborted(readMcpConfig(), signal);
-    await Promise.all(
-      ids.map(async (id) => {
-        const server = config.mcpServers[id];
-        const current = clientsMap.get(id);
-        if (
-          !signal.aborted &&
-          server &&
-          server.status !== "paused" &&
-          current?.errorMsg &&
-          !current.oauthStatus
-        )
-          await initializeSingleClient(id, server, signal);
-      }),
-    );
+    const id = ids[0];
+    const server = config.mcpServers[id];
+    const current = clientsMap.get(id);
+    if (
+      signal.aborted ||
+      !server ||
+      server.status === "paused" ||
+      !current?.errorMsg ||
+      current.oauthStatus
+    )
+      return "skipped";
+    const outcome = await initializeSingleClient(id, server, signal);
+    return outcome === true
+      ? "success"
+      : outcome === false
+      ? "failure"
+      : "skipped";
   });
 reconnectMaps.set(CONFIG_PATH, reconnects);
 
-function retryFailed(ids?: string[]) {
+function retryFailed(ids?: string[], mode: "message" | "force" = "force") {
   const selected = ids ?? [
     ...new Set([
       ...[...clientsMap.entries()]
@@ -421,7 +427,7 @@ function retryFailed(ids?: string[]) {
       ...reconnects.pendingIds(),
     ]),
   ];
-  return reconnects.reconnect(selected);
+  return reconnects.reconnect(selected, mode);
 }
 
 // 初始化系统

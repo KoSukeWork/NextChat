@@ -14,7 +14,7 @@ if (!AbortSignal.timeout) {
 }
 
 const { OAuthLoginNeeded, OAuthPreRegisteredClientRequired } = await import("../app/mcp/oauth");
-type Mode = "error" | "ready" | "login" | "unsupported" | "gate";
+type Mode = "error" | "ready" | "login" | "unsupported" | "gate" | "gate-fail";
 const modes = new Map<string, Mode>();
 const attempts = new Map<string, number>();
 const connectionUrls = new Map<string, string[]>();
@@ -34,7 +34,11 @@ const createRemoteClient = jest.fn(async (id: string, server: { url: string }) =
   if (mode === "error") throw new Error("NETWORK_REFUSED");
   if (mode === "login") throw new OAuthLoginNeeded();
   if (mode === "unsupported") throw new OAuthPreRegisteredClientRequired();
-  if (mode === "gate") { notifyStarted(id); await gate; }
+  if (mode === "gate" || mode === "gate-fail") {
+    notifyStarted(id);
+    await gate;
+    if (mode === "gate-fail") throw new Error("NETWORK_REFUSED");
+  }
   const client: any = {
     listTools: async () => ({ tools: [{ name: "echo", inputSchema: {} }] }),
     close: async () => { closed++; client.onclose?.(); },
@@ -126,6 +130,27 @@ test("only error states are retried; concurrent discovery shares one attempt", a
   expect(attempts.get("unsupported")).toBe(1);
 });
 
+test("a desktop startup failure does not delay the first demand reconnect", async () => {
+  created.push("startup");
+  modes.set("startup", "error");
+  config.mcpServers.startup = { url: "http://127.0.0.1:45670/mcp" };
+  await actions.initializeMcpSystem("");
+  expect(attempts.get("startup")).toBe(1);
+  await actions.getAllTools("");
+  expect(attempts.get("startup")).toBe(2);
+  await actions.getAllTools("");
+  expect(attempts.get("startup")).toBe(2);
+});
+
+test("repeated desktop initialization preserves an existing cooldown", async () => {
+  await add("existing", "error");
+  await actions.getAllTools("");
+  expect(attempts.get("existing")).toBe(2);
+  await actions.initializeMcpSystem("");
+  await actions.getAllTools("");
+  expect(attempts.get("existing")).toBe(2);
+});
+
 test("different desktop servers reconnect in parallel", async () => {
   await add("parallel-a", "error");
   await add("parallel-b", "error");
@@ -144,6 +169,138 @@ test("different desktop servers reconnect in parallel", async () => {
     release();
   }
   expect((await reconnecting).map((item) => item.clientId).sort()).toEqual(["parallel-a", "parallel-b"]);
+});
+
+test("desktop message cooldown grows, forced actions bypass it, and success or user edits reset it", async () => {
+  jest.useFakeTimers({ doNotFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "setImmediate", "clearImmediate", "nextTick", "queueMicrotask", "performance"] });
+  try {
+    await add("cooldown", "error");
+    expect(attempts.get("cooldown")).toBe(1);
+    await actions.getAllTools("");
+    expect(attempts.get("cooldown")).toBe(2);
+    await actions.getAllTools("");
+    jest.advanceTimersByTime(29_999);
+    await actions.getAllTools("");
+    expect(attempts.get("cooldown")).toBe(2);
+    jest.advanceTimersByTime(1);
+    await actions.getAllTools("");
+    expect(attempts.get("cooldown")).toBe(3);
+    jest.advanceTimersByTime(30_000);
+    await actions.getAllTools("");
+    expect(attempts.get("cooldown")).toBe(3);
+
+    await expect(actions.executeMcpAction("cooldown", { method: "tools/call" }, "")).rejects.toThrow();
+    expect(attempts.get("cooldown")).toBe(4);
+    await actions.reconnectMcpErrors("");
+    expect(attempts.get("cooldown")).toBe(5);
+
+    modes.set("cooldown", "ready");
+    await actions.reconnectMcpErrors("");
+    expect(attempts.get("cooldown")).toBe(6);
+    connectedClients.get("cooldown").onerror(new McpConnectionError("disconnected"));
+    modes.set("cooldown", "error");
+    await actions.getAllTools("");
+    expect(attempts.get("cooldown")).toBe(7);
+    jest.advanceTimersByTime(29_999);
+    await actions.getAllTools("");
+    expect(attempts.get("cooldown")).toBe(7);
+    jest.advanceTimersByTime(1);
+    await actions.getAllTools("");
+    expect(attempts.get("cooldown")).toBe(8);
+
+    await actions.addMcpServer("cooldown", { url: "http://127.0.0.1:45671/mcp" }, "");
+    expect(attempts.get("cooldown")).toBe(9);
+    await actions.getAllTools("");
+    expect(attempts.get("cooldown")).toBe(10);
+    await actions.pauseMcpServer("cooldown", "");
+    await expect(actions.resumeMcpServer("cooldown", "")).rejects.toThrow();
+    expect(attempts.get("cooldown")).toBe(11);
+    await actions.getAllTools("");
+    expect(attempts.get("cooldown")).toBe(12);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("desktop slow failure counts once after the background attempt ends", async () => {
+  jest.useFakeTimers({ doNotFake: ["setImmediate", "clearImmediate", "nextTick", "queueMicrotask", "performance"] });
+  let release: () => void = () => {};
+  try {
+    await add("slow-failure", "error");
+    modes.set("slow-failure", "gate-fail");
+    gate = new Promise<void>((resolve) => { release = resolve; });
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => { started = resolve; });
+    notifyStarted = () => started();
+    const first = actions.getAllTools("");
+    await startedPromise;
+    await jest.advanceTimersByTimeAsync(3000);
+    expect(await first).toEqual([]);
+    expect(await actions.getAllTools("")).toEqual([]);
+    expect(attempts.get("slow-failure")).toBe(2);
+    let pageFinished = false;
+    const page = actions.reconnectMcpErrors("").then(() => { pageFinished = true; });
+    await jest.advanceTimersByTimeAsync(1);
+    expect(pageFinished).toBe(false);
+    release();
+    await page;
+    await jest.advanceTimersByTimeAsync(0);
+    expect((await actions.getClientsStatus(""))["slow-failure"].status).toBe("error");
+    await actions.getAllTools("");
+    jest.advanceTimersByTime(29_999);
+    await actions.getAllTools("");
+    expect(attempts.get("slow-failure")).toBe(2);
+    jest.advanceTimersByTime(1);
+    await actions.getAllTools("");
+    expect(attempts.get("slow-failure")).toBe(3);
+    jest.advanceTimersByTime(30_000);
+    await actions.getAllTools("");
+    expect(attempts.get("slow-failure")).toBe(3);
+  } finally {
+    release();
+    jest.useRealTimers();
+  }
+});
+
+test("desktop user preemption does not count the cancelled attempt as a failure", async () => {
+  jest.useFakeTimers({ doNotFake: ["setImmediate", "clearImmediate", "nextTick", "queueMicrotask", "performance"] });
+  let release: () => void = () => {};
+  try {
+    await add("cancelled", "error");
+    modes.set("cancelled", "gate-fail");
+    gate = new Promise<void>((resolve) => { release = resolve; });
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => { started = resolve; });
+    notifyStarted = () => started();
+    const attempt = actions.getAllTools("");
+    await startedPromise;
+    await jest.advanceTimersByTimeAsync(3000);
+    await attempt;
+    await actions.pauseMcpServer("cancelled", "");
+    release();
+    modes.set("cancelled", "error");
+    await expect(actions.resumeMcpServer("cancelled", "")).rejects.toThrow();
+    await actions.getAllTools("");
+    expect(attempts.get("cancelled")).toBe(4);
+    jest.advanceTimersByTime(30_000);
+    await actions.getAllTools("");
+    expect(attempts.get("cancelled")).toBe(5);
+  } finally {
+    release();
+    jest.useRealTimers();
+  }
+});
+
+test("editing one desktop server does not reset another server's cooldown", async () => {
+  await add("*", "error");
+  await add("other", "error");
+  await actions.getAllTools("");
+  expect(attempts.get("*")).toBe(2);
+  expect(attempts.get("other")).toBe(2);
+  await actions.addMcpServer("*", { url: "http://127.0.0.1:45671/mcp" }, "");
+  await actions.getAllTools("");
+  expect(attempts.get("*")).toBe(4);
+  expect(attempts.get("other")).toBe(2);
 });
 
 test("a later discovery joins the active batch without serializing another server", async () => {
@@ -323,14 +480,18 @@ test("a slow desktop reconnect continues after the three-second wait", async () 
   expect(performance.now() - begin).toBeLessThan(4500);
   expect((await actions.getClientsStatus(""))["stalled"].status).toBe("initializing");
   expect(closed).toBe(0);
-  const second = actions.getAllTools("");
+  const secondStarted = performance.now();
+  const second = await actions.getAllTools("");
+  expect(performance.now() - secondStarted).toBeLessThan(500);
+  expect(second).toEqual([]);
   try {
     await new Promise<void>((resolve) => setTimeout(resolve, 2000));
     expect(attempts.get("stalled")).toBe(2);
   } finally {
     release();
   }
-  expect((await second).map((item) => item.clientId)).toEqual(["stalled"]);
+  await actions.reconnectMcpErrors("");
+  expect((await actions.getAllTools("")).map((item) => item.clientId)).toEqual(["stalled"]);
   expect(attempts.get("stalled")).toBe(2);
   expect((await actions.getClientsStatus(""))["stalled"].status).toBe("active");
 }, 10000);
