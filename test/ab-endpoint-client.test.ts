@@ -101,7 +101,7 @@ test("main conversation connects MCP tools with the current access code", async 
     enableTools: true,
     onFinish: jest.fn(),
   });
-  expect(getTools).toHaveBeenCalledWith("synthetic-access");
+  expect(getTools).toHaveBeenCalledWith("synthetic-access", undefined);
   const [, config, , funcs] = run.mock.calls[0];
   const wire = config.tools![0].function.name;
   expect(config.toolDisplay![wire]).toMatchObject({
@@ -144,4 +144,47 @@ test("old session settings missing new flags use their own defaults", async () =
     enableReasoningSummary: true,
     reasoningEffort: undefined,
   });
+});
+
+test("conversation exclusions filter native tools, text descriptions and text calls", async () => {
+  useAccessStore.setState({ accessCode: "synthetic-access" });
+  const servers = ["enabled", "disabled"].map((clientId) => ({
+    clientId,
+    tools: { tools: [{ name: "lookup", description: `tool-${clientId}` }] },
+  }));
+  // Exercise the client's own boundary even if an action returns too much.
+  getTools.mockResolvedValue(servers);
+  const client = new EndpointClient({
+    id: "ep", name: "EP", protocol: "openai-chat",
+    baseUrl: "https://example.test", apiKey: "", models: [], toolCalling: "text",
+  });
+  const options = {
+    messages: [{ role: "user" as const, content: "test" }],
+    config: { model: "m" }, enableTools: true, onFinish: jest.fn(),
+  };
+  await client.chat(options);
+  expect(run.mock.calls[0][1].tools).toHaveLength(2);
+  expect(run.mock.calls[0][1].textToolPrompt).toContain("tool-disabled");
+
+  await client.chat({ ...options, mcpDisabled: ["disabled"] });
+  expect(getTools).toHaveBeenLastCalledWith("synthetic-access", ["disabled"]);
+  const [, input, , funcs] = run.mock.calls[1];
+  expect(input.tools).toHaveLength(1);
+  expect(input.textToolPrompt).toContain("tool-enabled");
+  expect(input.textToolPrompt).not.toContain("tool-disabled");
+  const call = { method: "tools/call", params: { name: "lookup", arguments: {} } };
+  await expect(input.executeTextTool!("disabled", call)).rejects.toThrow("not registered");
+  await expect(input.executeTextTool!("enabled", { ...call, params: { name: "other" } })).rejects.toThrow("not registered");
+  expect(execute).not.toHaveBeenCalled();
+  await input.executeTextTool!("enabled", call);
+  expect(execute).toHaveBeenCalledTimes(1);
+  expect(Object.keys(funcs)).toHaveLength(1);
+  expect(Object.values(input.toolDisplay ?? {}).map((entry) => entry.server)).toEqual(["enabled"]);
+
+  await client.chat({ ...options, mcpDisabled: ["enabled", "disabled"] });
+  const allDisabled = run.mock.calls[2][1];
+  expect(allDisabled.tools).toEqual([]);
+  expect(allDisabled.textToolPrompt).toBe("");
+  await expect(allDisabled.executeTextTool!("enabled", call)).rejects.toThrow("not registered");
+  expect(execute).toHaveBeenCalledTimes(1);
 });

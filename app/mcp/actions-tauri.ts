@@ -292,7 +292,11 @@ const reconnects = new ReconnectCoordinator(async (ids, signal) => {
   }
 });
 
-function retryFailed(ids?: string[], mode: "message" | "force" = "force") {
+function retryFailed(
+  ids?: string[],
+  mode: "message" | "force" = "force",
+  excluded: Set<string> = new Set(),
+) {
   const selected = ids ?? [
     ...new Set([
       ...[...clients.entries()]
@@ -301,7 +305,10 @@ function retryFailed(ids?: string[], mode: "message" | "force" = "force") {
       ...reconnects.pendingIds(),
     ]),
   ];
-  return reconnects.reconnect(selected, mode);
+  return reconnects.reconnect(
+    selected.filter((id) => !excluded.has(id)),
+    mode,
+  );
 }
 
 export const isMcpEnabled: typeof ServerActions.isMcpEnabled = async () =>
@@ -353,10 +360,15 @@ export const getAvailableClientsCount: typeof ServerActions.getAvailableClientsC
     [...clients.values()].filter((entry) => entry.status === "active").length;
 export const getAllTools: typeof ServerActions.getAllTools = async (
   _accessCode,
+  excludedIds = [],
 ) => {
-  await retryFailed(undefined, "message");
+  const excluded = new Set(excludedIds);
+  await retryFailed(undefined, "message", excluded);
   return [...clients.entries()]
-    .filter(([, entry]) => entry.status === "active" && entry.tools !== null)
+    .filter(
+      ([id, entry]) =>
+        !excluded.has(id) && entry.status === "active" && entry.tools !== null,
+    )
     .map(([clientId, entry]) => ({ clientId, tools: entry.tools! }));
 };
 

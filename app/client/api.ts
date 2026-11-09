@@ -39,6 +39,7 @@ export interface ChatOptions {
   messages: RequestMessage[];
   config: LLMConfig;
   pluginIds?: string[];
+  mcpDisabled?: string[];
   /** Only the main conversation may invoke tools; title and memory requests may not. */
   enableTools?: boolean;
   onUpdate?: (message: string, chunk: string, thinkingActive?: boolean) => void;

@@ -544,6 +544,7 @@ export const useChatStore = createPersistStore(
         if (!get().ensureSessionModel(session)) return;
         const modelConfig = session.mask.modelConfig;
         const pluginIds = [...(session.mask.plugin ?? [])];
+        const mcpDisabled = [...(session.mask.mcpDisabled ?? [])];
 
         // Continuing an archived chat brings it back to the list.
         if (session.archived) {
@@ -601,6 +602,7 @@ export const useChatStore = createPersistStore(
           messages: sendMessages,
           config: { ...modelConfig, stream: true },
           pluginIds,
+          mcpDisabled,
           enableTools: true,
           onToolModeChange(mode) {
             botMessage.toolMode = mode;

@@ -68,6 +68,43 @@ async function add(id: string, mode: Mode, paused = false) {
     ...(paused ? { status: "paused" as const } : {}),
   }, code);
 }
+
+test("web exclusions omit tools and skip only the disabled reconnects", async () => {
+  await add("active", "ready");
+  await add("disabled", "error");
+  await add("retry", "error");
+  modes.set("disabled", "ready");
+  modes.set("retry", "ready");
+  expect((await actions.getAllTools(code, ["disabled"])).map((item) => item.clientId).sort())
+    .toEqual(["active", "retry"]);
+  expect(attempts.get("disabled")).toBe(1);
+  expect(attempts.get("retry")).toBe(2);
+  expect((await actions.getAllTools(code)).map((item) => item.clientId).sort())
+    .toEqual(["active", "disabled", "retry"]);
+  expect(attempts.get("disabled")).toBe(2);
+});
+
+test("web exclusions do not wait for an already in-flight reconnect", async () => {
+  await add("slow-excluded", "error");
+  modes.set("slow-excluded", "gate");
+  let release!: () => void;
+  gate = new Promise<void>((resolve) => { release = resolve; });
+  let started!: () => void;
+  const startedPromise = new Promise<void>((resolve) => { started = resolve; });
+  notifyStarted = () => started();
+  const pending = actions.getAllTools(code);
+  await startedPromise;
+  try {
+    const result = await Promise.race([
+      actions.getAllTools(code, ["slow-excluded"]),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("waited for excluded server")), 1000)),
+    ]);
+    expect(result).toEqual([]);
+  } finally {
+    release();
+    await pending;
+  }
+});
 afterEach(async () => {
   for (const id of created) await actions.removeMcpServer(id, code);
   created = [];

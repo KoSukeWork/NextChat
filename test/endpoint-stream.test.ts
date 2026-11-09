@@ -6,6 +6,7 @@ import {
 } from "../app/client/endpoint-stream";
 import type { Endpoint } from "../app/utils/endpoints";
 import Locale from "../app/locales";
+import { createToolRegistry, safeToolName } from "../app/mcp/tool-runtime";
 
 const endpoint: Endpoint = {
   id: "1",
@@ -217,6 +218,31 @@ test("Responses function calls execute and continue with function output", async
     },
   ]);
   expect(finish.mock.calls[0][0]).toBe("Sunny");
+});
+
+test("an unregistered native MCP call cannot invoke a disabled server", async () => {
+  const execute = jest.fn(async () => ({ content: [{ type: "text", text: "ok" }] }));
+  const registry = createToolRegistry(
+    [{ clientId: "allowed", tools: { tools: [{ name: "lookup" }] } }],
+    [], execute,
+  );
+  const disabledWire = safeToolName("mcp", "disabled", "lookup", new Set());
+  const after = jest.fn();
+  let round = 0;
+  await runEndpointChat(
+    endpoint,
+    { ...input, tools: registry.tools, toolDisplay: registry.display },
+    { onAfterTool: after, onFinish: jest.fn() },
+    registry.funcs,
+    async () => round++ === 0
+      ? sse({
+          type: "response.output_item.done", output_index: 0,
+          item: { type: "function_call", id: "item-1", call_id: "call-1", name: disabledWire, arguments: "{}" },
+        })
+      : sse({ type: "response.output_text.delta", delta: "done" }),
+  );
+  expect(execute).not.toHaveBeenCalled();
+  expect(after.mock.calls[0][0]).toMatchObject({ isError: true });
 });
 
 test("Responses preserves reasoning items and parallel calls for continuation", async () => {

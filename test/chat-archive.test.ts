@@ -231,6 +231,41 @@ describe("sending from an archived session", () => {
 
 });
 
+test("MCP choices default on, copy from masks and are snapshotted when sending", async () => {
+  load([session("a")]);
+  store().newSession();
+  expect(store().currentSession().mask.mcpDisabled).toBeUndefined();
+  const mask = { ...createEmptyMask(), mcpDisabled: ["off"], plugin: ["plugin"] };
+  store().newSession(mask);
+  expect(store().currentSession().mask.mcpDisabled).toEqual(["off"]);
+  store().forkSession();
+  expect(store().currentSession().mask.mcpDisabled).toEqual(["off"]);
+  const chat = jest.mocked(EndpointClient.prototype.chat);
+  chat.mockClear();
+  const pending = store().onUserInput("hello");
+  store().currentSession().mask.mcpDisabled = ["later"];
+  await pending;
+  expect(chat).toHaveBeenCalledWith(expect.objectContaining({ mcpDisabled: ["off"] }));
+});
+
+test("sync treats MCP choices like plugin choices for chats and saved masks", () => {
+  const local: any = JSON.parse(JSON.stringify(getLocalAppState()));
+  const remote: any = JSON.parse(JSON.stringify(getLocalAppState()));
+  const localMask = { ...createEmptyMask(), id: "mask", updatedAt: 10, plugin: ["local-plugin"], mcpDisabled: ["local"] };
+  const remoteMask = { ...localMask, updatedAt: 20, plugin: ["remote-plugin"], mcpDisabled: ["remote"] };
+  local[StoreKey.Chat].sessions = [session("same", { mask: localMask })];
+  remote[StoreKey.Chat].sessions = [session("same", { mask: remoteMask, lastUpdate: 100 }), session("new", { mask: remoteMask })];
+  local[StoreKey.Chat].currentSessionIndex = remote[StoreKey.Chat].currentSessionIndex = 0;
+  local[StoreKey.Mask].masks = { mask: localMask };
+  remote[StoreKey.Mask].masks = { mask: remoteMask };
+  const result = mergeCloudAppState(local, remote);
+  const same = result[StoreKey.Chat].sessions.find((item) => item.id === "same")!;
+  const fresh = result[StoreKey.Chat].sessions.find((item) => item.id === "new")!;
+  expect(same.mask).toMatchObject({ plugin: ["local-plugin"], mcpDisabled: ["local"] });
+  expect(fresh.mask).toMatchObject({ plugin: ["remote-plugin"], mcpDisabled: ["remote"] });
+  expect(result[StoreKey.Mask].masks.mask).toMatchObject({ plugin: ["remote-plugin"], mcpDisabled: ["remote"] });
+});
+
 describe("starting the app", () => {
   const merge = (useChatStore as any).persist.getOptions().merge;
   const start = (sessions: any[], currentSessionIndex: number) =>

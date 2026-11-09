@@ -180,7 +180,7 @@ export function createToolRegistry(
 ) {
   const used = new Set<string>();
   const tools: EndpointTool[] = [];
-  const funcs: Record<string, Function> = {};
+  const funcs: Record<string, Function> = Object.create(null);
   const display: Record<string, ToolDisplay> = {};
   for (const group of mcp)
     for (const tool of group.tools?.tools ?? []) {

@@ -30,9 +30,19 @@ export class EndpointClient {
         })),
       );
       const accessCode = useAccessStore.getState().accessCode;
+      const excluded = new Set(options.mcpDisabled ?? []);
       const mcp =
         options.enableTools && (await isMcpEnabled())
-          ? ((await getAllTools(accessCode)) as unknown as McpToolGroup[])
+          ? (
+              (await getAllTools(
+                accessCode,
+                options.mcpDisabled,
+              )) as unknown as McpToolGroup[]
+            ).filter(
+              (group) =>
+                !excluded.has(group.clientId) &&
+                (group.tools?.tools.length ?? 0) > 0,
+            )
           : [];
       const pluginStore = usePluginStore.getState();
       const plugins: PluginToolGroup[] = pluginIds.flatMap((id) => {
@@ -103,10 +113,30 @@ export class EndpointClient {
           textToolPrompt: textPrompt,
           hasPlugins: plugins.some((plugin) => plugin.tools.length > 0),
           executeTextTool: options.enableTools
-            ? async (clientId, request) =>
-                formatMcpResult(
+            ? async (clientId, request) => {
+                const call = request as {
+                  method?: unknown;
+                  params?: { name?: unknown };
+                } | null;
+                if (
+                  call?.method !== "tools/call" ||
+                  typeof call.params?.name !== "string" ||
+                  !mcp.some(
+                    (group) =>
+                      group.clientId === clientId &&
+                      group.tools?.tools.some(
+                        (tool) => tool.name === call.params?.name,
+                      ),
+                  )
+                ) {
+                  throw new Error(
+                    "MCP tool is not registered for this request",
+                  );
+                }
+                return formatMcpResult(
                   await executeMcpAction(clientId, request as any, accessCode),
-                )
+                );
+              }
             : undefined,
         },
         options,

@@ -106,6 +106,9 @@ describe("MCP server actions require MCP to be enabled", () => {
       await expect(reconnectMcpErrors("wrong-code")).rejects.toThrow(
         "Unauthorized MCP request",
       );
+      await expect(getAllTools("wrong-code", ["disabled"])).rejects.toThrow(
+        "Unauthorized MCP request",
+      );
     });
 
     test("importing MCP configuration rejects an invalid access code", async () => {

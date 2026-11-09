@@ -20,6 +20,7 @@ export type Mask = {
   lang: Lang;
   builtin: boolean;
   plugin?: string[];
+  mcpDisabled?: string[];
   enableArtifacts?: boolean;
   enableCodeFold?: boolean;
 };

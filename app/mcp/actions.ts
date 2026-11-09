@@ -208,12 +208,22 @@ export async function getAvailableClientsCount(accessCode: string) {
 }
 
 // 获取所有客户端工具
-export async function getAllTools(accessCode: string) {
+export async function getAllTools(
+  accessCode: string,
+  excludedIds: string[] = [],
+) {
   await assertMcpAuthorized(accessCode);
-  await retryFailed(undefined, "message");
+  const excluded = new Set(excludedIds);
+  await retryFailed(undefined, "message", excluded);
   const result = [];
   for (const [clientId, status] of clientsMap.entries()) {
-    if (!status.client || status.errorMsg || !status.tools) continue;
+    if (
+      excluded.has(clientId) ||
+      !status.client ||
+      status.errorMsg ||
+      !status.tools
+    )
+      continue;
     result.push({
       clientId,
       tools: status.tools,
@@ -418,7 +428,11 @@ const reconnects =
   });
 reconnectMaps.set(CONFIG_PATH, reconnects);
 
-function retryFailed(ids?: string[], mode: "message" | "force" = "force") {
+function retryFailed(
+  ids?: string[],
+  mode: "message" | "force" = "force",
+  excluded: Set<string> = new Set(),
+) {
   const selected = ids ?? [
     ...new Set([
       ...[...clientsMap.entries()]
@@ -427,7 +441,10 @@ function retryFailed(ids?: string[], mode: "message" | "force" = "force") {
       ...reconnects.pendingIds(),
     ]),
   ];
-  return reconnects.reconnect(selected, mode);
+  return reconnects.reconnect(
+    selected.filter((id) => !excluded.has(id)),
+    mode,
+  );
 }
 
 // 初始化系统

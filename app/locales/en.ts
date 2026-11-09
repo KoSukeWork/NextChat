@@ -652,6 +652,9 @@ const en: LocaleType = {
     Initializing: "Initializing",
     Running: "Running",
     Stopped: "Stopped",
+    StoppedForAllChats:
+      "Stopped on the MCP page; unavailable in all conversations",
+    StatusUnknown: "Status unknown",
     Error: "Error",
     ErrorSeparator: ": ",
     Updating: "Updating configuration…",

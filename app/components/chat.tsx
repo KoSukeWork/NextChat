@@ -36,6 +36,7 @@ import BottomIcon from "../icons/bottom.svg";
 import StopIcon from "../icons/pause.svg";
 import RobotIcon from "../icons/robot.svg";
 import PluginIcon from "../icons/plugin.svg";
+import McpIcon from "../icons/mcp.svg";
 import {
   BOT_HELLO,
   ChatMessage,
@@ -69,6 +70,7 @@ import Locale from "../locales";
 
 import { IconButton } from "./button";
 import { ChatInputControls } from "./chat-input-controls";
+import { useChatMcpSelector } from "./chat-mcp";
 import styles from "./chat.module.scss";
 
 import {
@@ -534,7 +536,26 @@ function ChatPluginAction() {
   );
 }
 
-function MobileChatActions(props: {
+function ChatMcpAction() {
+  const mcp = useChatMcpSelector();
+  if (!mcp.enabled) return null;
+  return (
+    <>
+      <div className="window-action-button">
+        <IconButton
+          onClick={() => void mcp.open()}
+          title={Locale.Mcp.Name}
+          aria={Locale.Mcp.Name}
+          icon={<McpIcon />}
+          bordered
+        />
+      </div>
+      {mcp.selector}
+    </>
+  );
+}
+
+export function MobileChatActions(props: {
   onRefresh: () => void;
   onEdit: () => void;
   onExport: () => void;
@@ -545,6 +566,7 @@ function MobileChatActions(props: {
   const session = chatStore.currentSession();
   const [open, setOpen] = useState(false);
   const [showPluginSelector, setShowPluginSelector] = useState(false);
+  const mcp = useChatMcpSelector();
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -582,6 +604,15 @@ function MobileChatActions(props: {
         else setShowPluginSelector(true);
       },
     },
+    ...(mcp.enabled
+      ? [
+          {
+            label: Locale.Mcp.Name,
+            icon: <McpIcon />,
+            run: () => void mcp.open(),
+          },
+        ]
+      : []),
     {
       label: Locale.Chat.Actions.Export,
       icon: <ExportIcon />,
@@ -660,6 +691,7 @@ function MobileChatActions(props: {
           }}
         />
       )}
+      {mcp.selector}
     </>
   );
 }
@@ -1523,6 +1555,7 @@ function _Chat() {
                 />
               </div>
               <ChatPluginAction />
+              <ChatMcpAction />
               <div className="window-action-button">
                 <IconButton
                   icon={<ExportIcon />}

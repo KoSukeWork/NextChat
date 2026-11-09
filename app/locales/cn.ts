@@ -613,6 +613,8 @@ const cn = {
     Initializing: "正在初始化",
     Running: "运行中",
     Stopped: "已停止",
+    StoppedForAllChats: "已在 MCP 页面停止，所有对话均不可使用",
+    StatusUnknown: "状态未知",
     Error: "错误",
     ErrorSeparator: "：",
     Updating: "正在更新配置…",
