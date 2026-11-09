@@ -6,7 +6,13 @@ import {
 } from "../store";
 import { useMaskStore } from "../store/mask";
 import type { ChatFolder } from "../store/chat";
-import { orderedFolders, uniqueFolderName } from "./chat-folders";
+import { useChatFolderUI } from "../store/chat-folder-ui";
+import {
+  orderedFolders,
+  uniqueFolderName,
+  visibleFolderId,
+} from "./chat-folders";
+import { orderedNeighbourIds, orderedVisibleSessions } from "./chat-order";
 import { SearchService, usePromptStore } from "../store/prompt";
 import { StoreKey } from "../constant";
 import { merge } from "./merge";
@@ -249,6 +255,16 @@ function mergeChatStates(
   remote: ChatState,
   restoreImport = false,
 ): ChatState {
+  const oldIndex = local.currentSessionIndex;
+  const currentId = local.sessions[oldIndex]?.id;
+  const localPinnedIds = local.sessions
+    .filter((session) => session.pinned)
+    .map((session) => session.id);
+  const folderId = visibleFolderId(
+    local.folders ?? [],
+    useChatFolderUI.getState(),
+  );
+  const oldNeighbours = orderedNeighbourIds(local.sessions, oldIndex, folderId);
   const folderRecords = (folders: ChatFolder[] | undefined) => {
     const result: Record<string, ChatFolder> = Object.create(null);
     for (const folder of Array.isArray(folders) ? folders : []) {
@@ -306,9 +322,6 @@ function mergeChatStates(
   }
   local.folders = orderedFolders(records);
   local.deletedFolders = mergedFolders.tombstones;
-  const oldOrder = local.sessions.map((session) => session.id);
-  const oldIndex = local.currentSessionIndex;
-  const currentId = local.sessions[oldIndex]?.id;
   const tombstones = mergeTombstones(
     local.deletedSessions,
     remote.deletedSessions,
@@ -393,27 +406,46 @@ function mergeChatStates(
     return false;
   });
   local.deletedSessions = tombstones;
+  // Keep the local manual order for pins. New pins are inserted by activity
+  // time without disturbing the relative order already chosen on this device.
+  const byId = new Map(local.sessions.map((session) => [session.id, session]));
+  const localPinSet = new Set(localPinnedIds);
+  const pins = localPinnedIds
+    .map((id) => byId.get(id))
+    .filter(
+      (session): session is NonNullable<typeof session> => !!session?.pinned,
+    );
+  const newPins = local.sessions
+    .filter((session) => session.pinned && !localPinSet.has(session.id))
+    .sort(
+      (a, b) => validTimestamp(b.lastUpdate) - validTimestamp(a.lastUpdate),
+    );
+  for (const session of newPins) {
+    const before = pins.findIndex(
+      (item) =>
+        validTimestamp(session.lastUpdate) > validTimestamp(item.lastUpdate),
+    );
+    if (before < 0) pins.push(session);
+    else pins.splice(before, 0, session);
+  }
   local.sessions.sort(
     (a, b) => validTimestamp(b.lastUpdate) - validTimestamp(a.lastUpdate),
+  );
+  let pinIndex = 0;
+  local.sessions = local.sessions.map((session) =>
+    session.pinned ? pins[pinIndex++] : session,
   );
 
   let selected = local.sessions.findIndex(
     (session) => session.id === currentId,
   );
   if (selected < 0) {
-    const neighbours =
-      oldIndex >= 0
-        ? [
-            ...oldOrder.slice(oldIndex + 1),
-            ...oldOrder.slice(0, oldIndex).reverse(),
-          ]
-        : [];
-    const nearest = neighbours.find((id) =>
+    const nearest = oldNeighbours.find((id) =>
       local.sessions.some((session) => session.id === id && !session.archived),
     );
     selected = nearest
       ? local.sessions.findIndex((session) => session.id === nearest)
-      : local.sessions.findIndex((session) => !session.archived);
+      : orderedVisibleSessions(local.sessions)[0]?.index ?? -1;
     if (selected < 0) {
       local.sessions.unshift(createEmptySession());
       selected = 0;

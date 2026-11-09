@@ -152,3 +152,44 @@ test("sync may reorder stored sessions but a pinned chat remains first on screen
   expect(result.sessions.map((s: any) => s.id)).toEqual(["new", "pin"]);
   expect(displayed(result.sessions)).toEqual(["pin", "new"]);
 });
+
+test("sync keeps local pin order and inserts newly pinned chats by activity", () => {
+  const local = [
+    session("first", { pinned: true, pinUpdatedAt: 2, lastUpdate: 100 }),
+    session("u-old", { lastUpdate: 5 }),
+    session("second", { pinned: true, pinUpdatedAt: 2, lastUpdate: 10 }),
+    session("u-new", { lastUpdate: 80 }),
+  ];
+  const remote = [
+    session("second", { pinned: true, pinUpdatedAt: 2, lastUpdate: 200 }),
+    session("first", { pinned: true, pinUpdatedAt: 2, lastUpdate: 100 }),
+    session("remote-pin", { pinned: true, pinUpdatedAt: 3, lastUpdate: 50 }),
+  ];
+  const result = merge(local, remote);
+  expect(displayed(result.sessions)).toEqual([
+    "first",
+    "second",
+    "remote-pin",
+    "u-new",
+    "u-old",
+  ]);
+  const again = merge(result.sessions, remote);
+  expect(displayed(again.sessions)).toEqual([
+    "first",
+    "second",
+    "remote-pin",
+    "u-new",
+    "u-old",
+  ]);
+
+  const sortedLocal = [
+    session("high", { pinned: true, lastUpdate: 100 }),
+    session("low", { pinned: true, lastUpdate: 10 }),
+  ];
+  expect(
+    displayed(
+      merge(sortedLocal, [session("middle", { pinned: true, lastUpdate: 50 })])
+        .sessions,
+    ),
+  ).toEqual(["high", "middle", "low"]);
+});

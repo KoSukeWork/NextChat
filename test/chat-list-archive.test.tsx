@@ -37,17 +37,28 @@ jest.unstable_mockModule("@/app/components/mask", () => ({
   MaskAvatar: () => <span />,
 }));
 let onDragEnd: (result: unknown) => void;
+let onDragStart: (result: unknown) => void;
 jest.unstable_mockModule("@hello-pangea/dnd", () => ({
   DragDropContext: (props: any) => {
     onDragEnd = props.onDragEnd;
+    onDragStart = props.onDragStart;
     return props.children;
   },
   Droppable: (props: any) =>
-    props.children({ innerRef: () => {}, droppableProps: {} }),
+    props.children({
+      innerRef: () => {},
+      droppableProps:
+        props.droppableId === "chat-list"
+          ? { "data-drop-disabled": String(!!props.isDropDisabled) }
+          : {},
+    }),
   Draggable: (props: any) =>
     props.children({
       innerRef: () => {},
-      draggableProps: { "data-position": props.index },
+      draggableProps: {
+        "data-position": props.index,
+        "data-chat-id": props.draggableId,
+      },
       dragHandleProps: {},
     }),
 }));
@@ -93,15 +104,15 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-test("folder tabs filter the global pin order, and dragging within them updates global order", () => {
+test("folder tabs filter the global activity order and unpinned drag does not reorder", () => {
   useChatStore.setState({
     folders: [{ id: "f", name: "Work", order: 0, updatedAt: 1 }],
   });
   setup([
-    session("a", { folderId: "f" }),
-    session("outside"),
+    session("a", { folderId: "f", lastUpdate: 10 }),
+    session("outside", { lastUpdate: 20 }),
     session("p", { folderId: "f", pinned: true }),
-    session("b", { folderId: "f" }),
+    session("b", { folderId: "f", lastUpdate: 30 }),
   ]);
   expect(screen.getByRole("button", { name: "Work" })).toBeInTheDocument();
   expect(screen.getAllByText(/messages · Work/)).toHaveLength(3);
@@ -111,18 +122,31 @@ test("folder tabs filter the global pin order, and dragging within them updates 
     "data-position",
     "0",
   );
+  expect(screen.getByText("b").closest("[data-position]")).toHaveAttribute(
+    "data-position",
+    "1",
+  );
+  act(() => onDragStart({ source: { droppableId: "chat-list", index: 1 } }));
+  expect(document.querySelector("[data-drop-disabled]")).toHaveAttribute(
+    "data-drop-disabled",
+    "true",
+  );
   act(() =>
     onDragEnd({
       source: { droppableId: "chat-list", index: 1 },
       destination: { droppableId: "chat-list", index: 2 },
     }),
   );
-  expect(ids()).toEqual(["outside", "p", "b", "a"]);
+  expect(ids()).toEqual(["a", "outside", "p", "b"]);
+  expect(document.querySelector("[data-drop-disabled]")).toHaveAttribute(
+    "data-drop-disabled",
+    "false",
+  );
   fireEvent.click(screen.getByRole("button", { name: Locale.Folder.All }));
   expect(screen.getByText("outside")).toBeInTheDocument();
   expect(screen.getByText("b").closest("[data-position]")).toHaveAttribute(
     "data-position",
-    "2",
+    "1",
   );
 });
 
@@ -156,6 +180,43 @@ test("dragging a chat onto a folder and reordering folder tabs retain chat times
     "Work",
   ]);
   expect(ids()).toEqual(["a", "b"]);
+});
+
+test("a chat moved during a drag is identified by ID even if activity reorders the list", () => {
+  useChatStore.setState({
+    folders: [{ id: "f", name: "Work", order: 0, updatedAt: 1 }],
+  });
+  setup([session("a", { lastUpdate: 20 }), session("b", { lastUpdate: 10 })]);
+  act(() =>
+    onDragStart({
+      draggableId: "a",
+      source: { droppableId: "chat-list", index: 0 },
+    }),
+  );
+  act(() =>
+    useChatStore.setState((state) => ({
+      sessions: state.sessions.map((item) =>
+        item.id === "b" ? { ...item, lastUpdate: 30 } : item,
+      ),
+    })),
+  );
+  expect(document.querySelector('[data-chat-id="b"]')).toHaveAttribute(
+    "data-position",
+    "0",
+  );
+  act(() =>
+    onDragEnd({
+      draggableId: "a",
+      source: { droppableId: "chat-list", index: 0 },
+      destination: { droppableId: "folder-drop:f", index: 0 },
+    }),
+  );
+  expect(
+    useChatStore.getState().sessions.find((item) => item.id === "a")?.folderId,
+  ).toBe("f");
+  expect(
+    useChatStore.getState().sessions.find((item) => item.id === "b")?.folderId,
+  ).toBeUndefined();
 });
 
 test("a wide dragged chat uses the pointer position when folder drop zones overlap", () => {
@@ -360,7 +421,10 @@ test("empty folder shows help and deletion omits the zero archive count", () => 
 test("narrow view hides folder tabs and shows every unarchived chat", () => {
   useChatStore.setState({
     folders: [{ id: "f", name: "Work", order: 0, updatedAt: 1 }],
-    sessions: [session("a", { folderId: "f" }), session("b")],
+    sessions: [
+      session("a", { folderId: "f", lastUpdate: 10 }),
+      session("b", { lastUpdate: 20 }),
+    ],
     currentSessionIndex: 0,
   });
   useChatFolderUI.getState().selectFolder("f");
@@ -371,6 +435,10 @@ test("narrow view hides folder tabs and shows every unarchived chat", () => {
   );
   expect(screen.queryByRole("button", { name: Locale.Folder.All })).toBeNull();
   expect(screen.getAllByLabelText(Locale.Folder.MoveChat)).toHaveLength(2);
+  expect(document.querySelector('[data-chat-id="b"]')).toHaveAttribute(
+    "data-position",
+    "0",
+  );
 });
 
 test("archived sessions are hidden and rows use positions in the visible list", () => {
@@ -384,11 +452,10 @@ test("archived sessions are hidden and rows use positions in the visible list", 
 });
 
 test.each([
-  // visible a b c, hidden x and y between them
-  [0, 2, ["x", "b", "y", "c", "a"]],
-  [2, 0, ["c", "a", "x", "b", "y"]],
-  [0, 1, ["x", "b", "a", "y", "c"]],
-])("dragging %i to %i keeps the visible order right", (from, to, expected) => {
+  [0, 2],
+  [2, 0],
+  [0, 1],
+])("dragging unpinned %i to %i leaves storage order alone", (from, to) => {
   setup([
     session("a"),
     session("x", { archived: true }),
@@ -402,7 +469,7 @@ test.each([
       destination: { droppableId: "chat-list", index: to },
     }),
   );
-  expect(ids()).toEqual(expected);
+  expect(ids()).toEqual(["a", "x", "b", "y", "c"]);
 });
 
 test("clicking a row selects the real session behind hidden rows", () => {
@@ -462,7 +529,7 @@ test("an empty session has no pin action", () => {
 
 test.each([
   [0, 3, ["p2", "p1", "u1", "u2"]],
-  [3, 0, ["p1", "p2", "u2", "u1"]],
+  [3, 0, ["p1", "p2", "u1", "u2"]],
 ])("dragging across the groups clamps %i to %i", (from, to, expected) => {
   setup([
     session("u1"),
@@ -496,6 +563,31 @@ test.each([
       .map((s) => s.id)
       .sort(),
   ).toEqual(["p1", "p2"]);
+});
+
+test("pinned chats in a folder can still be dragged relative to each other", () => {
+  useChatStore.setState({
+    folders: [{ id: "f", name: "Work", order: 0, updatedAt: 1 }],
+  });
+  setup([
+    session("p1", { pinned: true, folderId: "f" }),
+    session("outside", { pinned: true }),
+    session("p2", { pinned: true, folderId: "f" }),
+    session("u", { folderId: "f" }),
+  ]);
+  fireEvent.click(screen.getByRole("button", { name: "Work" }));
+  act(() => onDragStart({ source: { droppableId: "chat-list", index: 1 } }));
+  expect(document.querySelector("[data-drop-disabled]")).toHaveAttribute(
+    "data-drop-disabled",
+    "false",
+  );
+  act(() =>
+    onDragEnd({
+      source: { droppableId: "chat-list", index: 1 },
+      destination: { droppableId: "chat-list", index: 0 },
+    }),
+  );
+  expect(ids()).toEqual(["p2", "p1", "outside", "u"]);
 });
 
 test("pinned chats remain marked in the narrow list", () => {

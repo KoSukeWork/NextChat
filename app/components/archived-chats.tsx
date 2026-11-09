@@ -6,6 +6,7 @@ import { useChatStore } from "../store";
 import { useSearchJump } from "../store/search-jump";
 import { SEARCH_RESULT_LIMIT, searchSessions } from "../utils/chat-search";
 import { sessionFolder } from "../utils/chat-folders";
+import { validTimestamp } from "../utils/chat-deletion";
 import { IconButton } from "./button";
 import { SearchHighlight } from "./search-highlight";
 import { ErrorBoundary } from "./error";
@@ -37,7 +38,9 @@ export function ArchivedChatsPage() {
     () =>
       chatStore.sessions
         .filter((session) => session.archived)
-        .sort((a, b) => (b.archiveUpdatedAt ?? 0) - (a.archiveUpdatedAt ?? 0)),
+        .sort(
+          (a, b) => validTimestamp(b.lastUpdate) - validTimestamp(a.lastUpdate),
+        ),
     [chatStore],
   );
   const result = useMemo(

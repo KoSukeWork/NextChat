@@ -213,6 +213,7 @@ export function ChatList(props: { narrow?: boolean }) {
   const folderBar = useRef<HTMLDivElement>(null);
   const dragPoint = useRef<{ x: number; y: number } | null>(null);
   const draggingChat = useRef(false);
+  const [draggingUnpinned, setDraggingUnpinned] = useState(false);
   const [hoveredFolder, setHoveredFolder] = useState<
     string | null | undefined
   >();
@@ -279,17 +280,22 @@ export function ChatList(props: { narrow?: boolean }) {
 
   const onDragEnd: OnDragEndResponder = (result, provided) => {
     const { destination, source } = result;
+    // A response can change the visible order during a drag. The ID still
+    // identifies the item the user picked up, whereas source.index is stale.
+    const dragged = result.draggableId
+      ? visible.find(({ session }) => session.id === result.draggableId)
+      : visible[source.index];
     // A wide chat card can overlap several small tabs simultaneously. The
     // library's collision rule picks the first one, so use the release point
     // when the pointer is actually inside the folder bar.
     const point = dragPoint.current;
     draggingChat.current = false;
+    setDraggingUnpinned(false);
     setHoveredFolder(undefined);
     if (result.reason === "CANCEL") return;
     if (source.droppableId === "chat-list" && point) {
       const folderId = folderAtPoint(point);
       if (folderId !== undefined) {
-        const dragged = visible[source.index];
         const folder = folders.find((item) => item.id === folderId);
         if (dragged && folder) {
           chatStore.moveSessionToFolder(dragged.session.id, folder.id);
@@ -317,7 +323,6 @@ export function ChatList(props: { narrow?: boolean }) {
       source.droppableId === "chat-list" &&
       destination.droppableId.startsWith(FOLDER_DROP_PREFIX)
     ) {
-      const dragged = visible[source.index];
       const folder = folders.find(
         (item) =>
           item.id === destination.droppableId.slice(FOLDER_DROP_PREFIX.length),
@@ -329,13 +334,10 @@ export function ChatList(props: { narrow?: boolean }) {
       return;
     }
     if (destination.droppableId !== source.droppableId) return;
-    const dragged = visible[source.index];
-    if (!dragged) return;
+    if (!dragged?.session.pinned) return;
     const pinnedCount = visible.filter(({ session }) => session.pinned).length;
-    const first = dragged.session.pinned ? 0 : pinnedCount;
-    const last = dragged.session.pinned ? pinnedCount - 1 : visible.length - 1;
-    const target = Math.max(first, Math.min(last, destination.index));
-    if (target === source.index || !visible[target]) return;
+    const target = Math.max(0, Math.min(pinnedCount - 1, destination.index));
+    if (target === visible.indexOf(dragged) || !visible[target]) return;
     moveSession(dragged.index, visible[target].index);
   };
 
@@ -343,6 +345,10 @@ export function ChatList(props: { narrow?: boolean }) {
     <DragDropContext
       onDragStart={(start) => {
         draggingChat.current = start.source.droppableId === "chat-list";
+        const dragged = start.draggableId
+          ? visible.find(({ session }) => session.id === start.draggableId)
+          : visible[start.source.index];
+        setDraggingUnpinned(draggingChat.current && !dragged?.session.pinned);
         dragPoint.current = null;
         setHoveredFolder(undefined);
       }}
@@ -357,7 +363,11 @@ export function ChatList(props: { narrow?: boolean }) {
             hoveredFolder={hoveredFolder}
           />
         )}
-        <Droppable droppableId="chat-list" type="CHAT">
+        <Droppable
+          droppableId="chat-list"
+          type="CHAT"
+          isDropDisabled={draggingUnpinned}
+        >
           {(provided) => (
             <div
               className={styles["chat-list"]}

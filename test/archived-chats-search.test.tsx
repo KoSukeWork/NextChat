@@ -154,7 +154,12 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-test("empty query lists only archived sessions in archive order", () => {
+test("empty query lists archived sessions by last activity, not archive time", () => {
+  useChatStore.setState((state) => ({
+    sessions: state.sessions.map((item) =>
+      item.id === "b" ? { ...item, archiveUpdatedAt: 999 } : item,
+    ),
+  }));
   setup();
   const design = screen.getByText("Design archive");
   const python = screen.getByText("Python notes");

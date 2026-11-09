@@ -29,7 +29,10 @@ import {
   validTimestamp,
   sessionIsSyncable,
 } from "../utils/chat-deletion";
-import { orderedVisibleSessions } from "../utils/chat-order";
+import {
+  orderedNeighbourIds,
+  orderedVisibleSessions,
+} from "../utils/chat-order";
 import { createEmptyMask, Mask } from "./mask";
 import { cleanMcpHistory } from "../mcp/utils";
 import type { ToolDisplay } from "../mcp/tool-runtime";
@@ -167,17 +170,6 @@ export function createEmptySession(): ChatSession {
   };
 }
 
-// The closest session shown in the list, preferring the ones after `index`.
-function nearestVisibleIndex(sessions: ChatSession[], index: number) {
-  for (let i = index; i < sessions.length; i++) {
-    if (!sessions[i].archived) return i;
-  }
-  for (let i = Math.min(index, sessions.length) - 1; i >= 0; i--) {
-    if (!sessions[i].archived) return i;
-  }
-  return -1;
-}
-
 type SessionRemoval = {
   items: { session: ChatSession; index: number; deletedAt?: number }[];
   selectedId?: string;
@@ -193,8 +185,17 @@ type SessionState = {
 };
 
 // Both single and folder deletion use the same tombstone and selection rules.
-function removeSessions(state: SessionState, ids: Set<string>) {
+function removeSessions(
+  state: SessionState,
+  ids: Set<string>,
+  folderId?: string,
+) {
   const selectedId = state.sessions[state.currentSessionIndex]?.id;
+  const neighbours = orderedNeighbourIds(
+    state.sessions,
+    state.currentSessionIndex,
+    folderId,
+  );
   const deletedSessions: Record<string, number> = Object.assign(
     Object.create(null),
     state.deletedSessions ?? {},
@@ -218,16 +219,8 @@ function removeSessions(state: SessionState, ids: Set<string>) {
   }
   let selected = sessions.findIndex((session) => session.id === selectedId);
   if (selected < 0) {
-    const neighbours = [
-      ...state.sessions.slice(state.currentSessionIndex + 1),
-      ...state.sessions.slice(0, state.currentSessionIndex).reverse(),
-    ];
-    const next = neighbours.find(
-      (session) => !ids.has(session.id) && !session.archived,
-    );
-    selected = next
-      ? sessions.findIndex((session) => session.id === next.id)
-      : 0;
+    const next = neighbours.find((id) => !ids.has(id));
+    selected = next ? sessions.findIndex((session) => session.id === next) : 0;
   }
   const snapshot: SessionRemoval = {
     items,
@@ -464,7 +457,11 @@ export const useChatStore = createPersistStore(
         );
         const selectedFolder = useChatFolderUI.getState().selectedFolderId;
         const removed = deleteConversations
-          ? removeSessions(get(), new Set(members.map((session) => session.id)))
+          ? removeSessions(
+              get(),
+              new Set(members.map((session) => session.id)),
+              visibleFolderId(get().folders ?? [], useChatFolderUI.getState()),
+            )
           : undefined;
         if (!deleteConversations)
           for (const session of members) get().moveSessionToFolder(session.id);
@@ -610,6 +607,11 @@ export const useChatStore = createPersistStore(
           return;
         }
         const wasCurrent = index === currentSessionIndex;
+        const folderId = visibleFolderId(
+          get().folders ?? [],
+          useChatFolderUI.getState(),
+        );
+        const neighbourId = orderedNeighbourIds(sessions, index, folderId)[0];
 
         get().updateTargetSession(session, (target) =>
           setArchived(target, true),
@@ -621,7 +623,10 @@ export const useChatStore = createPersistStore(
             currentSessionIndex: wasCurrent ? 0 : currentSessionIndex + 1,
           }));
         } else if (wasCurrent) {
-          get().selectSession(nearestVisibleIndex(sessions, index));
+          const neighbourIndex = sessions.findIndex(
+            (item) => item.id === neighbourId,
+          );
+          if (neighbourIndex >= 0) get().selectSession(neighbourIndex);
         }
 
         showToast(
@@ -640,9 +645,10 @@ export const useChatStore = createPersistStore(
       unarchiveSession(id: string) {
         const session = get().sessions.find((s) => s.id === id);
         if (!session?.archived) return;
-        get().updateTargetSession(session, (target) =>
-          setArchived(target, false),
-        );
+        get().updateTargetSession(session, (target) => {
+          setArchived(target, false);
+          target.lastUpdate = restoredTimestamp(target);
+        });
       },
 
       togglePinSession(id: string) {
@@ -754,7 +760,11 @@ export const useChatStore = createPersistStore(
       deleteSession(index: number) {
         const deletedSession = get().sessions.at(index);
         if (!deletedSession) return;
-        const removed = removeSessions(get(), new Set([deletedSession.id]));
+        const removed = removeSessions(
+          get(),
+          new Set([deletedSession.id]),
+          visibleFolderId(get().folders ?? [], useChatFolderUI.getState()),
+        );
         set(removed.state);
         showToast(
           Locale.Home.DeleteToast,
@@ -1293,7 +1303,12 @@ export const useChatStore = createPersistStore(
       };
       const index = state.currentSessionIndex;
       if (!state.sessions[index]?.archived) return state;
-      const next = nearestVisibleIndex(state.sessions, index);
+      const folderId = visibleFolderId(
+        state.folders ?? [],
+        useChatFolderUI.getState(),
+      );
+      const nextId = orderedNeighbourIds(state.sessions, index, folderId)[0];
+      const next = state.sessions.findIndex((item) => item.id === nextId);
       return next >= 0
         ? { ...state, currentSessionIndex: next }
         : {
