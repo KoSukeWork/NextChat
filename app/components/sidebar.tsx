@@ -17,6 +17,7 @@ import ShortcutkeyIcon from "../icons/shortcutkey.svg";
 import Locale from "../locales";
 
 import { useAppConfig, useChatStore } from "../store";
+import { useChatFolderUI } from "../store/chat-folder-ui";
 
 import {
   DEFAULT_SIDEBAR_WIDTH,
@@ -228,6 +229,10 @@ export function SideBarTail(props: {
 export function SideBar(props: { className?: string }) {
   useHotKey();
   const { onDragStart, shouldNarrow } = useDragSideBar();
+  useEffect(
+    () => useChatFolderUI.getState().setNarrow(shouldNarrow),
+    [shouldNarrow],
+  );
   const navigate = useNavigate();
   const config = useAppConfig();
   const chatStore = useChatStore();

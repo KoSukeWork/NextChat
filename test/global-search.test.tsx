@@ -22,6 +22,7 @@ jest.unstable_mockModule("@/app/components/ui-lib", () => ({
 }));
 await import("../app/client/api");
 const { useChatStore } = await import("../app/store");
+const { useChatFolderUI } = await import("../app/store/chat-folder-ui");
 const { useSearchJump } = await import("../app/store/search-jump");
 const { createEmptyMask } = await import("../app/store/mask");
 const { GlobalSearch, useGlobalSearch } = await import(
@@ -82,7 +83,11 @@ beforeEach(() => {
   jest.useFakeTimers();
   useGlobalSearch.setState({ open: false });
   useSearchJump.setState({ request: null });
+  useChatFolderUI.getState().selectFolder(null);
+  useChatFolderUI.getState().setNarrow(false);
   useChatStore.setState({
+    folders: [],
+    deletedFolders: {},
     sessions: [
       session("first", "第一个对话", [message("m1", "没有关键词")]),
       session(
@@ -98,6 +103,69 @@ beforeEach(() => {
     ] as any,
     currentSessionIndex: 0,
   });
+});
+
+test("folder search defaults to all, labels results, filters without changing time order, and switches tabs on open", () => {
+  useChatStore.setState({
+    folders: [
+      { id: "f", name: "Work", order: 0, updatedAt: 1 },
+      { id: "g", name: "Study", order: 1, updatedAt: 1 },
+    ],
+    sessions: [
+      session("a", "older needle", [], { folderId: "f", lastUpdate: 1 }),
+      session("b", "newer needle", [], { folderId: "g", lastUpdate: 3 }),
+      session("c", "middle needle", [], { folderId: "f", lastUpdate: 2 }),
+      session("d", "ungrouped needle", [], { lastUpdate: 4 }),
+    ] as any,
+  });
+  useChatFolderUI.getState().selectFolder("f");
+  setup();
+  open();
+  search("needle");
+  expect(
+    screen.getByRole("button", { name: Locale.Folder.SearchAll }),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByText("Study")).toBeInTheDocument();
+  const textContent = screen.getByRole("dialog").textContent!;
+  expect(textContent.indexOf("ungrouped needle")).toBeLessThan(
+    textContent.indexOf("newer needle"),
+  );
+  expect(textContent.indexOf("newer needle")).toBeLessThan(
+    textContent.indexOf("middle needle"),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: Locale.Folder.SearchCurrent("Work") }),
+  );
+  expect(screen.getByRole("dialog").textContent).not.toContain("newer needle");
+  expect(screen.getByRole("dialog").textContent).not.toContain(
+    "ungrouped needle",
+  );
+  expect(screen.getByRole("dialog").textContent).toContain("middle needle");
+  fireEvent.click(
+    screen.getByRole("button", { name: Locale.Folder.SearchAll }),
+  );
+  fireEvent.click(
+    screen.getByText((_, element) => element?.textContent === "newer needle"),
+  );
+  expect(useChatStore.getState().currentSession().id).toBe("b");
+  expect(useChatFolderUI.getState().selectedFolderId).toBe("g");
+});
+
+test("opening an ungrouped search result from a folder returns the sidebar to all", () => {
+  useChatStore.setState({
+    folders: [{ id: "f", name: "Work", order: 0, updatedAt: 1 }],
+    sessions: [
+      session("a", "needle", [], { folderId: "f" }),
+      session("b", "other needle", [], { lastUpdate: 2 }),
+    ] as any,
+  });
+  useChatFolderUI.getState().selectFolder("f");
+  setup();
+  open();
+  search("needle");
+  fireEvent.keyDown(input(), { key: "Enter" });
+  expect(useChatStore.getState().currentSession().id).toBe("b");
+  expect(useChatFolderUI.getState().selectedFolderId).toBeNull();
 });
 
 afterEach(() => {

@@ -8,6 +8,7 @@ import {
   setLocalAppState,
   CloudState,
   getCloudAppState,
+  prepareCloudUpload,
   mergeCloudAppState,
   setCloudAppState,
   getNonFunctionFileds,
@@ -272,7 +273,10 @@ export const useSyncStore = createPersistStore(
         }
       }
 
-      await client.set(config.username, JSON.stringify(localState));
+      await client.set(
+        config.username,
+        JSON.stringify(prepareCloudUpload(localState)),
+      );
       if (remoteState) {
         // The user may have edited or deleted a session while the network
         // request was in flight. Merge the uploaded snapshot into the latest

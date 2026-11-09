@@ -84,6 +84,8 @@ beforeEach(() => {
   jest.useFakeTimers();
   useSearchJump.setState({ request: null });
   useChatStore.setState({
+    folders: [],
+    deletedFolders: {},
     currentSessionIndex: 2,
     sessions: [
       session(
@@ -122,6 +124,30 @@ beforeEach(() => {
       ),
     ] as any,
   });
+});
+
+test("archived chats show their folder and restoring preserves it", () => {
+  const sessions = useChatStore
+    .getState()
+    .sessions.map((item) =>
+      item.id === "a" ? { ...item, folderId: "f", folderUpdatedAt: 5 } : item,
+    );
+  useChatStore.setState({
+    sessions,
+    folders: [{ id: "f", name: "Work", order: 0, updatedAt: 1 }],
+  });
+  setup();
+  expect(screen.getByText(/Work/)).toBeInTheDocument();
+  fireEvent.click(
+    screen.getAllByRole("button", {
+      name: `${text.Restore} ${text.Restore}`,
+    })[0],
+  );
+  const restored = useChatStore
+    .getState()
+    .sessions.find((item) => item.id === "a")!;
+  expect(restored.archived).toBe(false);
+  expect(restored.folderId).toBe("f");
 });
 afterEach(() => {
   cleanup();

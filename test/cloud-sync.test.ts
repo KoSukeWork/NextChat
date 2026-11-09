@@ -32,6 +32,7 @@ jest.unstable_mockModule("@/app/utils/sync", () => ({
   mergeAppState: merge,
   setLocalAppState: setLocal,
   getCloudAppState: getLocal,
+  prepareCloudUpload: (state: any) => state,
   mergeCloudAppState: merge,
   setCloudAppState: setLocal,
   prepareImportedState: prepareImport,

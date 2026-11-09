@@ -27,11 +27,18 @@ import {
   deletionTimestamp,
   restoredTimestamp,
   validTimestamp,
+  sessionIsSyncable,
 } from "../utils/chat-deletion";
 import { orderedVisibleSessions } from "../utils/chat-order";
 import { createEmptyMask, Mask } from "./mask";
 import { cleanMcpHistory } from "../mcp/utils";
 import type { ToolDisplay } from "../mcp/tool-runtime";
+import { useChatFolderUI } from "./chat-folder-ui";
+import {
+  orderedFolders,
+  uniqueFolderName,
+  visibleFolderId,
+} from "../utils/chat-folders";
 
 const localStorage = safeLocalStorage();
 
@@ -125,6 +132,15 @@ export interface ChatSession {
   archiveUpdatedAt?: number;
   pinned?: boolean;
   pinUpdatedAt?: number;
+  folderId?: string;
+  folderUpdatedAt?: number;
+}
+
+export interface ChatFolder {
+  id: string;
+  name: string;
+  order: number;
+  updatedAt: number;
 }
 
 export const DEFAULT_TOPIC = Locale.Store.DefaultTopic;
@@ -160,6 +176,110 @@ function nearestVisibleIndex(sessions: ChatSession[], index: number) {
     if (!sessions[i].archived) return i;
   }
   return -1;
+}
+
+type SessionRemoval = {
+  items: { session: ChatSession; index: number; deletedAt?: number }[];
+  selectedId?: string;
+  fallbackId?: string;
+  fallbackInitial?: string;
+  placeholder?: { id: string; initial: string };
+};
+
+type SessionState = {
+  sessions: ChatSession[];
+  currentSessionIndex: number;
+  deletedSessions: Record<string, number>;
+};
+
+// Both single and folder deletion use the same tombstone and selection rules.
+function removeSessions(state: SessionState, ids: Set<string>) {
+  const selectedId = state.sessions[state.currentSessionIndex]?.id;
+  const deletedSessions: Record<string, number> = Object.assign(
+    Object.create(null),
+    state.deletedSessions ?? {},
+  );
+  const items: SessionRemoval["items"] = [];
+  const sessions = state.sessions.filter((session, index) => {
+    if (!ids.has(session.id)) return true;
+    const deletedAt = sessionIsSyncable(session)
+      ? deletionTimestamp(session, deletedSessions[session.id])
+      : undefined;
+    if (deletedAt !== undefined) deletedSessions[session.id] = deletedAt;
+    items.push({ session, index, deletedAt });
+    return false;
+  });
+
+  let placeholder: SessionRemoval["placeholder"];
+  if (items.length && sessions.every((session) => session.archived)) {
+    const empty = createEmptySession();
+    sessions.unshift(empty);
+    placeholder = { id: empty.id, initial: JSON.stringify(empty) };
+  }
+  let selected = sessions.findIndex((session) => session.id === selectedId);
+  if (selected < 0) {
+    const neighbours = [
+      ...state.sessions.slice(state.currentSessionIndex + 1),
+      ...state.sessions.slice(0, state.currentSessionIndex).reverse(),
+    ];
+    const next = neighbours.find(
+      (session) => !ids.has(session.id) && !session.archived,
+    );
+    selected = next
+      ? sessions.findIndex((session) => session.id === next.id)
+      : 0;
+  }
+  const snapshot: SessionRemoval = {
+    items,
+    selectedId,
+    fallbackId: sessions[selected]?.id,
+    fallbackInitial: JSON.stringify(sessions[selected]),
+    placeholder,
+  };
+  return {
+    state: { sessions, currentSessionIndex: selected, deletedSessions },
+    snapshot,
+  };
+}
+
+function restoreSessions(state: SessionState, snapshot: SessionRemoval) {
+  const current = state.sessions[state.currentSessionIndex];
+  const currentId = current?.id;
+  const sessions = state.sessions.filter(
+    (session) =>
+      session.id !== snapshot.placeholder?.id ||
+      JSON.stringify(session) !== snapshot.placeholder.initial,
+  );
+  const deletedSessions: Record<string, number> = Object.assign(
+    Object.create(null),
+    state.deletedSessions ?? {},
+  );
+  for (const { session, index, deletedAt } of snapshot.items) {
+    const existing = sessions.findIndex((item) => item.id === session.id);
+    const previous = existing >= 0 ? sessions[existing] : session;
+    const restored = {
+      ...previous,
+      lastUpdate: restoredTimestamp(
+        previous,
+        Math.max(deletedAt ?? 0, validTimestamp(deletedSessions[session.id])),
+      ),
+    };
+    if (existing >= 0) sessions[existing] = restored;
+    else sessions.splice(Math.min(index, sessions.length), 0, restored);
+    delete deletedSessions[session.id];
+  }
+  const selectedId =
+    currentId === snapshot.fallbackId &&
+    JSON.stringify(current) === snapshot.fallbackInitial &&
+    snapshot.items.some(({ session }) => session.id === snapshot.selectedId)
+      ? snapshot.selectedId
+      : currentId;
+  const selected = sessions.findIndex((session) => session.id === selectedId);
+  return {
+    sessions,
+    currentSessionIndex: Math.max(0, selected),
+    deletedSessions,
+  };
 }
 
 function setArchived(session: ChatSession, archived: boolean) {
@@ -219,6 +339,8 @@ function fillTemplateWith(input: string, modelConfig: ModelConfig) {
 const DEFAULT_CHAT_STATE = {
   sessions: [createEmptySession()],
   deletedSessions: {} as Record<string, number>,
+  folders: [] as ChatFolder[],
+  deletedFolders: {} as Record<string, number>,
   currentSessionIndex: 0,
   lastInput: "",
 };
@@ -234,12 +356,197 @@ export const useChatStore = createPersistStore(
     }
 
     const methods = {
+      createFolder(name: string) {
+        const clean = name.trim();
+        if (!clean) return { error: "empty" as const };
+        if (
+          (get().folders ?? []).some(
+            (folder) => folder.name.toLowerCase() === clean.toLowerCase(),
+          )
+        )
+          return { error: "duplicate" as const };
+        const folders = orderedFolders(get().folders ?? []);
+        const folder: ChatFolder = {
+          id: nanoid(),
+          name: clean,
+          order: folders.length
+            ? Math.max(...folders.map((item) => item.order)) + 1
+            : 0,
+          updatedAt: Date.now(),
+        };
+        set({ folders: [...folders, folder] });
+        return { folder };
+      },
+
+      renameFolder(id: string, name: string) {
+        const clean = name.trim();
+        if (!clean) return { error: "empty" as const };
+        const folders = get().folders ?? [];
+        const folder = folders.find((item) => item.id === id);
+        if (!folder) return { error: "missing" as const };
+        if (
+          folders.some(
+            (item) =>
+              item.id !== id && item.name.toLowerCase() === clean.toLowerCase(),
+          )
+        )
+          return { error: "duplicate" as const };
+        if (folder.name !== clean)
+          set({
+            folders: folders.map((item) =>
+              item.id === id
+                ? {
+                    ...item,
+                    name: clean,
+                    updatedAt: Math.max(
+                      Date.now(),
+                      validTimestamp(item.updatedAt) + 1,
+                    ),
+                  }
+                : item,
+            ),
+          });
+        return { folder: get().folders.find((item) => item.id === id)! };
+      },
+
+      reorderFolders(from: number, to: number) {
+        const folders = orderedFolders(get().folders ?? []);
+        if (
+          from < 0 ||
+          to < 0 ||
+          from >= folders.length ||
+          to >= folders.length ||
+          from === to
+        )
+          return;
+        const [item] = folders.splice(from, 1);
+        folders.splice(to, 0, item);
+        set({
+          folders: folders.map((folder, index) =>
+            folder.order === index
+              ? folder
+              : {
+                  ...folder,
+                  order: index,
+                  updatedAt: Math.max(
+                    Date.now(),
+                    validTimestamp(folder.updatedAt) + 1,
+                  ),
+                },
+          ),
+        });
+      },
+
+      moveSessionToFolder(id: string, folderId?: string) {
+        if (
+          folderId &&
+          !(get().folders ?? []).some((folder) => folder.id === folderId)
+        )
+          return false;
+        const session = get().sessions.find((item) => item.id === id);
+        if (!session) return false;
+        if (session.folderId === folderId) return true;
+        get().updateTargetSession(session, (target) => {
+          target.folderId = folderId;
+          target.folderUpdatedAt = Math.max(
+            Date.now(),
+            validTimestamp(target.folderUpdatedAt) + 1,
+          );
+        });
+        return true;
+      },
+
+      deleteFolder(id: string, deleteConversations: boolean) {
+        const folder = (get().folders ?? []).find((item) => item.id === id);
+        if (!folder) return;
+        const members = get().sessions.filter(
+          (session) => session.folderId === id,
+        );
+        const selectedFolder = useChatFolderUI.getState().selectedFolderId;
+        const removed = deleteConversations
+          ? removeSessions(get(), new Set(members.map((session) => session.id)))
+          : undefined;
+        if (!deleteConversations)
+          for (const session of members) get().moveSessionToFolder(session.id);
+        const deletedAt = Math.max(
+          Date.now(),
+          validTimestamp(folder.updatedAt) + 1,
+          validTimestamp(get().deletedFolders?.[id]) + 1,
+        );
+        set((state) => ({
+          ...(removed?.state ?? {}),
+          folders: (state.folders ?? []).filter((item) => item.id !== id),
+          deletedFolders: {
+            ...(state.deletedFolders ?? {}),
+            [id]: deletedAt,
+          },
+        }));
+        if (useChatFolderUI.getState().selectedFolderId === id)
+          useChatFolderUI.getState().selectFolder(null);
+        const selectionVersion = useChatFolderUI.getState().selectionVersion;
+        if (removed) {
+          showToast(
+            Locale.Folder.DeletedWithChats(folder.name, members.length),
+            {
+              text: Locale.Home.Revert,
+              onClick() {
+                set((state) => {
+                  const folders = (state.folders ?? []).slice();
+                  const existing = folders.findIndex((item) => item.id === id);
+                  const previous = existing >= 0 ? folders[existing] : folder;
+                  const occupied = new Set(
+                    folders
+                      .filter((item) => item.id !== id)
+                      .map((item) => item.name.toLowerCase()),
+                  );
+                  const restored = {
+                    ...previous,
+                    name: uniqueFolderName(previous.name, occupied),
+                    updatedAt: Math.max(
+                      Date.now(),
+                      validTimestamp(previous.updatedAt) + 1,
+                      deletedAt + 1,
+                      validTimestamp(state.deletedFolders?.[id]) + 1,
+                    ),
+                  };
+                  if (existing >= 0) folders[existing] = restored;
+                  else folders.push(restored);
+                  const deletedFolders = { ...(state.deletedFolders ?? {}) };
+                  delete deletedFolders[id];
+                  return {
+                    ...restoreSessions(state, removed.snapshot),
+                    folders: orderedFolders(folders),
+                    deletedFolders,
+                  };
+                });
+                if (
+                  selectedFolder === id &&
+                  useChatFolderUI.getState().selectedFolderId === null &&
+                  useChatFolderUI.getState().selectionVersion ===
+                    selectionVersion
+                )
+                  useChatFolderUI.getState().selectFolder(id);
+              },
+            },
+            5000,
+          );
+        }
+      },
+
       forkSession() {
         // 获取当前会话
         const currentSession = get().currentSession();
         if (!currentSession) return;
 
         const newSession = createEmptySession();
+        const folderId = visibleFolderId(
+          get().folders ?? [],
+          useChatFolderUI.getState(),
+        );
+        if (folderId) {
+          newSession.folderId = folderId;
+          newSession.folderUpdatedAt = Date.now();
+        }
 
         newSession.topic = currentSession.topic;
         // 深拷贝消息
@@ -267,7 +574,7 @@ export const useChatStore = createPersistStore(
             state.deletedSessions ?? {},
           );
           for (const session of state.sessions) {
-            if (session.messages.length) {
+            if (sessionIsSyncable(session)) {
               deletedSessions[session.id] = deletionTimestamp(
                 session,
                 deletedSessions[session.id],
@@ -378,6 +685,14 @@ export const useChatStore = createPersistStore(
 
       newSession(mask?: Mask) {
         const session = createEmptySession();
+        const folderId = visibleFolderId(
+          get().folders ?? [],
+          useChatFolderUI.getState(),
+        );
+        if (folderId) {
+          session.folderId = folderId;
+          session.folderUpdatedAt = Date.now();
+        }
 
         if (mask) {
           const config = useAppConfig.getState();
@@ -406,9 +721,13 @@ export const useChatStore = createPersistStore(
 
       nextSession(delta: number) {
         const { sessions, currentSessionIndex: i } = get();
-        const visible = orderedVisibleSessions(sessions).map(
-          ({ index }) => index,
+        const folderId = visibleFolderId(
+          get().folders ?? [],
+          useChatFolderUI.getState(),
         );
+        const visible = orderedVisibleSessions(sessions)
+          .filter(({ session }) => !folderId || session.folderId === folderId)
+          .map(({ index }) => index);
         const n = visible.length;
         if (n === 0) return;
         const limit = (x: number) => (x + n) % n;
@@ -418,9 +737,9 @@ export const useChatStore = createPersistStore(
           return;
         }
         // An open archived chat occupies its usual place within its pin group.
-        const withCurrent = orderedVisibleSessions(sessions, i).map(
-          ({ index }) => index,
-        );
+        const withCurrent = orderedVisibleSessions(sessions, i)
+          .filter(({ session }) => !folderId || session.folderId === folderId)
+          .map(({ index }) => index);
         const current = withCurrent.indexOf(i);
         if (current < 0) {
           get().selectSession(visible[delta > 0 ? 0 : n - 1]);
@@ -434,86 +753,15 @@ export const useChatStore = createPersistStore(
 
       deleteSession(index: number) {
         const deletedSession = get().sessions.at(index);
-
         if (!deletedSession) return;
-
-        const sessions = get().sessions.slice();
-        sessions.splice(index, 1);
-
-        const currentIndex = get().currentSessionIndex;
-        let nextIndex = Math.min(
-          currentIndex - Number(index < currentIndex),
-          sessions.length - 1,
-        );
-
-        if (sessions.every((s) => s.archived)) {
-          nextIndex = index === currentIndex ? 0 : nextIndex + 1;
-          sessions.unshift(createEmptySession());
-        } else if (index === currentIndex) {
-          nextIndex = nearestVisibleIndex(sessions, nextIndex);
-        }
-
-        const deletedSessions: Record<string, number> = Object.assign(
-          Object.create(null),
-          get().deletedSessions ?? {},
-        );
-        const deletedAt = deletedSession.messages.length
-          ? deletionTimestamp(
-              deletedSession,
-              deletedSessions[deletedSession.id],
-            )
-          : undefined;
-        if (deletedAt !== undefined)
-          deletedSessions[deletedSession.id] = deletedAt;
-        const wasCurrent = index === currentIndex;
-
-        set(() => ({
-          currentSessionIndex: nextIndex,
-          sessions,
-          deletedSessions,
-        }));
-
+        const removed = removeSessions(get(), new Set([deletedSession.id]));
+        set(removed.state);
         showToast(
           Locale.Home.DeleteToast,
           {
             text: Locale.Home.Revert,
             onClick() {
-              set((state) => {
-                const sessions = state.sessions.slice();
-                const selectedId = sessions[state.currentSessionIndex]?.id;
-                const existing = sessions.findIndex(
-                  (s) => s.id === deletedSession.id,
-                );
-                const previous =
-                  existing >= 0 ? sessions[existing] : deletedSession;
-                const knownDeletion = Math.max(
-                  deletedAt ?? 0,
-                  validTimestamp(state.deletedSessions?.[deletedSession.id]),
-                );
-                const restored = {
-                  ...previous,
-                  lastUpdate: restoredTimestamp(previous, knownDeletion),
-                };
-                if (existing >= 0) sessions[existing] = restored;
-                else
-                  sessions.splice(
-                    Math.min(index, sessions.length),
-                    0,
-                    restored,
-                  );
-                const deletedSessions: Record<string, number> = Object.assign(
-                  Object.create(null),
-                  state.deletedSessions ?? {},
-                );
-                delete deletedSessions[deletedSession.id];
-                const targetId = wasCurrent ? restored.id : selectedId;
-                const selected = sessions.findIndex((s) => s.id === targetId);
-                return {
-                  sessions,
-                  currentSessionIndex: Math.max(0, selected),
-                  deletedSessions,
-                };
-              });
+              set((state) => restoreSessions(state, removed.snapshot));
             },
           },
           5000,
@@ -1059,6 +1307,8 @@ export const useChatStore = createPersistStore(
       const newState = JSON.parse(
         JSON.stringify(state),
       ) as typeof DEFAULT_CHAT_STATE;
+      newState.folders ??= [];
+      newState.deletedFolders ??= {};
 
       if (version < 2) {
         newState.sessions = [];
@@ -1122,3 +1372,14 @@ export const useChatStore = createPersistStore(
     },
   },
 );
+
+// A folder may disappear during hydration, sync, or backup import on this device.
+useChatStore.subscribe((state) => {
+  const selection = useChatFolderUI.getState().selectedFolderId;
+  if (
+    state._hasHydrated &&
+    selection &&
+    !(state.folders ?? []).some((folder) => folder.id === selection)
+  )
+    useChatFolderUI.getState().selectFolder(null);
+});

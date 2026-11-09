@@ -5,12 +5,15 @@ import {
   useChatStore,
 } from "../store";
 import { useMaskStore } from "../store/mask";
+import type { ChatFolder } from "../store/chat";
+import { orderedFolders, uniqueFolderName } from "./chat-folders";
 import { SearchService, usePromptStore } from "../store/prompt";
 import { StoreKey } from "../constant";
 import { merge } from "./merge";
 import {
   restoredTimestamp,
   sessionModifiedAt,
+  sessionIsSyncable,
   validTimestamp,
 } from "./chat-deletion";
 
@@ -80,6 +83,22 @@ export function getCloudAppState(): CloudState {
   return Object.fromEntries(
     CloudStoreKeys.map((key) => [key, LocalStateGetters[key]()]),
   ) as CloudState;
+}
+
+// Keep empty drafts on this device, but never include them in an upload.
+export function prepareCloudUpload(state: CloudState): CloudState {
+  const chat = state[StoreKey.Chat];
+  const selectedId = chat.sessions[chat.currentSessionIndex]?.id;
+  const sessions = chat.sessions.filter(sessionIsSyncable);
+  const selected = sessions.findIndex((session) => session.id === selectedId);
+  return {
+    ...state,
+    [StoreKey.Chat]: {
+      ...chat,
+      sessions,
+      currentSessionIndex: Math.max(0, selected),
+    },
+  };
 }
 
 export function setCloudAppState(state: CloudState) {
@@ -230,6 +249,63 @@ function mergeChatStates(
   remote: ChatState,
   restoreImport = false,
 ): ChatState {
+  const folderRecords = (folders: ChatFolder[] | undefined) => {
+    const result: Record<string, ChatFolder> = Object.create(null);
+    for (const folder of Array.isArray(folders) ? folders : []) {
+      if (
+        folder &&
+        typeof folder.id === "string" &&
+        folder.id &&
+        typeof folder.name === "string" &&
+        folder.name.trim()
+      )
+        result[folder.id] = {
+          ...folder,
+          order: Number.isFinite(folder.order) ? folder.order : 0,
+        };
+    }
+    return result;
+  };
+  const mergedFolders = mergeUserItems(
+    folderRecords(local.folders),
+    folderRecords(remote.folders),
+    local.deletedFolders,
+    remote.deletedFolders,
+    restoreImport,
+  );
+  // Concurrent edits on different devices may independently choose the same
+  // name. Retain both records and deterministically disambiguate duplicates.
+  const records = Object.values(mergedFolders.items).sort((a, b) =>
+    a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+  );
+  const reserved = new Set(
+    records.map((folder) => folder.name.trim().toLowerCase()),
+  );
+  const clocks = new Map<string, number>();
+  for (const folder of records) {
+    const key = folder.name.trim().toLowerCase();
+    clocks.set(
+      key,
+      Math.max(clocks.get(key) ?? 0, validTimestamp(folder.updatedAt)),
+    );
+  }
+  const used = new Set<string>();
+  for (const folder of records) {
+    const original = folder.name.trim();
+    let name = original;
+    if (used.has(name.toLowerCase())) {
+      name = uniqueFolderName(original, new Set([...reserved, ...used]));
+      folder.updatedAt =
+        Math.max(
+          validTimestamp(folder.updatedAt),
+          clocks.get(original.toLowerCase()) ?? 0,
+        ) + 1;
+    }
+    folder.name = name;
+    used.add(name.toLowerCase());
+  }
+  local.folders = orderedFolders(records);
+  local.deletedFolders = mergedFolders.tombstones;
   const oldOrder = local.sessions.map((session) => session.id);
   const oldIndex = local.currentSessionIndex;
   const currentId = local.sessions[oldIndex]?.id;
@@ -242,6 +318,7 @@ function mergeChatStates(
   );
 
   for (const incoming of remote.sessions) {
+    if (!restoreImport && !sessionIsSyncable(incoming)) continue;
     let remoteSession = incoming;
     const hasTombstone = Object.prototype.hasOwnProperty.call(
       tombstones,
@@ -261,11 +338,6 @@ function mergeChatStates(
     }
     const localSession = sessionsById.get(remoteSession.id);
     if (!localSession) {
-      if (
-        remoteSession.messages.length === 0 &&
-        !(restoreImport && hasTombstone)
-      )
-        continue;
       local.sessions.push(remoteSession);
       sessionsById.set(remoteSession.id, remoteSession);
       continue;
@@ -296,6 +368,13 @@ function mergeChatStates(
     ) {
       localSession.pinned = !!remoteSession.pinned;
       localSession.pinUpdatedAt = remoteSession.pinUpdatedAt;
+    }
+    if (
+      validTimestamp(remoteSession.folderUpdatedAt) >
+      validTimestamp(localSession.folderUpdatedAt)
+    ) {
+      localSession.folderId = remoteSession.folderId;
+      localSession.folderUpdatedAt = remoteSession.folderUpdatedAt;
     }
     // Preserve the newer device's edit time so a later sync cannot delete it.
     localSession.lastUpdate = Math.max(

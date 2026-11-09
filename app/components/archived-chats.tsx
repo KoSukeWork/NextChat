@@ -5,6 +5,7 @@ import Locale from "../locales";
 import { useChatStore } from "../store";
 import { useSearchJump } from "../store/search-jump";
 import { SEARCH_RESULT_LIMIT, searchSessions } from "../utils/chat-search";
+import { sessionFolder } from "../utils/chat-folders";
 import { IconButton } from "./button";
 import { SearchHighlight } from "./search-highlight";
 import { ErrorBoundary } from "./error";
@@ -111,6 +112,12 @@ export function ArchivedChatsPage() {
                         {Locale.ChatItem.ChatItemCount(session.messages.length)}
                         {" · "}
                         {new Date(session.lastUpdate).toLocaleString()}
+                        {sessionFolder(session, chatStore.folders)?.name && (
+                          <>
+                            {" · "}
+                            {sessionFolder(session, chatStore.folders)?.name}
+                          </>
+                        )}
                       </div>
                       {match && (
                         <div className={archiveStyles.snippet}>

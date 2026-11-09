@@ -52,6 +52,36 @@ const en: LocaleType = {
   ChatItem: {
     ChatItemCount: (count: number) => `${count} messages`,
   },
+  Folder: {
+    All: "All",
+    Ungrouped: "Ungrouped",
+    Create: "New folder",
+    Name: "Folder name",
+    Rename: "Rename folder",
+    Delete: "Delete folder",
+    Options: (name: string) => `Folder “${name}”`,
+    MoveChat: "Move to folder",
+    MovedTo: (name: string) => `Chat moved to ${name}`,
+    MoveCancelled: "Chat was not moved",
+    MoveLeft: "Move left",
+    MoveRight: "Move right",
+    EmptyName: "Folder name cannot be empty",
+    DuplicateName: "A folder with this name already exists",
+    Missing: "Folder no longer exists",
+    Current: (name: string) => `${name} (current)`,
+    Empty:
+      "This folder has no chats yet. Drag a chat to its tab above, or use the chat's Move to folder action.",
+    DeletedWithChats: (name: string, count: number) =>
+      `Deleted folder “${name}” and ${count} chats`,
+    DeleteQuestion: (name: string, count: number, archived: number) =>
+      `“${name}” contains ${count} chats${
+        archived ? `, including ${archived} archived` : ""
+      }. Choose how to delete it.`,
+    DeleteFolderOnly: "Delete folder only",
+    DeleteWithChats: "Delete folder and chats",
+    SearchAll: "All chats",
+    SearchCurrent: (name: string) => `Current folder (${name})`,
+  },
   Pin: {
     Action: "Pin chat",
     Undo: "Unpin chat",

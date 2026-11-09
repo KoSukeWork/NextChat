@@ -18,9 +18,7 @@ jest.unstable_mockModule("@/app/components/ui-lib", () => ({
 await import("../app/client/api");
 const { EndpointClient } = await import("../app/client/endpoint-client");
 jest.spyOn(EndpointClient.prototype, "chat").mockImplementation(async () => {});
-const { useChatStore, useAppConfig } = await import(
-  "../app/store"
-);
+const { useChatStore, useAppConfig } = await import("../app/store");
 const { createEmptyMask } = await import("../app/store/mask");
 const { useSyncStore } = await import("../app/store/sync");
 const {
@@ -68,7 +66,16 @@ beforeEach(() => {
   toast.mockClear();
   useChatStore.setState({ deletedSessions: {} });
   useAppConfig.setState({
-    endpoints: [{ id: "home-endpoint", name: "Home", protocol: "openai-chat", baseUrl: "https://example.test", apiKey: "", models: [{ name: "home" }] }],
+    endpoints: [
+      {
+        id: "home-endpoint",
+        name: "Home",
+        protocol: "openai-chat",
+        baseUrl: "https://example.test",
+        apiKey: "",
+        models: [{ name: "home" }],
+      },
+    ],
     modelConfig: {
       ...useAppConfig.getState().modelConfig,
       model: "home",
@@ -348,6 +355,67 @@ test("first cloud upload also contains local tombstones", async () => {
   expect(JSON.parse(uploaded)[StoreKey.Chat].deletedSessions.remove).toBe(
     deletedAt,
   );
+});
+
+test("cloud uploads omit grouped empty drafts while preserving them locally", async () => {
+  Object.assign(global, { TextEncoder, TextDecoder });
+  load([
+    session("blank-created", {
+      messages: [],
+      folderId: "f",
+      folderUpdatedAt: 100,
+    }),
+    session("blank-moved", {
+      messages: [],
+      folderId: "f",
+      folderUpdatedAt: 101,
+    }),
+    session("full", { folderId: "f", folderUpdatedAt: 102 }),
+  ]);
+  useChatStore.setState({
+    folders: [{ id: "f", name: "Work", order: 0, updatedAt: 1 }],
+  });
+  let backup = "";
+  const invoke = jest.fn(async (_command: string, args: any) => {
+    if (args.request.method === "MKCOL") return { status: 405, body: "" };
+    if (args.request.method === "GET")
+      return backup ? { status: 200, body: backup } : { status: 404, body: "" };
+    backup = args.request.body;
+    return { status: 204, body: "" };
+  });
+  Object.defineProperty(window, "__TAURI__", {
+    configurable: true,
+    value: { invoke },
+  });
+  useSyncStore.setState({
+    provider: ProviderType.WebDAV,
+    webdav: {
+      endpoint: "https://dav.example",
+      username: "test",
+      password: "test",
+    },
+  });
+  await useSyncStore.getState().sync();
+  await useSyncStore.getState().sync();
+  let uploaded = JSON.parse(backup)[StoreKey.Chat].sessions;
+  expect(uploaded.map((item: any) => item.id)).toEqual(["full"]);
+  expect(uploaded[0].folderId).toBe("f");
+  expect(useChatStore.getState().sessions.map((item) => item.id)).toEqual(
+    expect.arrayContaining(["blank-created", "blank-moved", "full"]),
+  );
+  useChatStore.setState((state) => ({
+    sessions: state.sessions.map((item) =>
+      item.id === "blank-created"
+        ? { ...item, messages: [session("message").messages[0]] as any }
+        : item,
+    ),
+  }));
+  await useSyncStore.getState().sync();
+  uploaded = JSON.parse(backup)[StoreKey.Chat].sessions;
+  expect(
+    uploaded.find((item: any) => item.id === "blank-created")?.folderId,
+  ).toBe("f");
+  expect(uploaded.some((item: any) => item.id === "blank-moved")).toBe(false);
 });
 
 test("deleting while an upload is in flight survives the completed sync", async () => {

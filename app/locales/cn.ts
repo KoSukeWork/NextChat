@@ -49,6 +49,36 @@ const cn = {
   ChatItem: {
     ChatItemCount: (count: number) => `${count} 条对话`,
   },
+  Folder: {
+    All: "全部",
+    Ungrouped: "未分组",
+    Create: "新建文件夹",
+    Name: "文件夹名称",
+    Rename: "重命名文件夹",
+    Delete: "删除文件夹",
+    Options: (name: string) => `文件夹“${name}”`,
+    MoveChat: "移动到文件夹",
+    MovedTo: (name: string) => `对话已移动到 ${name}`,
+    MoveCancelled: "没有移动对话",
+    MoveLeft: "向左移动",
+    MoveRight: "向右移动",
+    EmptyName: "文件夹名称不能为空",
+    DuplicateName: "已有同名文件夹",
+    Missing: "文件夹不存在",
+    Current: (name: string) => `${name}（当前）`,
+    Empty:
+      "这个文件夹还没有对话，可以把对话拖到上面的标签，或使用对话上的“移动到文件夹”。",
+    DeletedWithChats: (name: string, count: number) =>
+      `已删除文件夹“${name}”和 ${count} 个对话`,
+    DeleteQuestion: (name: string, count: number, archived: number) =>
+      `“${name}”中有 ${count} 个对话${
+        archived ? `，其中 ${archived} 个已归档` : ""
+      }。请选择删除方式。`,
+    DeleteFolderOnly: "只删除文件夹",
+    DeleteWithChats: "连同对话一起删除",
+    SearchAll: "全部对话",
+    SearchCurrent: (name: string) => `当前文件夹（${name}）`,
+  },
   Pin: {
     Action: "置顶",
     Undo: "取消置顶",

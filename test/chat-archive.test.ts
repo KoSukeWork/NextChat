@@ -15,9 +15,7 @@ jest.unstable_mockModule("@/app/components/ui-lib", () => ({
 await import("../app/client/api");
 const { EndpointClient } = await import("../app/client/endpoint-client");
 jest.spyOn(EndpointClient.prototype, "chat").mockImplementation(async () => {});
-const { useAppConfig, useChatStore } = await import(
-  "../app/store"
-);
+const { useAppConfig, useChatStore } = await import("../app/store");
 const { createEmptyMask } = await import("../app/store/mask");
 const { StoreKey } = await import("../app/constant");
 const { mergeAppState, mergeCloudAppState, getLocalAppState } = await import(
@@ -45,7 +43,16 @@ beforeEach(() => {
   toast.mockClear();
   useChatStore.setState({ deletedSessions: {} });
   useAppConfig.setState({
-    endpoints: [{ id: "home-endpoint", name: "Home", protocol: "openai-chat", baseUrl: "https://example.test", apiKey: "", models: [{ name: "home" }] }],
+    endpoints: [
+      {
+        id: "home-endpoint",
+        name: "Home",
+        protocol: "openai-chat",
+        baseUrl: "https://example.test",
+        apiKey: "",
+        models: [{ name: "home" }],
+      },
+    ],
     modelConfig: {
       ...useAppConfig.getState().modelConfig,
       model: "home",
@@ -228,14 +235,17 @@ describe("sending from an archived session", () => {
     expect(store().sessions[0].archived).toBe(false);
     expect(store().sessions[0].archiveUpdatedAt).toBeGreaterThan(5);
   });
-
 });
 
 test("MCP choices default on, copy from masks and are snapshotted when sending", async () => {
   load([session("a")]);
   store().newSession();
   expect(store().currentSession().mask.mcpDisabled).toBeUndefined();
-  const mask = { ...createEmptyMask(), mcpDisabled: ["off"], plugin: ["plugin"] };
+  const mask = {
+    ...createEmptyMask(),
+    mcpDisabled: ["off"],
+    plugin: ["plugin"],
+  };
   store().newSession(mask);
   expect(store().currentSession().mask.mcpDisabled).toEqual(["off"]);
   store().forkSession();
@@ -245,25 +255,56 @@ test("MCP choices default on, copy from masks and are snapshotted when sending",
   const pending = store().onUserInput("hello");
   store().currentSession().mask.mcpDisabled = ["later"];
   await pending;
-  expect(chat).toHaveBeenCalledWith(expect.objectContaining({ mcpDisabled: ["off"] }));
+  expect(chat).toHaveBeenCalledWith(
+    expect.objectContaining({ mcpDisabled: ["off"] }),
+  );
 });
 
 test("sync treats MCP choices like plugin choices for chats and saved masks", () => {
   const local: any = JSON.parse(JSON.stringify(getLocalAppState()));
   const remote: any = JSON.parse(JSON.stringify(getLocalAppState()));
-  const localMask = { ...createEmptyMask(), id: "mask", updatedAt: 10, plugin: ["local-plugin"], mcpDisabled: ["local"] };
-  const remoteMask = { ...localMask, updatedAt: 20, plugin: ["remote-plugin"], mcpDisabled: ["remote"] };
+  const localMask = {
+    ...createEmptyMask(),
+    id: "mask",
+    updatedAt: 10,
+    plugin: ["local-plugin"],
+    mcpDisabled: ["local"],
+  };
+  const remoteMask = {
+    ...localMask,
+    updatedAt: 20,
+    plugin: ["remote-plugin"],
+    mcpDisabled: ["remote"],
+  };
   local[StoreKey.Chat].sessions = [session("same", { mask: localMask })];
-  remote[StoreKey.Chat].sessions = [session("same", { mask: remoteMask, lastUpdate: 100 }), session("new", { mask: remoteMask })];
-  local[StoreKey.Chat].currentSessionIndex = remote[StoreKey.Chat].currentSessionIndex = 0;
+  remote[StoreKey.Chat].sessions = [
+    session("same", { mask: remoteMask, lastUpdate: 100 }),
+    session("new", { mask: remoteMask }),
+  ];
+  local[StoreKey.Chat].currentSessionIndex = remote[
+    StoreKey.Chat
+  ].currentSessionIndex = 0;
   local[StoreKey.Mask].masks = { mask: localMask };
   remote[StoreKey.Mask].masks = { mask: remoteMask };
   const result = mergeCloudAppState(local, remote);
-  const same = result[StoreKey.Chat].sessions.find((item) => item.id === "same")!;
-  const fresh = result[StoreKey.Chat].sessions.find((item) => item.id === "new")!;
-  expect(same.mask).toMatchObject({ plugin: ["local-plugin"], mcpDisabled: ["local"] });
-  expect(fresh.mask).toMatchObject({ plugin: ["remote-plugin"], mcpDisabled: ["remote"] });
-  expect(result[StoreKey.Mask].masks.mask).toMatchObject({ plugin: ["remote-plugin"], mcpDisabled: ["remote"] });
+  const same = result[StoreKey.Chat].sessions.find(
+    (item) => item.id === "same",
+  )!;
+  const fresh = result[StoreKey.Chat].sessions.find(
+    (item) => item.id === "new",
+  )!;
+  expect(same.mask).toMatchObject({
+    plugin: ["local-plugin"],
+    mcpDisabled: ["local"],
+  });
+  expect(fresh.mask).toMatchObject({
+    plugin: ["remote-plugin"],
+    mcpDisabled: ["remote"],
+  });
+  expect(result[StoreKey.Mask].masks.mask).toMatchObject({
+    plugin: ["remote-plugin"],
+    mcpDisabled: ["remote"],
+  });
 });
 
 describe("starting the app", () => {
@@ -321,15 +362,15 @@ describe("syncing", () => {
     expect(result.sessions[0].archived).toBe(false);
   });
 
-  test("newer archive state is merged even if the remote chat is empty", () => {
+  test("an empty remote chat does not synchronize its archive state", () => {
     const result = merged(
       chat([session("a", { archived: false, archiveUpdatedAt: 5 })]),
       chat([
         session("a", { messages: [], archived: true, archiveUpdatedAt: 9 }),
       ]),
     );
-    expect(result.sessions[0].archived).toBe(true);
-    expect(result.sessions[0].archiveUpdatedAt).toBe(9);
+    expect(result.sessions[0].archived).toBe(false);
+    expect(result.sessions[0].archiveUpdatedAt).toBe(5);
     expect(result.sessions[0].messages).toHaveLength(1);
   });
 

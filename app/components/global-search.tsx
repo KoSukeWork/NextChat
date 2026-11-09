@@ -5,6 +5,8 @@ import { create } from "zustand";
 import { Path } from "../constant";
 import Locale from "../locales";
 import { useChatStore } from "../store";
+import { useChatFolderUI } from "../store/chat-folder-ui";
+import { sessionFolder, visibleFolderId } from "../utils/chat-folders";
 import { useSearchJump } from "../store/search-jump";
 import {
   searchSessions,
@@ -41,6 +43,11 @@ function SearchPanel(props: { onClose: () => void }) {
   const [expanded, setExpanded] = useState(new Set<string>());
   const [selected, setSelected] = useState(0);
   const selectedRow = useRef<HTMLDivElement>(null);
+  const folders = useChatStore((state) => state.folders ?? []);
+  const selection = useChatFolderUI();
+  const folderId = visibleFolderId(folders, selection);
+  const currentFolder = folders.find((folder) => folder.id === folderId);
+  const [scope, setScope] = useState<"all" | "folder">("all");
 
   // Pinyin letters in an unfinished IME composition are not a search yet.
   useEffect(() => {
@@ -53,10 +60,18 @@ function SearchPanel(props: { onClose: () => void }) {
   const result = useMemo(
     () =>
       searchSessions(
-        useChatStore.getState().sessions.filter((session) => !session.archived),
+        useChatStore
+          .getState()
+          .sessions.filter(
+            (session) =>
+              !session.archived &&
+              (scope !== "folder" ||
+                !folderId ||
+                session.folderId === folderId),
+          ),
         query,
       ),
-    [query],
+    [query, scope, folderId],
   );
 
   useEffect(() => {
@@ -119,9 +134,21 @@ function SearchPanel(props: { onClose: () => void }) {
       return;
     }
     onClose();
-    if (!useChatStore.getState().selectSessionById(row.group.session.id)) {
+    const store = useChatStore.getState();
+    const target = store.sessions.find(
+      (session) => session.id === row.group.session.id,
+    );
+    if (!target || !store.selectSessionById(target.id)) {
       return;
     }
+    const activeFolder = visibleFolderId(
+      store.folders ?? [],
+      useChatFolderUI.getState(),
+    );
+    if (activeFolder && target.folderId !== activeFolder)
+      useChatFolderUI
+        .getState()
+        .selectFolder(sessionFolder(target, store.folders)?.id ?? null);
     useSearchJump
       .getState()
       .setRequest(
@@ -164,6 +191,24 @@ function SearchPanel(props: { onClose: () => void }) {
           onCompositionEnd={() => setComposing(false)}
           onKeyDown={onKeyDown}
         />
+        {currentFolder && (
+          <div className={styles.scope}>
+            <button
+              type="button"
+              aria-pressed={scope === "all"}
+              onClick={() => setScope("all")}
+            >
+              {Locale.Folder.SearchAll}
+            </button>
+            <button
+              type="button"
+              aria-pressed={scope === "folder"}
+              onClick={() => setScope("folder")}
+            >
+              {Locale.Folder.SearchCurrent(currentFolder.name)}
+            </button>
+          </div>
+        )}
         <div className={styles.results}>
           {result.keywords.length === 0 && (
             <div className={styles.notice}>{text.Hint}</div>
@@ -198,6 +243,11 @@ function SearchPanel(props: { onClose: () => void }) {
                       row.group.matches.length + Number(row.group.titleMatched),
                     )}
                   </div>
+                  {sessionFolder(row.group.session, folders) && (
+                    <div className={styles["group-folder"]}>
+                      {sessionFolder(row.group.session, folders)?.name}
+                    </div>
+                  )}
                   <div className={styles["group-meta"]}>
                     {new Date(row.group.session.lastUpdate).toLocaleString()}
                   </div>

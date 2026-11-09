@@ -9,7 +9,12 @@ export function sessionModifiedAt(session: ChatSession): number {
     validTimestamp(session.lastUpdate),
     validTimestamp(session.archiveUpdatedAt),
     validTimestamp(session.pinUpdatedAt),
+    validTimestamp(session.folderUpdatedAt),
   );
+}
+
+export function sessionIsSyncable(session: ChatSession): boolean {
+  return session.messages.length > 0;
 }
 
 export function deletionTimestamp(session: ChatSession, previous?: number) {
