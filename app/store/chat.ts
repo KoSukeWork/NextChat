@@ -35,6 +35,34 @@ import type { ToolDisplay } from "../mcp/tool-runtime";
 
 const localStorage = safeLocalStorage();
 
+// Server error bodies and transport exceptions can contain keys or request URLs.
+function titleRefreshError(error: Error) {
+  const status = (error as Error & { status?: unknown }).status;
+  const fromMessage = /^HTTP ([45]\d\d)(?:\D|$)/.exec(error.message);
+  const httpStatus =
+    typeof status === "number" ? status : Number(fromMessage?.[1]);
+  if (Number.isInteger(httpStatus) && httpStatus >= 400 && httpStatus <= 599)
+    return `HTTP ${httpStatus}`;
+  const network = Locale.Settings.Sync.Errors;
+  const safeMessages = [
+    network.NETWORK_DNS,
+    network.NETWORK_TLS,
+    network.NETWORK_TIMEOUT,
+    network.NETWORK_REFUSED,
+    network.NETWORK_CONNECT,
+    network.NETWORK_FAILED,
+  ];
+  if (safeMessages.includes(error.message)) return error.message;
+  if (
+    error instanceof TypeError ||
+    /^(failed to fetch|networkerror|network request failed)/i.test(
+      error.message,
+    )
+  )
+    return network.NETWORK_FAILED;
+  return Locale.Chat.Actions.RefreshTitleUnknownError;
+}
+
 export type ChatMessageTool = {
   id: string;
   index?: number;
@@ -834,8 +862,17 @@ export const useChatStore = createPersistStore(
         const resolved = resolveConfiguredModel(
           requestedModel,
           requestedEndpoint,
+          shouldGenerateTitle,
         );
-        if (!resolved) return;
+        if (!resolved) {
+          if (refreshTitle && shouldGenerateTitle)
+            showToast(
+              Locale.Chat.Actions.RefreshTitleFailed(
+                Locale.ModelDiscovery.ConfigureFirst,
+              ),
+            );
+          return;
+        }
         const { model, endpointId } = resolved;
         if (model !== requestedModel || endpointId !== requestedEndpoint) {
           get().updateTargetSession(session, (target) => {
@@ -872,20 +909,39 @@ export const useChatStore = createPersistStore(
             messages: topicMessages,
             config: {
               model,
-              stream: false,
+              stream: true,
               endpointId,
             },
             onFinish(message, responseRes) {
-              if (responseRes?.status === 200) {
-                get().updateTargetSession(
-                  session,
-                  (session) =>
-                    (session.topic =
-                      stripThinking(message).length > 0
-                        ? trimTopic(stripThinking(message))
-                        : DEFAULT_TOPIC),
-                );
+              if (responseRes?.status !== 200) {
+                if (refreshTitle) {
+                  const reason =
+                    responseRes?.status === 499
+                      ? Locale.Settings.Sync.Errors.NETWORK_TIMEOUT
+                      : responseRes?.status
+                      ? `HTTP ${responseRes.status}`
+                      : Locale.Chat.Actions.RefreshTitleUnknownError;
+                  showToast(Locale.Chat.Actions.RefreshTitleFailed(reason));
+                }
+                return;
               }
+              const title = trimTopic(stripThinking(message).trim()).trim();
+              if (!title) {
+                if (refreshTitle)
+                  showToast(Locale.Chat.Actions.RefreshTitleEmpty);
+                return;
+              }
+              get().updateTargetSession(session, (target) => {
+                target.topic = title;
+              });
+            },
+            onError(error) {
+              if (refreshTitle)
+                showToast(
+                  Locale.Chat.Actions.RefreshTitleFailed(
+                    titleRefreshError(error),
+                  ),
+                );
             },
           });
         }

@@ -4,7 +4,11 @@ import Locale from "../locales";
 import { useAppConfig } from "../store/config";
 import { resolveEndpointModel } from "./endpoints";
 
-export function resolveConfiguredModel(model: string, endpointId = "") {
+export function resolveConfiguredModel(
+  model: string,
+  endpointId = "",
+  silentOnMissing = false,
+) {
   const config = useAppConfig.getState();
   const resolved = resolveEndpointModel(
     config.endpoints,
@@ -12,12 +16,13 @@ export function resolveConfiguredModel(model: string, endpointId = "") {
     config.modelConfig,
   );
   if (!resolved) {
-    showToast(Locale.ModelDiscovery.ConfigureFirst, {
-      text: Locale.EndpointConfig.OpenSettings,
-      onClick: () => {
-        window.location.hash = `#${Path.Settings}`;
-      },
-    });
+    if (!silentOnMissing)
+      showToast(Locale.ModelDiscovery.ConfigureFirst, {
+        text: Locale.EndpointConfig.OpenSettings,
+        onClick: () => {
+          window.location.hash = `#${Path.Settings}`;
+        },
+      });
     return;
   }
   if (resolved.match === "default") {

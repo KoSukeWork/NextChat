@@ -7,6 +7,8 @@ mod stream;
 mod sync_http;
 mod zoom;
 mod tts;
+#[cfg(windows)]
+mod window_icon;
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -21,6 +23,8 @@ fn main() {
     }
     tauri::Builder::default()
         .setup(|app| {
+            #[cfg(windows)]
+            app.manage(window_icon::set_window_icons(app.windows().values()));
             let directory = app
                 .path_resolver()
                 .app_config_dir()

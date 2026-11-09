@@ -136,6 +136,11 @@ const en: LocaleType = {
       FullScreen: "FullScreen",
       RefreshTitle: "Refresh Title",
       RefreshToast: "Title refresh request sent",
+      RefreshTitleFailed: (reason: string) =>
+        `Failed to refresh title: ${reason}`,
+      RefreshTitleEmpty: "The model did not return a title",
+      RefreshTitleUnknownError:
+        "Request failed. Check the configuration and try again",
       Speech: "Play",
       StopSpeech: "Stop",
     },
