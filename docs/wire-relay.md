@@ -26,7 +26,7 @@ $env:NEXTCHAT_WIRE_TOKEN = '替换为至少16字符的随机令牌'
 
 默认监听 `127.0.0.1:8789`。`NEXTCHAT_WIRE_HOST`、`NEXTCHAT_WIRE_PORT` 可调整监听地址和端口。关闭终端或 Ctrl+C 即停止。所有接口均校验令牌，不提供未经认证的转发。
 
-NextChat 设置 → 请求扩展插件 → 安装 Claude Code，安装当前实验包；在 Anthropic Messages 接口中绑定 **3.2.0-beta.1**，选择 **独立 HTTP 模拟**，填写发包服务 URL 和相同令牌。网关 URL、网关 API Key、模型仍填在接口本身。预览会显示 `independent-transport`、发包服务地址及上游请求，凭据被遮盖。
+NextChat 设置 → 请求扩展插件 → Claude Code 请求插件 → 添加插件；在 Anthropic Messages 接口中绑定 **3.2.0-beta.1**，选择 **独立 HTTP 模拟**，填写发包服务 URL 和相同令牌。网关 URL、网关 API Key、模型仍填在接口本身。预览会显示 `independent-transport`、发包服务地址及上游请求，凭据被遮盖。
 
 网页版由 NextChat 部署服务器连接发包服务；桌面版由本机连接。远程网页部署中的 `127.0.0.1` 指部署服务器，不是访问网页的电脑。跨机器部署应放在受控网络中，并通过 HTTPS 反向代理保护服务令牌和请求内容。
 

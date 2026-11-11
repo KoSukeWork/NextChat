@@ -1,0 +1,89 @@
+.row,
+.field {
+  gap: 12px 20px;
+
+  > :first-child {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+  }
+}
+
+.row > :last-child:not(:first-child) {
+  flex-shrink: 0;
+}
+
+.actions,
+.enabled,
+.executable {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.enabled,
+.status {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.enabled {
+  cursor: pointer;
+  margin-right: 4px;
+}
+
+.field > :last-child:not(:first-child) {
+  flex: 0 1 48%;
+  width: 48%;
+  max-width: 48%;
+  min-width: 0;
+}
+
+.field select,
+.field > :last-child input {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.executable {
+  input {
+    flex: 1;
+    text-align: left;
+  }
+
+  button {
+    flex-shrink: 0;
+  }
+}
+
+.detail {
+  overflow-wrap: anywhere;
+}
+
+@media screen and (max-width: 600px) {
+  .row,
+  .field {
+    flex-wrap: wrap;
+  }
+
+  .row > :first-child {
+    flex-basis: 100%;
+  }
+
+  .row > :last-child:not(:first-child) {
+    margin-left: auto;
+  }
+
+  .field > :last-child:not(:first-child) {
+    flex-basis: 100%;
+    width: 100%;
+    max-width: 100%;
+  }
+}

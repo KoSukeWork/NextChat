@@ -96,7 +96,11 @@ const en: LocaleType = {
       Stopped: "Stopped",
       Missing:
         "Bundled components are missing or unsupported. Use the complete Windows x64 installer or portable package.",
-      Executable: "Claude Code executable",
+      Executable: "Installed Claude Code CLI",
+      ExecutableHint:
+        "Use an existing claude.exe, detected automatically or selected manually.",
+      Connection: "Service connection",
+      Error: "Service notice",
       AutoDetect: "Find installed Claude Code automatically",
       Browse: "Choose executable",
       Start: "Start and connect",
@@ -108,20 +112,28 @@ const en: LocaleType = {
       "Uses a sample message without sending it. In CLI mode this shows the bridge request; Claude Code generates the upstream request.",
     Title: "Request extensions",
     Description:
-      "Install client drivers and request adapters, then bind a version to an API endpoint. Packages stay on this device.",
-    Import: "Import plugin",
-    InstallClaude: "Install Claude Code",
+      "Add request adapters to NextChat, then select a plugin in your API endpoint settings.",
+    ClaudePlugin: "Claude Code request plugin",
+    ClaudePluginDescription:
+      "Supports HTTP simulation and real CLI modes. CLI mode uses Claude Code already installed on your computer.",
+    AddClaudePlugin: "Add Claude Code request plugin",
+    Add: "Add plugin",
+    Added: "Added",
+    ImportTitle: "Import other plugins from a file",
+    ImportDescription:
+      "Select a request plugin JSON file shared by someone else or exported from NextChat. No file is needed for the plugin above.",
+    Import: "Choose plugin file",
     Export: "Export",
-    Remove: "Uninstall",
+    Remove: "Remove plugin",
     Enabled: "Enabled",
     Bound: "Bound endpoints",
     Select: "Request plugin",
     Standard: "Standard API",
     Unavailable: "Unavailable",
     Trust:
-      "This package contains executable JavaScript. It can read requests and credentials and access the network. Install only a package you trust?",
+      "This package contains executable JavaScript. It can read requests and credentials and access the network. Add this trusted request plugin to NextChat?",
     RemoveConfirm:
-      "Uninstall this version? Endpoints bound to it will report an error until you select another version or Standard API.",
+      "Remove this request plugin version? Endpoints bound to it will report an error until you select another version or Standard API.",
   },
   EndpointConfig: {
     ToolCalling: "Tool calling",

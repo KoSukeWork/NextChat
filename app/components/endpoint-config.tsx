@@ -123,6 +123,7 @@ function EndpointEditor(props: { initial: Endpoint; onClose: () => void }) {
         <List>
           <ListItem title={Locale.EndpointConfig.Name}>
             <input
+              type="text"
               aria-label={Locale.EndpointConfig.Name}
               value={draft.name}
               onChange={(event) => update({ name: event.currentTarget.value })}
@@ -166,6 +167,7 @@ function EndpointEditor(props: { initial: Endpoint; onClose: () => void }) {
           </ListItem>
           <ListItem title={Locale.EndpointConfig.BaseUrl}>
             <input
+              type="text"
               aria-label={Locale.EndpointConfig.BaseUrl}
               value={draft.baseUrl}
               placeholder="https://api.example.com"
@@ -227,12 +229,14 @@ function EndpointEditor(props: { initial: Endpoint; onClose: () => void }) {
           <ListItem title={Locale.EndpointConfig.AddModel} vertical>
             <div className={styles["model-entry"]}>
               <input
+                type="text"
                 aria-label={Locale.EndpointConfig.ModelName}
                 value={name}
                 placeholder={Locale.EndpointConfig.ModelName}
                 onChange={(event) => setName(event.currentTarget.value)}
               />
               <input
+                type="text"
                 aria-label={Locale.EndpointConfig.DisplayName}
                 value={displayName}
                 placeholder={Locale.EndpointConfig.DisplayName}

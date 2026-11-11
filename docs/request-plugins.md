@@ -8,7 +8,7 @@
 
 ## 使用交互式 HTTP 模拟
 
-1. 设置 → **请求扩展插件** → **导入插件**，选择 `public/request-plugins/nextchat.claude-code-2.0.0.json`。
+1. 设置 → **请求扩展插件** → **从文件导入其他插件** → **选择插件文件**，选择 `public/request-plugins/nextchat.claude-code-2.0.0.json`。这是手动导入旧版 NextChat 请求插件包，不是安装 Claude Code CLI；使用当前随包版本时直接点击“Claude Code 请求插件”旁的“添加插件”。
 2. 在接口配置中选择 **Anthropic Messages**，填写第三方网关 URL 和 API Key，手动添加供应商提供的模型名。
 3. 选择 **Claude Code 2.0.0** 请求插件，保留默认的 2.1.322 抓包预设即可开始测试。Bearer 网关改选认证方式。
 4. **预览请求**可检查最终 URL、请求头和示例请求体，不发送网络请求；凭据会被遮盖。保存后发送聊天。

@@ -10,6 +10,7 @@ import {
 } from "../request-plugins/local-services";
 import { IconButton } from "./button";
 import { ListItem } from "./ui-lib";
+import styles from "./request-plugins.module.scss";
 
 export function LocalServiceControl(props: {
   service: string;
@@ -49,7 +50,6 @@ export function LocalServiceControl(props: {
     return () => {
       active.current = false;
       disposed = true;
-      generation.current++;
       clearInterval(interval);
     };
   }, [props.service]);
@@ -76,49 +76,59 @@ export function LocalServiceControl(props: {
     }
   };
   return (
-    <ListItem title={props.title} subTitle={labels.Description}>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-          maxWidth: 480,
-        }}
+    <>
+      <ListItem
+        className={styles.row}
+        title={props.title}
+        subTitle={labels.Description}
       >
-        <span role="status">
-          {status
-            ? status.running
-              ? labels.Running
-              : status.available
-              ? labels.Stopped
-              : labels.Missing
-            : labels.Checking}
-        </span>
-        {status?.connection?.url && (
-          <span>
-            {status.connection.url}
-            {status.connection.cliVersion
-              ? ` · Claude Code ${status.connection.cliVersion}`
-              : ""}
+        <div className={styles.actions}>
+          <span role="status" className={styles.status}>
+            {status
+              ? status.running
+                ? labels.Running
+                : status.available
+                ? labels.Stopped
+                : labels.Stopped
+              : labels.Checking}
           </span>
-        )}
-        {status?.canSelectExecutable && (
-          <>
-            <label>
-              {labels.Executable}
-              <input
-                aria-label={labels.Executable}
-                value={path}
-                placeholder={labels.AutoDetect}
-                disabled={busy || status.running}
-                onChange={(event) => {
-                  editingPath.current = true;
-                  setPath(event.currentTarget.value);
-                }}
-              />
-            </label>
+          <IconButton
+            text={status?.running ? labels.Connect : labels.Start}
+            bordered
+            disabled={busy || !status?.available}
+            onClick={() => void run("start")}
+          />
+          {status?.running && (
+            <IconButton
+              text={labels.Stop}
+              bordered
+              disabled={busy}
+              onClick={() => void run("stop")}
+            />
+          )}
+        </div>
+      </ListItem>
+      {status?.canSelectExecutable && (
+        <ListItem
+          className={styles.field}
+          title={labels.Executable}
+          subTitle={labels.ExecutableHint}
+        >
+          <div className={styles.executable}>
+            <input
+              type="text"
+              aria-label={labels.Executable}
+              value={path}
+              placeholder={labels.AutoDetect}
+              disabled={busy || status.running}
+              onChange={(event) => {
+                editingPath.current = true;
+                setPath(event.currentTarget.value);
+              }}
+            />
             <IconButton
               text={labels.Browse}
+              bordered
               disabled={busy || status.running}
               onClick={async () => {
                 try {
@@ -132,24 +142,32 @@ export function LocalServiceControl(props: {
                 }
               }}
             />
-          </>
-        )}
-        <div style={{ display: "flex", gap: 8 }}>
-          <IconButton
-            text={status?.running ? labels.Connect : labels.Start}
-            disabled={busy || !status?.available}
-            onClick={() => void run("start")}
-          />
-          <IconButton
-            text={labels.Stop}
-            disabled={busy || !status?.running}
-            onClick={() => void run("stop")}
-          />
-        </div>
-        {(error || status?.error) && (
-          <span role="alert">{error || status?.error}</span>
-        )}
-      </div>
-    </ListItem>
+          </div>
+        </ListItem>
+      )}
+      {status?.connection?.url && (
+        <ListItem
+          title={labels.Connection}
+          subTitle={
+            <span className={styles.detail}>
+              {status.connection.url}
+              {status.connection.cliVersion
+                ? ` · Claude Code ${status.connection.cliVersion}`
+                : ""}
+            </span>
+          }
+        />
+      )}
+      {(error || status?.error || (status && !status.available)) && (
+        <ListItem
+          title={labels.Error}
+          subTitle={
+            <span role="alert" className={styles.detail}>
+              {error || status?.error || labels.Missing}
+            </span>
+          }
+        />
+      )}
+    </>
   );
 }

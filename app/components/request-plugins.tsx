@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import Locale from "../locales";
 import { useAppConfig } from "../store/config";
 import {
@@ -21,13 +21,25 @@ import { createPluginSession } from "../request-plugins/host";
 import { buildEndpointRequest } from "../client/endpoint-protocol";
 import { LocalServiceControl } from "./local-service-control";
 import { supportsLocalServices } from "../request-plugins/local-services";
+import AddIcon from "../icons/add.svg";
+import DownloadIcon from "../icons/download.svg";
+import UploadIcon from "../icons/upload.svg";
+import ClearIcon from "../icons/clear.svg";
+import ConfirmIcon from "../icons/confirm.svg";
+import styles from "./request-plugins.module.scss";
 
 const labels = () => Locale.RequestPlugins;
+const bundledClaudeVersion = "3.2.0-beta.1";
 
 export function RequestPluginManager() {
   const config = useAppConfig();
   const upload = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const claudeAdded = config.requestPlugins.some(
+    (pkg) =>
+      pkg.manifest.id === "nextchat.claude-code" &&
+      pkg.manifest.version === bundledClaudeVersion,
+  );
   const install = async (value: unknown) => {
     const pkg = parsePluginPackage(value);
     if (
@@ -54,8 +66,36 @@ export function RequestPluginManager() {
   };
   return (
     <List>
-      <ListItem title={labels().Title} subTitle={labels().Description}>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <ListItem title={labels().Title} subTitle={labels().Description} />
+      <ListItem
+        className={styles.row}
+        title={labels().ClaudePlugin}
+        subTitle={labels().ClaudePluginDescription}
+      >
+        <IconButton
+          text={claudeAdded ? labels().Added : labels().Add}
+          aria={labels().AddClaudePlugin}
+          icon={claudeAdded ? <ConfirmIcon /> : <AddIcon />}
+          bordered
+          disabled={busy || claudeAdded}
+          onClick={() =>
+            void guarded(async () => {
+              const response = await fetch(
+                `./request-plugins/nextchat.claude-code-${bundledClaudeVersion}.json`,
+              );
+              if (!response.ok)
+                throw new Error(`Package HTTP ${response.status}`);
+              await install(await response.json());
+            })
+          }
+        />
+      </ListItem>
+      <ListItem
+        className={styles.row}
+        title={labels().ImportTitle}
+        subTitle={labels().ImportDescription}
+      >
+        <div className={styles.actions}>
           <input
             ref={upload}
             type="file"
@@ -75,22 +115,10 @@ export function RequestPluginManager() {
           />
           <IconButton
             text={labels().Import}
+            icon={<DownloadIcon />}
+            bordered
             disabled={busy}
             onClick={() => upload.current?.click()}
-          />
-          <IconButton
-            text={labels().InstallClaude}
-            disabled={busy}
-            onClick={() =>
-              void guarded(async () => {
-                const response = await fetch(
-                  "./request-plugins/nextchat.claude-code-3.2.0-beta.1.json",
-                );
-                if (!response.ok)
-                  throw new Error(`Package HTTP ${response.status}`);
-                await install(await response.json());
-              })
-            }
           />
         </div>
       </ListItem>
@@ -102,35 +130,41 @@ export function RequestPluginManager() {
         ).length;
         return (
           <ListItem
+            className={styles.row}
             key={`${id}@${version}`}
             title={`${name} · ${version}`}
             subTitle={`${id} · ${labels().Bound}: ${bound}`}
           >
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                aria-label={`${labels().Enabled}: ${name} ${version}`}
-                checked={pkg.enabled}
-                onChange={async (event) => {
-                  const enabled = event.currentTarget.checked;
-                  if (
-                    enabled &&
-                    !(await showConfirm(
-                      `${name} ${version}\n\n${labels().Trust}`,
-                    ))
-                  )
-                    return;
-                  config.update((state) => {
-                    state.requestPlugins = state.requestPlugins.map((p) =>
-                      p.manifest.id === id && p.manifest.version === version
-                        ? { ...p, enabled }
-                        : p,
-                    );
-                  });
-                }}
-              />
+            <div className={styles.actions}>
+              <label className={styles.enabled}>
+                <input
+                  type="checkbox"
+                  aria-label={`${labels().Enabled}: ${name} ${version}`}
+                  checked={pkg.enabled}
+                  onChange={async (event) => {
+                    const enabled = event.currentTarget.checked;
+                    if (
+                      enabled &&
+                      !(await showConfirm(
+                        `${name} ${version}\n\n${labels().Trust}`,
+                      ))
+                    )
+                      return;
+                    config.update((state) => {
+                      state.requestPlugins = state.requestPlugins.map((p) =>
+                        p.manifest.id === id && p.manifest.version === version
+                          ? { ...p, enabled }
+                          : p,
+                      );
+                    });
+                  }}
+                />
+                <span>{labels().Enabled}</span>
+              </label>
               <IconButton
                 text={labels().Export}
+                icon={<UploadIcon />}
+                bordered
                 onClick={() => {
                   const url = URL.createObjectURL(
                     new Blob(
@@ -153,6 +187,8 @@ export function RequestPluginManager() {
               />
               <IconButton
                 text={labels().Remove}
+                icon={<ClearIcon />}
+                bordered
                 onClick={async () => {
                   if (!(await showConfirm(labels().RemoveConfirm))) return;
                   config.update((state) => {
@@ -187,9 +223,44 @@ export function EndpointRequestPlugin(props: {
     p.manifest.protocols.includes(props.endpoint.protocol),
   );
   const config = pkg ? { ...pluginDefaults(pkg), ...binding?.config } : {};
+  const localServices = (afterField?: string) =>
+    pkg?.enabled &&
+    supportsLocalServices() &&
+    pkg.manifest.localServices
+      ?.filter(
+        (service) =>
+          service.when?.field === afterField &&
+          (!service.when || config[service.when.field] === service.when.value),
+      )
+      .map((service) => (
+        <LocalServiceControl
+          key={`${props.endpoint.id}:${pkg.manifest.id}@${pkg.manifest.version}:${service.id}`}
+          service={service.id}
+          title={service.title}
+          onConnect={(connection) => {
+            props.onChange({
+              requestPlugin: {
+                ...binding!,
+                config: {
+                  ...config,
+                  [service.urlField]: connection.url,
+                  [service.tokenField]: connection.token,
+                  ...(service.versionField && connection.cliVersion
+                    ? { [service.versionField]: connection.cliVersion }
+                    : {}),
+                },
+              },
+            });
+          }}
+        />
+      ));
   return (
     <>
-      <ListItem title={labels().Select} subTitle={pkg?.manifest.description}>
+      <ListItem
+        className={styles.field}
+        title={labels().Select}
+        subTitle={pkg?.manifest.description}
+      >
         <Select
           aria-label={labels().Select}
           value={key}
@@ -231,36 +302,7 @@ export function EndpointRequestPlugin(props: {
           ))}
         </Select>
       </ListItem>
-      {pkg?.enabled &&
-        supportsLocalServices() &&
-        pkg.manifest.localServices
-          ?.filter(
-            (service) =>
-              !service.when ||
-              config[service.when.field] === service.when.value,
-          )
-          .map((service) => (
-            <LocalServiceControl
-              key={`${props.endpoint.id}:${pkg.manifest.id}@${pkg.manifest.version}:${service.id}`}
-              service={service.id}
-              title={service.title}
-              onConnect={(connection) => {
-                props.onChange({
-                  requestPlugin: {
-                    ...binding!,
-                    config: {
-                      ...config,
-                      [service.urlField]: connection.url,
-                      [service.tokenField]: connection.token,
-                      ...(service.versionField && connection.cliVersion
-                        ? { [service.versionField]: connection.cliVersion }
-                        : {}),
-                    },
-                  },
-                });
-              }}
-            />
-          ))}
+      {localServices()}
       {pkg &&
         Object.entries(pkg.manifest.fields)
           .filter(
@@ -276,46 +318,52 @@ export function EndpointRequestPlugin(props: {
                 },
               });
             return (
-              <ListItem
-                key={name}
-                title={field.title}
-                subTitle={field.description}
-              >
-                {field.type === "select" ? (
-                  <Select
-                    aria-label={field.title}
-                    value={config[name]}
-                    onChange={(event) => update(event.currentTarget.value)}
-                  >
-                    {field.options?.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </Select>
-                ) : field.type === "secret" ? (
-                  <PasswordInput
-                    aria-label={field.title}
-                    value={config[name]}
-                    onChange={(event) => update(event.currentTarget.value)}
-                  />
-                ) : (
-                  <input
-                    aria-label={field.title}
-                    value={config[name]}
-                    onChange={(event) => update(event.currentTarget.value)}
-                  />
-                )}
-              </ListItem>
+              <Fragment key={name}>
+                <ListItem
+                  className={styles.field}
+                  title={field.title}
+                  subTitle={field.description}
+                >
+                  {field.type === "select" ? (
+                    <Select
+                      aria-label={field.title}
+                      value={config[name]}
+                      onChange={(event) => update(event.currentTarget.value)}
+                    >
+                      {field.options?.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Select>
+                  ) : field.type === "secret" ? (
+                    <PasswordInput
+                      aria-label={field.title}
+                      value={config[name]}
+                      onChange={(event) => update(event.currentTarget.value)}
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      aria-label={field.title}
+                      value={config[name]}
+                      onChange={(event) => update(event.currentTarget.value)}
+                    />
+                  )}
+                </ListItem>
+                {localServices(name)}
+              </Fragment>
             );
           })}
       {pkg && (
         <ListItem
+          className={styles.row}
           title={labels().Preview}
           subTitle={labels().PreviewDescription}
         >
           <IconButton
             text={labels().Preview}
+            bordered
             disabled={busy}
             onClick={async () => {
               setBusy(true);

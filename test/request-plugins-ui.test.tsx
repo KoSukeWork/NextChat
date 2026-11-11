@@ -9,7 +9,18 @@ import {
   cleanup,
 } from "@testing-library/react";
 
-for (const icon of ["close", "confirm", "cancel", "max", "min", "down"])
+for (const icon of [
+  "close",
+  "confirm",
+  "cancel",
+  "max",
+  "min",
+  "down",
+  "add",
+  "download",
+  "upload",
+  "clear",
+])
   jest.unstable_mockModule(`@/app/icons/${icon}.svg`, () => ({
     default: () => <svg />,
   }));
@@ -49,7 +60,7 @@ test("install a package without rebuilding and bind its configurable version to 
     </>,
   );
   fireEvent.click(
-    screen.getByRole("button", { name: Locale.RequestPlugins.InstallClaude }),
+    screen.getByRole("button", { name: Locale.RequestPlugins.AddClaudePlugin }),
   );
   fireEvent.click(
     await screen.findByRole("button", { name: new RegExp(Locale.UI.Confirm) }),

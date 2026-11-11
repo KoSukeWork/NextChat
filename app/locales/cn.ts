@@ -93,7 +93,10 @@ const cn = {
       Stopped: "未启动",
       Missing:
         "附加组件缺失或平台不支持，请使用完整的 Windows x64 安装包或便携包。",
-      Executable: "Claude Code 程序路径",
+      Executable: "本机 Claude Code CLI",
+      ExecutableHint: "使用已安装的 claude.exe，可自动查找或手动选择。",
+      Connection: "服务连接",
+      Error: "服务提示",
       AutoDetect: "自动查找已安装的 Claude Code",
       Browse: "选择程序",
       Start: "启动并连接",
@@ -105,20 +108,28 @@ const cn = {
       "使用示例消息，仅预览不发送。CLI 模式显示桥接请求，上游请求由真实 Claude Code 生成。",
     Title: "请求扩展插件",
     Description:
-      "安装客户端驱动或请求适配器，再在接口配置中绑定插件版本。插件仅保存在本机。",
-    Import: "导入插件",
-    InstallClaude: "安装 Claude Code",
+      "为 NextChat 添加请求适配能力。添加后，在接口配置中选择对应插件。",
+    ClaudePlugin: "Claude Code 请求插件",
+    ClaudePluginDescription:
+      "支持 HTTP 模拟和真实 CLI 两种模式。CLI 模式直接使用本机已安装的 Claude Code。",
+    AddClaudePlugin: "添加 Claude Code 请求插件",
+    Add: "添加插件",
+    Added: "已添加",
+    ImportTitle: "从文件导入其他插件",
+    ImportDescription:
+      "导入他人提供或从 NextChat 导出的请求插件 JSON 文件。使用上方插件时无需导入。",
+    Import: "选择插件文件",
     Export: "导出",
-    Remove: "卸载",
+    Remove: "移除插件",
     Enabled: "启用",
     Bound: "绑定接口",
     Select: "请求插件",
     Standard: "标准 API",
     Unavailable: "不可用",
     Trust:
-      "此插件包含可执行 JavaScript，可以读取请求和凭据并访问网络。是否安装这个可信插件？",
+      "此插件包含可执行 JavaScript，可以读取请求和凭据并访问网络。是否将这个可信请求插件添加到 NextChat？",
     RemoveConfirm:
-      "卸载此版本？已绑定的接口将提示错误，直到选择其他版本或标准 API。",
+      "移除此请求插件版本？已绑定的接口将提示错误，直到选择其他版本或标准 API。",
   },
   EndpointConfig: {
     ToolCalling: "工具调用",

@@ -11,7 +11,18 @@ import {
 } from "@testing-library/react";
 import type { Endpoint } from "../app/utils/endpoints";
 
-for (const icon of ["close", "confirm", "cancel", "max", "min", "down"])
+for (const icon of [
+  "close",
+  "confirm",
+  "cancel",
+  "max",
+  "min",
+  "down",
+  "add",
+  "download",
+  "upload",
+  "clear",
+])
   jest.unstable_mockModule(`@/app/icons/${icon}.svg`, () => ({
     default: () => <svg />,
   }));
