@@ -4,6 +4,7 @@ import { parseMcpConfig } from "../mcp/config";
 import type { Plugin } from "../store/plugin";
 import { merge } from "./merge";
 import { AppState, mergeAppState, prepareImportedState } from "./sync";
+import { parsePluginPackage } from "../request-plugins/schema";
 
 export type PluginSnapshot = {
   plugins: Record<string, Plugin>;
@@ -80,6 +81,29 @@ export function restoreBackup(
     }
     local[StoreKey.Config] = merge(merge({}, beforeConfig), incoming);
     local[StoreKey.Config].endpoints = [...endpoints.values()];
+    // Backups can carry executable packages. Only an identical, already
+    // trusted local package may retain its enabled state on import.
+    if (incoming.requestPlugins !== undefined) {
+      if (!Array.isArray(incoming.requestPlugins))
+        throw new Error("Invalid request plugins");
+      local[StoreKey.Config].requestPlugins = incoming.requestPlugins.map(
+        (entry: any) => {
+          const pkg = parsePluginPackage({
+            manifest: entry?.manifest,
+            source: entry?.source,
+          });
+          const trusted = beforeConfig.requestPlugins?.find(
+            (previous) =>
+              previous.manifest.id === pkg.manifest.id &&
+              previous.manifest.version === pkg.manifest.version &&
+              JSON.stringify(previous.manifest) ===
+                JSON.stringify(pkg.manifest) &&
+              previous.source === pkg.source,
+          );
+          return { ...pkg, enabled: trusted?.enabled === true };
+        },
+      );
+    }
     local[StoreKey.Config]._hasHydrated = beforeConfig._hasHydrated;
   }
   if (!legacyApiSettings && backup[StoreKey.Access] !== undefined) {

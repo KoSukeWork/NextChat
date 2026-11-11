@@ -19,6 +19,7 @@ export interface EndpointCall {
 }
 
 export interface EndpointChatInput {
+  sessionId?: string;
   model: string;
   messages: RequestMessage[];
   stream: boolean;

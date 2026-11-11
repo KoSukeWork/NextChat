@@ -12,6 +12,7 @@ import { runEndpointChat } from "./endpoint-stream";
 import type { EndpointTool } from "./endpoint-protocol";
 import { fetchEndpointModels } from "./endpoint-models";
 import type { Endpoint } from "../utils/endpoints";
+import { runPluginDriver } from "../request-plugins/driver";
 
 export class EndpointClient {
   constructor(private endpoint: Endpoint) {}
@@ -30,6 +31,7 @@ export class EndpointClient {
         })),
       );
       const accessCode = useAccessStore.getState().accessCode;
+      if (await runPluginDriver(this.endpoint, messages, options)) return;
       const excluded = new Set(options.mcpDisabled ?? []);
       const mcp =
         options.enableTools && (await isMcpEnabled())
@@ -81,6 +83,7 @@ export class EndpointClient {
         this.endpoint,
         {
           model: options.config.model,
+          sessionId: options.sessionId,
           messages,
           stream: !!options.config.stream,
           maxTokens: modelConfig.max_tokens,

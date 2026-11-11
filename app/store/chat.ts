@@ -885,6 +885,7 @@ export const useChatStore = createPersistStore(
         const api = getClientApi(modelConfig.endpointId);
         // make request
         api.llm.chat({
+          sessionId: session.id,
           messages: sendMessages,
           config: { ...modelConfig, stream: true },
           pluginIds,

@@ -1,4 +1,5 @@
 import { EndpointConfigList } from "./endpoint-config";
+import { RequestPluginManager } from "./request-plugins";
 import { useZoomSupport } from "../utils/use-desktop-zoom";
 import { ZOOM_LEVELS, normalizeZoom, zoomPercent } from "../utils/zoom";
 import { useState, useEffect, useMemo } from "react";
@@ -943,6 +944,7 @@ export function Settings() {
             </ListItem>
           </List>
         )}
+        <RequestPluginManager />
         <EndpointConfigList />
 
         <List>

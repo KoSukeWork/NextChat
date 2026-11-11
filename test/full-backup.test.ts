@@ -34,6 +34,33 @@ const plugin = (id: string, title: string) => ({
   builtin: false,
 });
 
+test("restored executable request plugins require trust unless already installed identically", () => {
+  const pkg = {
+    manifest: {
+      sdkVersion: 1 as const,
+      id: "test.adapter",
+      version: "1.0.0",
+      name: "Test",
+      description: "Test adapter",
+      protocols: ["anthropic" as const],
+      capabilities: ["request" as const],
+      fields: {},
+    },
+    source: "export function prepareRequest(request) { return request; }",
+    enabled: true,
+  };
+  const local = clone(getLocalAppState());
+  local[StoreKey.Config].requestPlugins = [];
+  const incoming = clone(local);
+  incoming[StoreKey.Config].requestPlugins = [pkg];
+  const restored = restoreBackup(local, incoming, { plugins: {} }, {});
+  expect(restored.local[StoreKey.Config].requestPlugins[0].enabled).toBe(false);
+  const trusted = clone(getLocalAppState());
+  trusted[StoreKey.Config].requestPlugins = [pkg];
+  const again = restoreBackup(trusted, incoming, { plugins: {} }, {});
+  expect(again.local[StoreKey.Config].requestPlugins[0].enabled).toBe(true);
+});
+
 test("full backup restores settings, endpoints, plugins, sync and MCP without using timestamps", async () => {
   const local = clone(getLocalAppState());
   local[StoreKey.Config].lastUpdateTime = 9999;

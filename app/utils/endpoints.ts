@@ -1,3 +1,5 @@
+import type { RequestPluginBinding } from "../request-plugins/schema";
+
 export const endpointProtocols = [
   "openai-chat",
   "openai-responses",
@@ -21,6 +23,7 @@ export interface Endpoint {
   models: EndpointModel[];
   /** Older configurations omit this field and use automatic tool calling. */
   toolCalling?: "auto" | "text";
+  requestPlugin?: RequestPluginBinding;
 }
 
 export interface ModelSelection {

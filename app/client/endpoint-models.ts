@@ -2,12 +2,17 @@ import { endpointUrl } from "../utils/endpoints";
 import type { Endpoint, EndpointModel } from "../utils/endpoints";
 import { endpointFetch } from "../utils/endpoint-transport";
 import { endpointHeaders } from "./endpoint-protocol";
+import { createPluginSession } from "../request-plugins/host";
+import { nanoid } from "nanoid";
 
 export async function fetchEndpointModels(
   endpoint: Endpoint,
   requestFetch: typeof endpointFetch = endpointFetch,
 ): Promise<EndpointModel[]> {
   const found = new Map<string, EndpointModel>();
+  const plugin = endpoint.requestPlugin
+    ? createPluginSession(endpoint, nanoid(), "models")
+    : undefined;
   const seenPages = new Set<string>();
   let page = "";
   do {
@@ -23,11 +28,21 @@ export async function fetchEndpointModels(
     const timeout = setTimeout(() => controller.abort(), 30000);
     let response: Response;
     try {
-      response = await requestFetch(url.toString(), {
-        method: "GET",
+      const original = {
+        url: url.toString(),
         headers: endpointHeaders(endpoint),
-        signal: controller.signal,
-      });
+      };
+      const wire = plugin
+        ? await plugin.request(original, controller.signal)
+        : original;
+      response = await (plugin
+        ? plugin.fetch(wire, "GET", requestFetch, controller.signal)
+        : requestFetch(wire.url, {
+            method: "GET",
+            headers: wire.headers,
+            ...(plugin ? { redirect: "manual" as const } : {}),
+            signal: controller.signal,
+          }));
     } finally {
       clearTimeout(timeout);
     }

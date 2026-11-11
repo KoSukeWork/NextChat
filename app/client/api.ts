@@ -36,6 +36,8 @@ export interface LLMConfig {
 }
 
 export interface ChatOptions {
+  /** Stable conversation identity for client drivers; auxiliary calls omit it. */
+  sessionId?: string;
   messages: RequestMessage[];
   config: LLMConfig;
   pluginIds?: string[];

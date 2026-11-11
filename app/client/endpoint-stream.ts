@@ -6,6 +6,7 @@ import Locale from "../locales";
 import { findMcpCall } from "../mcp/utils";
 import type { ToolResult } from "../mcp/tool-runtime";
 import { nanoid } from "nanoid";
+import { createPluginSession } from "../request-plugins/host";
 import {
   buildEndpointRequest,
   createEndpointEventParser,
@@ -374,6 +375,7 @@ export async function runEndpointChat(
     endpoint.protocol,
     endpoint.baseUrl,
     input.model,
+    endpoint.requestPlugin ?? null,
   ]);
   let textMode =
     !!input.textOnly || (!!input.tools?.length && textOnlyModels.has(key));
@@ -425,6 +427,9 @@ export async function runEndpointChat(
     callbacks.onFinish(latest, response);
   };
   try {
+    const extension = endpoint.requestPlugin
+      ? createPluginSession(endpoint, input.sessionId ?? nanoid(), "chat")
+      : undefined;
     callbacks.onToolModeChange?.(textMode ? "text" : "native");
     if (textMode) notifyText();
     let { url, headers, body } = build();
@@ -440,13 +445,24 @@ export async function runEndpointChat(
           input.timeoutMs ?? 60000,
         );
         try {
+          // Transform a fresh wire copy on EVERY round/retry, never the canonical
+          // body which receives tool results and signed thinking blocks.
+          const wire = extension
+            ? await extension.request(
+                JSON.parse(JSON.stringify({ url, headers, body })),
+                controller.signal,
+              )
+            : { url, headers, body };
           lastResponse = await waitForAbortable(
-            requestFetch(url, {
-              method: "POST",
-              headers,
-              body: JSON.stringify(body),
-              signal: controller.signal,
-            }),
+            extension
+              ? extension.fetch(wire, "POST", requestFetch, controller.signal)
+              : requestFetch(wire.url, {
+                  method: "POST",
+                  headers: wire.headers,
+                  body: JSON.stringify(wire.body),
+                  signal: controller.signal,
+                  ...(extension ? { redirect: "manual" as const } : {}),
+                }),
             controller.signal,
           );
         } finally {

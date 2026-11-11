@@ -20,6 +20,8 @@ import {
   showToast,
 } from "./ui-lib";
 import styles from "./endpoint-config.module.scss";
+import { EndpointRequestPlugin } from "./request-plugins";
+import { resolveRequestPlugin } from "../request-plugins/host";
 
 const protocolNames: Record<EndpointProtocol, string> = {
   "openai-chat": "OpenAI Chat",
@@ -55,8 +57,13 @@ function EndpointEditor(props: { initial: Endpoint; onClose: () => void }) {
     try {
       if (!draft.name.trim()) throw new Error();
       endpointUrl(draft, "models");
-    } catch {
-      showToast(Locale.EndpointConfig.Invalid);
+      resolveRequestPlugin(draft);
+    } catch (error) {
+      showToast(
+        draft.requestPlugin && error instanceof Error
+          ? error.message
+          : Locale.EndpointConfig.Invalid,
+      );
       return;
     }
     const saved = {
@@ -138,6 +145,7 @@ function EndpointEditor(props: { initial: Endpoint; onClose: () => void }) {
               ))}
             </Select>
           </ListItem>
+          <EndpointRequestPlugin endpoint={draft} onChange={update} />
           <ListItem title={Locale.EndpointConfig.ToolCalling}>
             <Select
               aria-label={Locale.EndpointConfig.ToolCalling}

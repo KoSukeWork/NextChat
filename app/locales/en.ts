@@ -87,6 +87,27 @@ const en: LocaleType = {
     Undo: "Unpin chat",
     Pinned: "Pinned",
   },
+  RequestPlugins: {
+    Preview: "Preview request",
+    PreviewDescription:
+      "Uses a sample message without sending it. In CLI mode this shows the bridge request; Claude Code generates the upstream request.",
+    Title: "Request extensions",
+    Description:
+      "Install client drivers and request adapters, then bind a version to an API endpoint. Packages stay on this device.",
+    Import: "Import plugin",
+    InstallClaude: "Install Claude Code",
+    Export: "Export",
+    Remove: "Uninstall",
+    Enabled: "Enabled",
+    Bound: "Bound endpoints",
+    Select: "Request plugin",
+    Standard: "Standard API",
+    Unavailable: "Unavailable",
+    Trust:
+      "This package contains executable JavaScript. It can read requests and credentials and access the network. Install only a package you trust?",
+    RemoveConfirm:
+      "Uninstall this version? Endpoints bound to it will report an error until you select another version or Standard API.",
+  },
   EndpointConfig: {
     ToolCalling: "Tool calling",
     ToolCallingAuto: "Automatic",

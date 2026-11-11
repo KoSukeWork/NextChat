@@ -84,6 +84,27 @@ const cn = {
     Undo: "取消置顶",
     Pinned: "已置顶",
   },
+  RequestPlugins: {
+    Preview: "预览请求",
+    PreviewDescription:
+      "使用示例消息，仅预览不发送。CLI 模式显示桥接请求，上游请求由真实 Claude Code 生成。",
+    Title: "请求扩展插件",
+    Description:
+      "安装客户端驱动或请求适配器，再在接口配置中绑定插件版本。插件仅保存在本机。",
+    Import: "导入插件",
+    InstallClaude: "安装 Claude Code",
+    Export: "导出",
+    Remove: "卸载",
+    Enabled: "启用",
+    Bound: "绑定接口",
+    Select: "请求插件",
+    Standard: "标准 API",
+    Unavailable: "不可用",
+    Trust:
+      "此插件包含可执行 JavaScript，可以读取请求和凭据并访问网络。是否安装这个可信插件？",
+    RemoveConfirm:
+      "卸载此版本？已绑定的接口将提示错误，直到选择其他版本或标准 API。",
+  },
   EndpointConfig: {
     ToolCalling: "工具调用",
     ToolCallingAuto: "自动",

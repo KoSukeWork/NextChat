@@ -12,6 +12,7 @@ import {
   speechValue,
 } from "../utils/local-tts";
 import type { Endpoint } from "../utils/endpoints";
+import type { InstalledRequestPlugin } from "../request-plugins/schema";
 import { indexedDBStorage } from "../utils/indexedDB-storage";
 import {
   LEGACY_ACCESS_BACKUP,
@@ -61,6 +62,7 @@ export const DEFAULT_CONFIG = {
   hideBuiltinMasks: false, // dont add builtin masks
 
   endpoints: [] as Endpoint[],
+  requestPlugins: [] as InstalledRequestPlugin[],
   unmigratedEndpoints: [] as string[],
 
   modelConfig: {
@@ -149,6 +151,7 @@ export const useAppConfig = createPersistStore(
         ...currentState,
         ...state,
         endpoints: state.endpoints ?? [],
+        requestPlugins: state.requestPlugins ?? [],
         unmigratedEndpoints: state.unmigratedEndpoints ?? [],
         modelConfig: { ...currentState.modelConfig, ...state.modelConfig },
         zoom: normalizeZoom(state.zoom),
