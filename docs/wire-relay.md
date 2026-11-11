@@ -1,4 +1,4 @@
-# 独立发包组件与 3.0.0-beta.2 插件
+# 独立发包组件与 HTTP 模式
 
 这个版本将上游 HTTP/TLS 发送从 NextChat 的浏览器、网页 fetch 和 Tauri reqwest 中分离出来。运行时只需要 NextChat、插件包和独立的 `nextchat-wire-relay.exe`，**不需要 Claude Code 文件，也不启动 Claude Code**。
 
@@ -6,11 +6,12 @@
 
 ## 当前可运行产物
 
-- `public/request-plugins/nextchat.claude-code-3.0.0-beta.2.json`：SDK 2 插件包。
+- `public/request-plugins/nextchat.claude-code-3.1.0-beta.1.json`：可切换 HTTP 和 CLI -p 的 SDK 2 插件包，默认使用 HTTP 模式。
+- `public/request-plugins/nextchat.claude-code-3.0.0-beta.2.json`：仍可使用的独立 HTTP 插件包。
 - `build/nextchat-wire-relay.exe`：在 Windows x64 上构建的独立可执行文件；该目录不进入 Git。
 - `scripts/wire-relay/` 与 `scripts/wire-relay.mjs`：独立发包服务源码。
 
-旧版插件包保持不变。已有接口不会自动升级，只有显式绑定 3.0.0-beta.2 的接口才使用新组件。
+旧版插件包保持不变。已有接口不会自动升级。3.1.0-beta.1 的 HTTP 模式复用此组件，CLI 模式使用独立桥接服务，见 [切换说明](claude-code-modes.md)。
 
 ## 使用
 
@@ -23,7 +24,7 @@ $env:NEXTCHAT_WIRE_TOKEN = '替换为至少16字符的随机令牌'
 
 默认监听 `127.0.0.1:8789`。`NEXTCHAT_WIRE_HOST`、`NEXTCHAT_WIRE_PORT` 可调整监听地址和端口。关闭终端或 Ctrl+C 即停止。所有接口均校验令牌，不提供未经认证的转发。
 
-NextChat 设置 → 请求扩展插件 → 安装 Claude Code，安装当前实验包；在 Anthropic Messages 接口中绑定 **3.0.0-beta.2**，填写发包服务 URL 和相同令牌。网关 URL、网关 API Key、模型仍填在接口本身。预览会显示 `independent-transport`、发包服务地址及上游请求，凭据被遮盖。
+NextChat 设置 → 请求扩展插件 → 安装 Claude Code，安装当前实验包；在 Anthropic Messages 接口中绑定 **3.1.0-beta.1**，选择 **独立 HTTP 模拟**，填写发包服务 URL 和相同令牌。网关 URL、网关 API Key、模型仍填在接口本身。预览会显示 `independent-transport`、发包服务地址及上游请求，凭据被遮盖。
 
 网页版由 NextChat 部署服务器连接发包服务；桌面版由本机连接。远程网页部署中的 `127.0.0.1` 指部署服务器，不是访问网页的电脑。跨机器部署应放在受控网络中，并通过 HTTPS 反向代理保护服务令牌和请求内容。
 

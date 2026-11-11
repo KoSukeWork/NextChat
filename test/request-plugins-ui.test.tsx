@@ -18,7 +18,7 @@ jest.unstable_mockModule("@/app/client/endpoint-models", () => ({
 }));
 const pkg = JSON.parse(
   readFileSync(
-    "public/request-plugins/nextchat.claude-code-3.0.0-beta.2.json",
+    "public/request-plugins/nextchat.claude-code-3.1.0-beta.1.json",
     "utf8",
   ),
 );
@@ -70,7 +70,7 @@ test("install a package without rebuilding and bind its configurable version to 
     target: { value: "https://gateway.test" },
   });
   fireEvent.change(screen.getByLabelText(Locale.RequestPlugins.Select), {
-    target: { value: "nextchat.claude-code@3.0.0-beta.2" },
+    target: { value: "nextchat.claude-code@3.1.0-beta.1" },
   });
   expect(screen.getByLabelText(pkg.manifest.fields.profile.title)).toHaveValue(
     "verified",
@@ -88,25 +88,64 @@ test("install a package without rebuilding and bind its configurable version to 
       target: { value: "local-wire-token-12345" },
     },
   );
+  expect(
+    screen.queryByLabelText(pkg.manifest.fields.bridgeToken.title),
+  ).toBeNull();
+  fireEvent.change(screen.getByLabelText(pkg.manifest.fields.mode.title), {
+    target: { value: "cli" },
+  });
+  expect(
+    screen.queryByLabelText(pkg.manifest.fields.transportToken.title),
+  ).toBeNull();
+  fireEvent.change(
+    screen.getByLabelText(pkg.manifest.fields.bridgeToken.title),
+    {
+      target: { value: "local-cli-token-12345" },
+    },
+  );
+  fireEvent.change(
+    screen.getByLabelText(pkg.manifest.fields.nativeCliVersion.title),
+    {
+      target: { value: "2.1.322" },
+    },
+  );
+  fireEvent.change(screen.getByLabelText(pkg.manifest.fields.mode.title), {
+    target: { value: "http" },
+  });
+  expect(
+    screen.getByLabelText(pkg.manifest.fields.transportToken.title),
+  ).toHaveValue("local-wire-token-12345");
+  expect(
+    screen.getByLabelText(pkg.manifest.fields.cliVersion.title),
+  ).toHaveValue("2.1.400");
+  fireEvent.change(screen.getByLabelText(pkg.manifest.fields.mode.title), {
+    target: { value: "cli" },
+  });
+  expect(
+    screen.getByLabelText(pkg.manifest.fields.bridgeToken.title),
+  ).toHaveValue("local-cli-token-12345");
   fireEvent.click(
     screen.getByRole("button", { name: Locale.EndpointConfig.Save }),
   );
   expect(useAppConfig.getState().endpoints[0].requestPlugin).toMatchObject({
     id: "nextchat.claude-code",
-    version: "3.0.0-beta.2",
+    version: "3.1.0-beta.1",
     config: {
+      mode: "cli",
       profile: "custom",
       transportToken: "local-wire-token-12345",
       cliVersion: "2.1.400",
+      bridgeToken: "local-cli-token-12345",
+      nativeCliVersion: "2.1.322",
     },
   });
   fireEvent.click(
     screen.getByRole("checkbox", {
-      name: `${Locale.RequestPlugins.Enabled}: Claude Code 3.0.0-beta.2`,
+      name: `${Locale.RequestPlugins.Enabled}: Claude Code 3.1.0-beta.1`,
     }),
   );
   expect(useAppConfig.getState().requestPlugins[0].enabled).toBe(false);
   expect(useAppConfig.getState().endpoints[0].requestPlugin?.version).toBe(
-    "3.0.0-beta.2",
+    "3.1.0-beta.1",
   );
 });

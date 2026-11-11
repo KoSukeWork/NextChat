@@ -6,6 +6,7 @@
     "plugin:pack": "node scripts/pack-request-plugin.mjs",
     "client:bridge": "node scripts/client-bridge.mjs",
     "test:client-bridge": "node --test test/client-bridge.integration.mjs",
+    "test:claude-modes": "node --test test/claude-code-modes.integration.mjs",
     "test:claude-http": "node --test test/claude-code-http.integration.mjs",
     "wire:build": "node scripts/build-wire-relay.mjs",
     "test:wire": "node --test test/wire-relay.integration.mjs test/claude-code-wire.integration.mjs",

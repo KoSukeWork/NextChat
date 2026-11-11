@@ -95,7 +95,7 @@ code1,code2,code3
 
 请在设置的“接口配置”中选择 OpenAI Chat、OpenAI Responses、Anthropic Messages 或 Gemini，填写基础地址、API Key 和模型。接口配置仅保存在本机，本地导出会包含这些配置，云同步不会上传。
 
-需要 Claude Code CLI 专用接口时，可以安装独立的请求插件，直接模拟交互式 CLI 的 HTTP 请求，无需启动 CLI；版本、平台和协议参数均可配置，支持网页版与桌面版。兼容范围和使用方式参见 [请求扩展插件与 Claude Code](docs/request-plugins.md)。
+需要 Claude Code CLI 专用接口时，可以安装请求插件，在独立 HTTP 模拟和真实 CLI `-p / --print` 之间切换，各模式分别保留版本与服务配置，支持网页版与桌面版。HTTP 模式无需 CLI 文件。切换及启动方法参见 [Claude Code 双模式插件](docs/claude-code-modes.md)。
 
 可选服务端配置见 `.env.template`。`CODE` 用于网页版访问验证；启用 `ENABLE_MCP=true` 时也必须配置 `CODE`。`WHITE_WEBDAV_ENDPOINTS` 用于增加允许的 WebDAV 转发地址。
 

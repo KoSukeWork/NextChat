@@ -82,7 +82,7 @@ export function RequestPluginManager() {
             onClick={() =>
               void guarded(async () => {
                 const response = await fetch(
-                  "./request-plugins/nextchat.claude-code-3.0.0-beta.2.json",
+                  "./request-plugins/nextchat.claude-code-3.1.0-beta.1.json",
                 );
                 if (!response.ok)
                   throw new Error(`Package HTTP ${response.status}`);
@@ -230,48 +230,53 @@ export function EndpointRequestPlugin(props: {
         </Select>
       </ListItem>
       {pkg &&
-        Object.entries(pkg.manifest.fields).map(([name, field]) => {
-          const update = (value: string) =>
-            props.onChange({
-              requestPlugin: {
-                ...binding!,
-                config: { ...config, [name]: value },
-              },
-            });
-          return (
-            <ListItem
-              key={name}
-              title={field.title}
-              subTitle={field.description}
-            >
-              {field.type === "select" ? (
-                <Select
-                  aria-label={field.title}
-                  value={config[name]}
-                  onChange={(event) => update(event.currentTarget.value)}
-                >
-                  {field.options?.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </Select>
-              ) : field.type === "secret" ? (
-                <PasswordInput
-                  aria-label={field.title}
-                  value={config[name]}
-                  onChange={(event) => update(event.currentTarget.value)}
-                />
-              ) : (
-                <input
-                  aria-label={field.title}
-                  value={config[name]}
-                  onChange={(event) => update(event.currentTarget.value)}
-                />
-              )}
-            </ListItem>
-          );
-        })}
+        Object.entries(pkg.manifest.fields)
+          .filter(
+            ([, field]) =>
+              !field.when || config[field.when.field] === field.when.value,
+          )
+          .map(([name, field]) => {
+            const update = (value: string) =>
+              props.onChange({
+                requestPlugin: {
+                  ...binding!,
+                  config: { ...config, [name]: value },
+                },
+              });
+            return (
+              <ListItem
+                key={name}
+                title={field.title}
+                subTitle={field.description}
+              >
+                {field.type === "select" ? (
+                  <Select
+                    aria-label={field.title}
+                    value={config[name]}
+                    onChange={(event) => update(event.currentTarget.value)}
+                  >
+                    {field.options?.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Select>
+                ) : field.type === "secret" ? (
+                  <PasswordInput
+                    aria-label={field.title}
+                    value={config[name]}
+                    onChange={(event) => update(event.currentTarget.value)}
+                  />
+                ) : (
+                  <input
+                    aria-label={field.title}
+                    value={config[name]}
+                    onChange={(event) => update(event.currentTarget.value)}
+                  />
+                )}
+              </ListItem>
+            );
+          })}
       {pkg && (
         <ListItem
           title={labels().Preview}

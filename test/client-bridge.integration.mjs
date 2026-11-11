@@ -19,6 +19,20 @@ const { prepareChat, prepareRequest } = await import(
   `data:text/javascript;base64,${Buffer.from(legacy.source).toString("base64")}`
 );
 import { mockAnthropic } from "./fixtures/anthropic-http.mjs";
+const switchablePackage = JSON.parse(
+  await readFile(
+    new URL(
+      "../public/request-plugins/nextchat.claude-code-3.1.0-beta.1.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+);
+const switchable = await import(
+  `data:text/javascript;base64,${Buffer.from(switchablePackage.source).toString(
+    "base64",
+  )}`
+);
 
 const token = "nextchat-local-fixture-token";
 async function serve(driver) {
@@ -183,7 +197,18 @@ test(
       requestId: "test-request",
     };
     const send = async (chat) => {
-      const request = prepareChat(chat, context);
+      const request = switchable.prepareChat(chat, {
+        ...context,
+        config: {
+          ...context.config,
+          nativeCliVersion: context.config.cliVersion,
+        },
+      });
+      assert.deepEqual(
+        request,
+        prepareChat(chat, context),
+        "Both plugins must retain the same real CLI bridge request",
+      );
       const response = await fetch(request.url, {
         method: "POST",
         headers: request.headers,

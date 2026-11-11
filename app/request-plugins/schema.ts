@@ -8,6 +8,13 @@ const field = z
     description: z.string().max(1000).optional(),
     type: z.enum(["string", "secret", "select"]),
     default: z.string().max(10000).optional(),
+    when: z
+      .object({
+        field: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/),
+        value: z.string(),
+      })
+      .strict()
+      .optional(),
     options: z
       .array(z.object({ value: z.string(), label: z.string() }))
       .max(40)
@@ -64,6 +71,18 @@ export function parsePluginPackage(value: unknown): RequestPluginPackage {
       throw new Error("Reserved configuration key");
     if (value.type === "select" && !value.options?.length)
       throw new Error(`Missing choices for ${key}`);
+    if (value.when) {
+      const selector = result.manifest.fields[value.when.field];
+      if (
+        key === value.when.field ||
+        selector?.type !== "select" ||
+        selector.when ||
+        !selector.options?.some((option) => option.value === value.when!.value)
+      )
+        throw new Error(
+          `Invalid configuration visibility condition for ${key}`,
+        );
+    }
   }
   return result;
 }
