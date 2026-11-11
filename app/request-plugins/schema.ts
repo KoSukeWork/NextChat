@@ -72,7 +72,13 @@ export type RequestPluginBinding = {
   id: string;
   version: string;
   config: Record<string, string>;
+  /** Host-owned lifecycle preferences, separate from the portable plugin config. */
+  localServices?: Record<string, "managed" | "external">;
 };
+
+export type LocalServiceDeclaration = NonNullable<
+  RequestPluginPackage["manifest"]["localServices"]
+>[number];
 
 export function parsePluginPackage(value: unknown): RequestPluginPackage {
   const result = pluginPackageSchema.parse(value);

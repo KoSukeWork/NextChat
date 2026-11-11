@@ -27,6 +27,11 @@ import UploadIcon from "../icons/upload.svg";
 import ClearIcon from "../icons/clear.svg";
 import ConfirmIcon from "../icons/confirm.svg";
 import styles from "./request-plugins.module.scss";
+import {
+  activeManagedServices,
+  connectionFields,
+  serviceConnectionMode,
+} from "../request-plugins/managed-services";
 
 const labels = () => Locale.RequestPlugins;
 const bundledClaudeVersion = "3.2.0-beta.1";
@@ -237,17 +242,29 @@ export function EndpointRequestPlugin(props: {
           key={`${props.endpoint.id}:${pkg.manifest.id}@${pkg.manifest.version}:${service.id}`}
           service={service.id}
           title={service.title}
+          managed={serviceConnectionMode(binding!, service, pkg) === "managed"}
+          onModeChange={(mode) =>
+            props.onChange({
+              requestPlugin: {
+                ...binding!,
+                localServices: {
+                  ...binding!.localServices,
+                  [service.id]: mode,
+                },
+              },
+            })
+          }
           onConnect={(connection) => {
             props.onChange({
               requestPlugin: {
                 ...binding!,
+                localServices: {
+                  ...binding!.localServices,
+                  [service.id]: "managed",
+                },
                 config: {
                   ...config,
-                  [service.urlField]: connection.url,
-                  [service.tokenField]: connection.token,
-                  ...(service.versionField && connection.cliVersion
-                    ? { [service.versionField]: connection.cliVersion }
-                    : {}),
+                  ...connectionFields(service, connection),
                 },
               },
             });
@@ -310,6 +327,14 @@ export function EndpointRequestPlugin(props: {
               !field.when || config[field.when.field] === field.when.value,
           )
           .map(([name, field]) => {
+            const automatic = activeManagedServices(props.endpoint, pkg).some(
+              (service) =>
+                [
+                  service.urlField,
+                  service.tokenField,
+                  service.versionField,
+                ].includes(name),
+            );
             const update = (value: string) =>
               props.onChange({
                 requestPlugin: {
@@ -322,7 +347,11 @@ export function EndpointRequestPlugin(props: {
                 <ListItem
                   className={styles.field}
                   title={field.title}
-                  subTitle={field.description}
+                  subTitle={
+                    automatic
+                      ? labels().Service.ManagedFieldDescription
+                      : field.description
+                  }
                 >
                   {field.type === "select" ? (
                     <Select
@@ -338,6 +367,7 @@ export function EndpointRequestPlugin(props: {
                     </Select>
                   ) : field.type === "secret" ? (
                     <PasswordInput
+                      readOnly={automatic}
                       aria-label={field.title}
                       value={config[name]}
                       onChange={(event) => update(event.currentTarget.value)}
@@ -345,6 +375,7 @@ export function EndpointRequestPlugin(props: {
                   ) : (
                     <input
                       type="text"
+                      readOnly={automatic}
                       aria-label={field.title}
                       value={config[name]}
                       onChange={(event) => update(event.currentTarget.value)}
@@ -367,11 +398,13 @@ export function EndpointRequestPlugin(props: {
             disabled={busy}
             onClick={async () => {
               setBusy(true);
+              let session: ReturnType<typeof createPluginSession>;
               try {
-                const session = createPluginSession(
+                session = createPluginSession(
                   props.endpoint,
                   "preview",
                   "chat",
+                  { preview: true },
                 )!;
                 const input = {
                   model: props.endpoint.models[0]?.name || "MODEL",
@@ -435,6 +468,7 @@ export function EndpointRequestPlugin(props: {
               } catch (error) {
                 showToast(String(error));
               } finally {
+                await session?.dispose();
                 setBusy(false);
               }
             }}

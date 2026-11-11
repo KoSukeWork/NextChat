@@ -103,6 +103,8 @@ beforeEach(() => {
     } else if (command === "local_service_stop") {
       current.running = false;
       current.connection = null;
+    } else if (command === "local_service_configure") {
+      current.executablePath = args!.executablePath;
     }
     states.set(service, current);
     return JSON.parse(JSON.stringify(current));
@@ -146,6 +148,11 @@ test("desktop starts and connects each mode, fills its version/token, and stops 
       screen.getByLabelText(Locale.RequestPlugins.Service.Executable),
     ).toHaveValue("C:/Chosen/claude.exe"),
   );
+  expect(invoke).toHaveBeenCalledWith("local_service_configure", {
+    service: "claude-cli",
+    executablePath: "C:/Chosen/claude.exe",
+  });
+  expect(states.get("claude-cli").running).toBe(false);
   fireEvent.click(
     screen.getByRole("button", { name: Locale.RequestPlugins.Service.Start }),
   );
@@ -177,7 +184,7 @@ test("desktop starts and connects each mode, fills its version/token, and stops 
   );
   await waitFor(() =>
     expect(screen.getByRole("status")).toHaveTextContent(
-      Locale.RequestPlugins.Service.Running,
+      Locale.RequestPlugins.Service.Stopped,
     ),
   );
 });
@@ -281,6 +288,7 @@ test("switching modes during startup does not connect the previous mode", async 
     () => new Promise((resolve) => (finish = resolve)),
   );
   fireEvent.click(start);
+  await act(async () => {});
   fireEvent.change(screen.getByLabelText(fields.mode.title), {
     target: { value: "cli" },
   });

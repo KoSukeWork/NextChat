@@ -81,7 +81,8 @@ fn main() {
             tts::melo_synthesize,
             local_services::local_service_status,
             local_services::local_service_start,
-            local_services::local_service_stop
+            local_services::local_service_stop,
+            local_services::local_service_configure
         ])
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .build(context)

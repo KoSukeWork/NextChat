@@ -426,8 +426,9 @@ export async function runEndpointChat(
     if (pendingReasoningCache && !pendingTextCache) noReasoningModels.add(key);
     callbacks.onFinish(latest, response);
   };
+  let extension: ReturnType<typeof createPluginSession>;
   try {
-    const extension = endpoint.requestPlugin
+    extension = endpoint.requestPlugin
       ? createPluginSession(endpoint, input.sessionId ?? nanoid(), "chat")
       : undefined;
     callbacks.onToolModeChange?.(textMode ? "text" : "native");
@@ -678,5 +679,7 @@ export async function runEndpointChat(
       callbacks.onError?.(
         error instanceof Error ? error : new Error(String(error)),
       );
+  } finally {
+    await extension?.dispose();
   }
 }

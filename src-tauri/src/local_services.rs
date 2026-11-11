@@ -351,6 +351,45 @@ impl ServiceState {
         Ok(running)
     }
 
+    fn save_cli_path(&self, inner: &mut Inner, path: String) -> Result<(), String> {
+        fs::create_dir_all(&self.directory).map_err(|_| "Could not save local service settings")?;
+        let options = Options { cli_path: path };
+        let mut file = tempfile::NamedTempFile::new_in(&self.directory)
+            .map_err(|_| "Could not save local service settings")?;
+        serde_json::to_writer(&mut file, &options)
+            .map_err(|_| "Could not save local service settings")?;
+        file.persist(self.directory.join("settings.json"))
+            .map_err(|_| "Could not save local service settings")?;
+        inner.options = options;
+        Ok(())
+    }
+
+    fn configure(
+        &self,
+        kind: ServiceKind,
+        executable_path: String,
+    ) -> Result<ServiceStatus, String> {
+        if kind != ServiceKind::ClaudeCli {
+            return Err("This service has no executable setting".into());
+        }
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| "Local service state is unavailable")?;
+        if self.snapshot(&mut inner, kind).running {
+            return Err("Stop the CLI service before changing its executable".into());
+        }
+        let path = if executable_path.trim().is_empty() {
+            String::new()
+        } else {
+            exact_executable(executable_path.trim())?
+                .to_string_lossy()
+                .into_owned()
+        };
+        self.save_cli_path(&mut inner, path)?;
+        Ok(self.snapshot(&mut inner, kind))
+    }
+
     fn start(
         &self,
         kind: ServiceKind,
@@ -374,15 +413,7 @@ impl ServiceState {
                 } else {
                     exact_executable(requested.trim())?
                 };
-                fs::create_dir_all(&self.directory)
-                    .map_err(|_| "Could not save local service settings")?;
-                inner.options.cli_path = path.to_string_lossy().into_owned();
-                let mut file = tempfile::NamedTempFile::new_in(&self.directory)
-                    .map_err(|_| "Could not save local service settings")?;
-                serde_json::to_writer(&mut file, &inner.options)
-                    .map_err(|_| "Could not save local service settings")?;
-                file.persist(self.directory.join("settings.json"))
-                    .map_err(|_| "Could not save local service settings")?;
+                self.save_cli_path(&mut inner, path.to_string_lossy().into_owned())?;
                 Some(path)
             } else {
                 None
@@ -417,6 +448,18 @@ impl ServiceState {
             inner.processes.clear();
         }
     }
+}
+
+#[tauri::command]
+pub async fn local_service_configure(
+    state: tauri::State<'_, Arc<ServiceState>>,
+    service: ServiceKind,
+    executable_path: String,
+) -> Result<ServiceStatus, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || state.configure(service, executable_path))
+        .await
+        .map_err(|_| "Could not save local service settings")?
 }
 
 #[tauri::command]
@@ -478,6 +521,46 @@ mod tests {
     }
 
     #[test]
+    fn executable_selection_persists_without_starting_a_service() {
+        let directory = tempfile::tempdir().unwrap();
+        let executable = directory.path().join("selected.exe");
+        fs::write(&executable, b"configuration test; not executable").unwrap();
+        let helper = directory.path().join("missing-helper.exe");
+        let state = ServiceState::new(directory.path().into(), helper.clone());
+        let configured = state
+            .configure(
+                ServiceKind::ClaudeCli,
+                executable.to_string_lossy().into_owned(),
+            )
+            .unwrap();
+        assert!(!configured.running);
+        assert!(configured.connection.is_none());
+        assert!(state.configure(ServiceKind::Wire, String::new()).is_err());
+        assert!(state
+            .configure(ServiceKind::ClaudeCli, "missing.cmd".into())
+            .is_err());
+        drop(state);
+        let restored = ServiceState::new(directory.path().into(), helper);
+        assert_eq!(
+            restored
+                .status(ServiceKind::ClaudeCli)
+                .unwrap()
+                .executable_path,
+            exact_executable(&executable.to_string_lossy())
+                .unwrap()
+                .to_string_lossy()
+        );
+        assert!(!restored.status(ServiceKind::ClaudeCli).unwrap().running);
+        restored
+            .configure(ServiceKind::ClaudeCli, String::new())
+            .unwrap();
+        let options: Options =
+            serde_json::from_slice(&fs::read(directory.path().join("settings.json")).unwrap())
+                .unwrap();
+        assert!(options.cli_path.is_empty());
+    }
+
+    #[test]
     #[cfg(windows)]
     fn bundled_service_lifecycle_reuses_one_process_and_rotates_credentials() {
         let helper = Path::new(env!("CARGO_MANIFEST_DIR")).join("../build/nextchat-wire-relay.exe");
@@ -524,6 +607,9 @@ mod tests {
             .unwrap();
         assert!(started.running);
         assert!(started.connection.as_ref().unwrap().cli_version.is_some());
+        assert!(state
+            .configure(ServiceKind::ClaudeCli, String::new())
+            .is_err());
         assert_eq!(
             state.start(ServiceKind::ClaudeCli, None).unwrap().pid,
             started.pid

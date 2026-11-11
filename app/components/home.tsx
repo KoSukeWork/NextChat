@@ -33,6 +33,7 @@ import clsx from "clsx";
 import { initializeMcpSystem, isMcpEnabled } from "../mcp/actions";
 import { useDesktopZoom } from "../utils/use-desktop-zoom";
 import { showToast } from "./ui-lib";
+import { initializeManagedServices } from "../request-plugins/managed-services";
 
 export function Loading(props: { noLogo?: boolean }) {
   return (
@@ -227,6 +228,8 @@ export function Home() {
   useHtmlLang();
   const migrationWarnings = useAppConfig((state) => state.unmigratedEndpoints);
   const configHydrated = useAppConfig((state) => state._hasHydrated);
+
+  useEffect(() => initializeManagedServices(), []);
 
   useEffect(() => {
     if (!configHydrated) return;

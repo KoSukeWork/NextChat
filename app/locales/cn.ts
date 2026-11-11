@@ -86,11 +86,20 @@ const cn = {
   },
   RequestPlugins: {
     Service: {
+      Mode: "服务连接方式",
+      Automatic: "自动管理本地服务",
+      External: "连接外部服务",
+      AutomaticDescription:
+        "保存后自动准备所选模式，重启软件可直接使用。连接信息自动更新，无需手动启动。",
+      ExternalDescription:
+        "填写已有服务的地址和令牌，由你管理服务的启动与停止。",
+      ManagedFieldDescription: "由 NextChat 自动填写和刷新，无需手动配置。",
+      InUse: "服务仍有请求进行中，请等待完成或先取消请求。",
       Description:
-        "在软件内启动本地服务并自动填写连接配置。服务由当前软件实例共享，退出软件时关闭。",
+        "服务由当前软件实例共享。未使用的模式会自动停止；手动停止后，下次请求会自动启动。",
       Checking: "正在检查本地服务…",
       Running: "运行中",
-      Stopped: "未启动",
+      Stopped: "待机",
       Missing:
         "附加组件缺失或平台不支持，请使用完整的 Windows x64 安装包或便携包。",
       Executable: "本机 Claude Code CLI",
@@ -105,7 +114,7 @@ const cn = {
     },
     Preview: "预览请求",
     PreviewDescription:
-      "使用示例消息，仅预览不发送。CLI 模式显示桥接请求，上游请求由真实 Claude Code 生成。",
+      "仅预览，不发送或启动服务。自动管理模式使用占位令牌，实际连接信息在请求时确定。",
     Title: "请求扩展插件",
     Description:
       "为 NextChat 添加请求适配能力。添加后，在接口配置中选择对应插件。",

@@ -160,6 +160,37 @@ test("full backup restores settings, endpoints, plugins, sync and MCP without us
   expect(applyLocal).toHaveBeenCalledWith(restored);
 });
 
+test("local service ownership survives a backup round trip", () => {
+  const local = clone(getLocalAppState());
+  local[StoreKey.Config].endpoints = [
+    {
+      ...endpoint("managed", "key"),
+      requestPlugin: {
+        id: "test.adapter",
+        version: "1.0.0",
+        config: { mode: "cli" },
+        localServices: { wire: "external", "claude-cli": "managed" },
+      },
+    },
+  ];
+  const backup = JSON.parse(
+    JSON.stringify(
+      createBackup(local, { plugins: {} }, {}, { mcpServers: {} }),
+    ),
+  );
+  const restored = restoreBackup(
+    clone(getLocalAppState()),
+    backup,
+    { plugins: {} },
+    {},
+  );
+  expect(
+    restored.local[StoreKey.Config].endpoints.find(
+      (entry) => entry.id === "managed",
+    )?.requestPlugin,
+  ).toEqual(local[StoreKey.Config].endpoints[0].requestPlugin);
+});
+
 test("older backups without new fields remain importable and legacy API settings are ignored", () => {
   const local = clone(getLocalAppState());
   local[StoreKey.Config].endpoints = [endpoint("local", "keep")];

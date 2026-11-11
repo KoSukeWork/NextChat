@@ -6,6 +6,13 @@ import { callPlugin } from "./worker";
 import type { PluginChat, PluginContext, PluginRequest } from "./sdk";
 import { pluginSessionId } from "./identity";
 import { nanoid } from "nanoid";
+import {
+  activeManagedServices,
+  connectionFields,
+  managedServices,
+  reconcileManagedServices,
+} from "./managed-services";
+import type { ServiceLease } from "./service-lifecycle";
 
 const requestSchema = z
   .object({
@@ -53,9 +60,32 @@ export function createPluginSession(
   endpoint: Endpoint,
   sessionId: string,
   operation: PluginContext["operation"],
+  options: { preview?: boolean } = {},
 ) {
   const pkg = resolveRequestPlugin(endpoint);
   if (!pkg) return;
+  const services = activeManagedServices(endpoint, pkg);
+  if (options.preview) {
+    for (const service of services) {
+      // Preview is side-effect free and never boots a process for placeholder credentials.
+      pkg.config[service.tokenField] = "managed-service-token-placeholder";
+    }
+  }
+  const leases: ServiceLease[] = [];
+  let preparation: Promise<void> | undefined;
+  let disposed = false;
+  const prepare = (signal?: AbortSignal) => {
+    if (disposed) return Promise.reject(new Error("Plugin session is closed"));
+    return (preparation ??= (async () => {
+      if (options.preview || !services.length) return;
+      void reconcileManagedServices();
+      for (const service of services) {
+        const lease = await managedServices.acquire(service.id, signal);
+        leases.push(lease);
+        Object.assign(pkg.config, connectionFields(service, lease.connection));
+      }
+    })());
+  };
   const context: PluginContext = {
     operation,
     protocol: endpoint.protocol,
@@ -108,12 +138,21 @@ export function createPluginSession(
     return request;
   };
   return {
+    async dispose() {
+      if (disposed) return;
+      disposed = true;
+      await preparation?.catch(() => {});
+      await Promise.allSettled(
+        leases.splice(0).map((lease) => lease.release()),
+      );
+    },
     async fetch(
       request: PluginRequest,
       method: "GET" | "POST",
       requestFetch: (url: string, options?: RequestInit) => Promise<Response>,
       signal?: AbortSignal,
     ) {
+      await prepare(signal);
       // Validation is repeated at this trust boundary; the transport token is
       // taken from the frozen endpoint settings, never from worker output.
       const wire = validate(request, false);
@@ -154,6 +193,7 @@ export function createPluginSession(
       );
     },
     async request(request: PluginRequest, signal?: AbortSignal) {
+      await prepare(signal);
       if (!pkg.manifest.capabilities.includes("request")) return request;
       return validate(
         await callPlugin(
@@ -166,6 +206,7 @@ export function createPluginSession(
       );
     },
     async chat(chat: PluginChat, signal?: AbortSignal) {
+      await prepare(signal);
       if (!pkg.manifest.capabilities.includes("driver")) return null;
       const result = await callPlugin(
         pkg.source,

@@ -89,11 +89,22 @@ const en: LocaleType = {
   },
   RequestPlugins: {
     Service: {
+      Mode: "Service connection",
+      Automatic: "Manage local service automatically",
+      External: "Connect to an external service",
+      AutomaticDescription:
+        "Save once to prepare the selected mode automatically, including after restarting the app. Connection settings refresh automatically.",
+      ExternalDescription:
+        "Enter an existing service URL and token. You manage its startup and shutdown.",
+      ManagedFieldDescription:
+        "Filled and refreshed automatically by NextChat; no manual setup needed.",
+      InUse:
+        "This service has active requests. Wait for completion or cancel them first.",
       Description:
-        "Start a local service and fill its connection settings automatically. Services are shared by this app instance and stop when it exits.",
+        "Services are shared by this app instance. Unused modes stop automatically; a manually stopped service restarts on the next request.",
       Checking: "Checking local service…",
       Running: "Running",
-      Stopped: "Stopped",
+      Stopped: "Standby",
       Missing:
         "Bundled components are missing or unsupported. Use the complete Windows x64 installer or portable package.",
       Executable: "Installed Claude Code CLI",
@@ -109,7 +120,7 @@ const en: LocaleType = {
     },
     Preview: "Preview request",
     PreviewDescription:
-      "Uses a sample message without sending it. In CLI mode this shows the bridge request; Claude Code generates the upstream request.",
+      "Preview only; no requests or services are started. Automatic connections use a placeholder token until a real request is made.",
     Title: "Request extensions",
     Description:
       "Add request adapters to NextChat, then select a plugin in your API endpoint settings.",

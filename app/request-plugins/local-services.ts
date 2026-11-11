@@ -53,3 +53,15 @@ export async function chooseServiceExecutable() {
   });
   return typeof selected === "string" ? selected : undefined;
 }
+
+export async function saveServiceExecutable(
+  service: string,
+  executablePath: string,
+) {
+  if (!supportsLocalServices())
+    throw new Error("Local services require the desktop app");
+  return window.__TAURI__!.invoke("local_service_configure", {
+    service,
+    executablePath,
+  });
+}

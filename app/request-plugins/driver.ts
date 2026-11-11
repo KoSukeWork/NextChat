@@ -107,26 +107,30 @@ export async function runPluginDriver(
     options.sessionId ?? nanoid(),
     "chat",
   );
-  const canonical = stripThinkingFromMessages(messages).map(
-    ({ role, content }) => ({ role, content }),
-  );
-  const request = await plugin!.chat(
-    {
-      messages: canonical,
-      model: options.config.model,
-      enableTools: !!options.enableTools,
-      reasoningEffort: options.config.reasoningEffort,
-    },
-    controller.signal,
-  );
-  if (!request) return false;
-  const response = await endpointFetch(request.url, {
-    method: "POST",
-    headers: request.headers,
-    body: JSON.stringify(request.body),
-    signal: controller.signal,
-    redirect: "manual",
-  });
-  await consumeDriverResponse(response, options, controller.signal);
-  return true;
+  try {
+    const canonical = stripThinkingFromMessages(messages).map(
+      ({ role, content }) => ({ role, content }),
+    );
+    const request = await plugin!.chat(
+      {
+        messages: canonical,
+        model: options.config.model,
+        enableTools: !!options.enableTools,
+        reasoningEffort: options.config.reasoningEffort,
+      },
+      controller.signal,
+    );
+    if (!request) return false;
+    const response = await endpointFetch(request.url, {
+      method: "POST",
+      headers: request.headers,
+      body: JSON.stringify(request.body),
+      signal: controller.signal,
+      redirect: "manual",
+    });
+    await consumeDriverResponse(response, options, controller.signal);
+    return true;
+  } finally {
+    await plugin?.dispose();
+  }
 }
