@@ -19,6 +19,8 @@ import {
 import { IconButton } from "./button";
 import { createPluginSession } from "../request-plugins/host";
 import { buildEndpointRequest } from "../client/endpoint-protocol";
+import { LocalServiceControl } from "./local-service-control";
+import { supportsLocalServices } from "../request-plugins/local-services";
 
 const labels = () => Locale.RequestPlugins;
 
@@ -82,7 +84,7 @@ export function RequestPluginManager() {
             onClick={() =>
               void guarded(async () => {
                 const response = await fetch(
-                  "./request-plugins/nextchat.claude-code-3.1.0-beta.1.json",
+                  "./request-plugins/nextchat.claude-code-3.2.0-beta.1.json",
                 );
                 if (!response.ok)
                   throw new Error(`Package HTTP ${response.status}`);
@@ -229,6 +231,36 @@ export function EndpointRequestPlugin(props: {
           ))}
         </Select>
       </ListItem>
+      {pkg?.enabled &&
+        supportsLocalServices() &&
+        pkg.manifest.localServices
+          ?.filter(
+            (service) =>
+              !service.when ||
+              config[service.when.field] === service.when.value,
+          )
+          .map((service) => (
+            <LocalServiceControl
+              key={`${props.endpoint.id}:${pkg.manifest.id}@${pkg.manifest.version}:${service.id}`}
+              service={service.id}
+              title={service.title}
+              onConnect={(connection) => {
+                props.onChange({
+                  requestPlugin: {
+                    ...binding!,
+                    config: {
+                      ...config,
+                      [service.urlField]: connection.url,
+                      [service.tokenField]: connection.token,
+                      ...(service.versionField && connection.cliVersion
+                        ? { [service.versionField]: connection.cliVersion }
+                        : {}),
+                    },
+                  },
+                });
+              }}
+            />
+          ))}
       {pkg &&
         Object.entries(pkg.manifest.fields)
           .filter(

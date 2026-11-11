@@ -85,6 +85,21 @@ const cn = {
     Pinned: "已置顶",
   },
   RequestPlugins: {
+    Service: {
+      Description:
+        "在软件内启动本地服务并自动填写连接配置。服务由当前软件实例共享，退出软件时关闭。",
+      Checking: "正在检查本地服务…",
+      Running: "运行中",
+      Stopped: "未启动",
+      Missing:
+        "附加组件缺失或平台不支持，请使用完整的 Windows x64 安装包或便携包。",
+      Executable: "Claude Code 程序路径",
+      AutoDetect: "自动查找已安装的 Claude Code",
+      Browse: "选择程序",
+      Start: "启动并连接",
+      Connect: "使用此服务",
+      Stop: "停止服务",
+    },
     Preview: "预览请求",
     PreviewDescription:
       "使用示例消息，仅预览不发送。CLI 模式显示桥接请求，上游请求由真实 Claude Code 生成。",

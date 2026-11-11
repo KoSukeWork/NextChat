@@ -22,6 +22,9 @@ declare interface Window {
     };
     dialog: {
       save(options?: Record<string, unknown>): Promise<string | null>;
+      open?(
+        options?: Record<string, unknown>,
+      ): Promise<string | string[] | null>;
     };
     fs: {
       writeBinaryFile(path: string, data: Uint8Array): Promise<void>;

@@ -88,6 +88,21 @@ const en: LocaleType = {
     Pinned: "Pinned",
   },
   RequestPlugins: {
+    Service: {
+      Description:
+        "Start a local service and fill its connection settings automatically. Services are shared by this app instance and stop when it exits.",
+      Checking: "Checking local service…",
+      Running: "Running",
+      Stopped: "Stopped",
+      Missing:
+        "Bundled components are missing or unsupported. Use the complete Windows x64 installer or portable package.",
+      Executable: "Claude Code executable",
+      AutoDetect: "Find installed Claude Code automatically",
+      Browse: "Choose executable",
+      Start: "Start and connect",
+      Connect: "Use this service",
+      Stop: "Stop service",
+    },
     Preview: "Preview request",
     PreviewDescription:
       "Uses a sample message without sending it. In CLI mode this shows the bridge request; Claude Code generates the upstream request.",

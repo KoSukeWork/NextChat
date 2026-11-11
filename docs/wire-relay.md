@@ -15,7 +15,9 @@
 
 ## 使用
 
-在运行发包服务的 Windows x64 机器上设置一个私有令牌并启动：
+Windows x64 安装版或完整解压的便携版可直接在 `NextChat.exe` 中管理服务：安装并绑定 **Claude Code 3.2.0-beta.1**，选择独立 HTTP 模拟，点击 **启动并连接**，然后保存接口。地址和令牌由软件自动填写，退出软件时关闭服务；再次启动需重新连接。详细步骤见 [桌面界面启动](claude-code-modes.md#桌面界面启动推荐)。
+
+网页部署或手动管理时，在运行发包服务的 Windows x64 机器上设置一个私有令牌并启动：
 
 ```powershell
 $env:NEXTCHAT_WIRE_TOKEN = '替换为至少16字符的随机令牌'
@@ -24,7 +26,7 @@ $env:NEXTCHAT_WIRE_TOKEN = '替换为至少16字符的随机令牌'
 
 默认监听 `127.0.0.1:8789`。`NEXTCHAT_WIRE_HOST`、`NEXTCHAT_WIRE_PORT` 可调整监听地址和端口。关闭终端或 Ctrl+C 即停止。所有接口均校验令牌，不提供未经认证的转发。
 
-NextChat 设置 → 请求扩展插件 → 安装 Claude Code，安装当前实验包；在 Anthropic Messages 接口中绑定 **3.1.0-beta.1**，选择 **独立 HTTP 模拟**，填写发包服务 URL 和相同令牌。网关 URL、网关 API Key、模型仍填在接口本身。预览会显示 `independent-transport`、发包服务地址及上游请求，凭据被遮盖。
+NextChat 设置 → 请求扩展插件 → 安装 Claude Code，安装当前实验包；在 Anthropic Messages 接口中绑定 **3.2.0-beta.1**，选择 **独立 HTTP 模拟**，填写发包服务 URL 和相同令牌。网关 URL、网关 API Key、模型仍填在接口本身。预览会显示 `independent-transport`、发包服务地址及上游请求，凭据被遮盖。
 
 网页版由 NextChat 部署服务器连接发包服务；桌面版由本机连接。远程网页部署中的 `127.0.0.1` 指部署服务器，不是访问网页的电脑。跨机器部署应放在受控网络中，并通过 HTTPS 反向代理保护服务令牌和请求内容。
 
@@ -33,6 +35,8 @@ NextChat 设置 → 请求扩展插件 → 安装 Claude Code，安装当前实�
 不同版本的请求插件独立安装，旧版绑定不自动升级。首次测试先使用默认基准、供应商实际提供的模型名与认证方式；在聊天中发送一条短消息。成功 SSE、401/403、429 和其他错误分别记录为实际结果，不将普通连接成功视为网关接受了模型请求。地址和密钥只需填在自己的 NextChat 接口配置中。
 
 ## 构建与测试
+
+Windows 安装包与便携包可用 `./scripts/package-windows.ps1 -BunExecutable C:/Tools/bun-1.4.4/bun.exe` 一起生成到 `release/`。脚本要求工作区已提交，校验固定 Bun 构建、打包附加组件及许可，并验证 ZIP 中每个文件的 SHA-256；同名发布产物不会覆盖。需要已安装项目依赖、Rust/MSVC 与 Node.js/Corepack。
 
 使用官方独立 Bun 1.4.4 Windows x64，构建过程不需要 Claude Code：
 

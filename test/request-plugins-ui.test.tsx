@@ -18,7 +18,7 @@ jest.unstable_mockModule("@/app/client/endpoint-models", () => ({
 }));
 const pkg = JSON.parse(
   readFileSync(
-    "public/request-plugins/nextchat.claude-code-3.1.0-beta.1.json",
+    "public/request-plugins/nextchat.claude-code-3.2.0-beta.1.json",
     "utf8",
   ),
 );
@@ -70,7 +70,7 @@ test("install a package without rebuilding and bind its configurable version to 
     target: { value: "https://gateway.test" },
   });
   fireEvent.change(screen.getByLabelText(Locale.RequestPlugins.Select), {
-    target: { value: "nextchat.claude-code@3.1.0-beta.1" },
+    target: { value: "nextchat.claude-code@3.2.0-beta.1" },
   });
   expect(screen.getByLabelText(pkg.manifest.fields.profile.title)).toHaveValue(
     "verified",
@@ -129,7 +129,7 @@ test("install a package without rebuilding and bind its configurable version to 
   );
   expect(useAppConfig.getState().endpoints[0].requestPlugin).toMatchObject({
     id: "nextchat.claude-code",
-    version: "3.1.0-beta.1",
+    version: "3.2.0-beta.1",
     config: {
       mode: "cli",
       profile: "custom",
@@ -141,11 +141,11 @@ test("install a package without rebuilding and bind its configurable version to 
   });
   fireEvent.click(
     screen.getByRole("checkbox", {
-      name: `${Locale.RequestPlugins.Enabled}: Claude Code 3.1.0-beta.1`,
+      name: `${Locale.RequestPlugins.Enabled}: Claude Code 3.2.0-beta.1`,
     }),
   );
   expect(useAppConfig.getState().requestPlugins[0].enabled).toBe(false);
   expect(useAppConfig.getState().endpoints[0].requestPlugin?.version).toBe(
-    "3.1.0-beta.1",
+    "3.2.0-beta.1",
   );
 });

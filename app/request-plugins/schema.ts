@@ -2,19 +2,19 @@ import { z } from "zod";
 
 const identifier = z.string().regex(/^[a-z][a-z0-9.-]{1,79}$/);
 const version = z.string().regex(/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/);
+const condition = z
+  .object({
+    field: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/),
+    value: z.string(),
+  })
+  .strict();
 const field = z
   .object({
     title: z.string().min(1).max(120),
     description: z.string().max(1000).optional(),
     type: z.enum(["string", "secret", "select"]),
     default: z.string().max(10000).optional(),
-    when: z
-      .object({
-        field: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/),
-        value: z.string(),
-      })
-      .strict()
-      .optional(),
+    when: condition.optional(),
     options: z
       .array(z.object({ value: z.string(), label: z.string() }))
       .max(40)
@@ -43,6 +43,21 @@ export const pluginPackageSchema = z
         fields: z
           .record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/), field)
           .default({}),
+        localServices: z
+          .array(
+            z
+              .object({
+                id: identifier,
+                title: z.string().min(1).max(120),
+                when: condition.optional(),
+                urlField: z.string(),
+                tokenField: z.string(),
+                versionField: z.string().optional(),
+              })
+              .strict(),
+          )
+          .max(10)
+          .optional(),
       })
       .strict(),
     source: z.string().min(1).max(512000),
@@ -83,6 +98,26 @@ export function parsePluginPackage(value: unknown): RequestPluginPackage {
           `Invalid configuration visibility condition for ${key}`,
         );
     }
+  }
+  const serviceIds = new Set<string>();
+  for (const service of result.manifest.localServices ?? []) {
+    const fields = result.manifest.fields;
+    if (
+      result.manifest.sdkVersion !== 2 ||
+      serviceIds.has(service.id) ||
+      fields[service.urlField]?.type !== "string" ||
+      fields[service.tokenField]?.type !== "secret" ||
+      (service.versionField &&
+        fields[service.versionField]?.type !== "string") ||
+      (service.when &&
+        (fields[service.when.field]?.type !== "select" ||
+          fields[service.when.field].when ||
+          !fields[service.when.field].options?.some(
+            (option) => option.value === service.when!.value,
+          )))
+    )
+      throw new Error("Invalid local service declaration");
+    serviceIds.add(service.id);
   }
   return result;
 }

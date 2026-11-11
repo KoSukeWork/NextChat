@@ -1,14 +1,17 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod local_services;
 mod mcp;
 mod mcp_oauth;
+#[cfg(windows)]
+mod process_job;
 mod stream;
 mod sync_http;
-mod zoom;
 mod tts;
 #[cfg(windows)]
 mod window_icon;
+mod zoom;
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -18,7 +21,10 @@ fn main() {
     // No path changes when this explicit environment variable is absent.
     if let Some(directory) = std::env::var_os("NEXTCHAT_TEST_APP_DIR") {
         let directory = std::path::PathBuf::from(directory);
-        assert!(directory.is_absolute(), "NEXTCHAT_TEST_APP_DIR must be absolute");
+        assert!(
+            directory.is_absolute(),
+            "NEXTCHAT_TEST_APP_DIR must be absolute"
+        );
         context.config_mut().tauri.bundle.identifier = directory.to_string_lossy().into_owned();
     }
     tauri::Builder::default()
@@ -32,10 +38,8 @@ fn main() {
             std::fs::create_dir_all(&directory)?;
             // Generic filesystem IPC (including save-dialog grants) must not bypass MCP approval.
             app.fs_scope().forbid_directory(&directory, true)?;
-            let mcp_directory = mcp::config_directory(
-                &directory,
-                std::env::var_os("NEXTCHAT_MCP_CONFIG_DIR"),
-            )?;
+            let mcp_directory =
+                mcp::config_directory(&directory, std::env::var_os("NEXTCHAT_MCP_CONFIG_DIR"))?;
             std::fs::create_dir_all(&mcp_directory)?;
             app.fs_scope().forbid_directory(&mcp_directory, true)?;
             app.manage(Arc::new(mcp::McpState::new(
@@ -44,6 +48,10 @@ fn main() {
             app.manage(Arc::new(mcp_oauth::OAuthCallbacks::default()));
             app.manage(Arc::new(stream::StreamState::default()));
             app.manage(tts::setup(app)?);
+            app.manage(Arc::new(local_services::ServiceState::new(
+                directory.join("local-services"),
+                local_services::bundled_helper(app.handle()),
+            )));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -70,7 +78,10 @@ fn main() {
             tts::melo_delete,
             tts::melo_begin_speech,
             tts::melo_cancel_speech,
-            tts::melo_synthesize
+            tts::melo_synthesize,
+            local_services::local_service_status,
+            local_services::local_service_start,
+            local_services::local_service_stop
         ])
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .build(context)
@@ -79,6 +90,7 @@ fn main() {
             if matches!(event, tauri::RunEvent::Exit) {
                 app.state::<Arc<mcp::McpState>>().kill_all();
                 app.state::<Arc<tts::TtsState>>().shutdown();
+                app.state::<Arc<local_services::ServiceState>>().shutdown();
             }
         });
 }
@@ -90,7 +102,13 @@ mod isolation_tests {
         let mut context = tauri::generate_context!();
         let isolated = std::env::temp_dir().join("nextchat-isolation-check");
         context.config_mut().tauri.bundle.identifier = isolated.to_string_lossy().into_owned();
-        assert_eq!(tauri::api::path::app_config_dir(context.config()), Some(isolated.clone()));
-        assert_eq!(tauri::api::path::app_local_data_dir(context.config()), Some(isolated));
+        assert_eq!(
+            tauri::api::path::app_config_dir(context.config()),
+            Some(isolated.clone())
+        );
+        assert_eq!(
+            tauri::api::path::app_local_data_dir(context.config()),
+            Some(isolated)
+        );
     }
 }

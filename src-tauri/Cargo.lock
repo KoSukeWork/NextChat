@@ -2240,6 +2240,7 @@ dependencies = [
  "bzip2 0.4.4",
  "dunce",
  "futures-util",
+ "getrandom 0.2.9",
  "num_cpus",
  "percent-encoding",
  "reqwest",

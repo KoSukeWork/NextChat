@@ -236,7 +236,10 @@ export async function createDriver(options = {}) {
       const configDirectory = join(dataDirectory, scope);
       const env = Object.fromEntries(
         Object.entries(process.env).filter(
-          ([name]) => !/^(ANTHROPIC_|CLAUDE_)/i.test(name),
+          ([name]) =>
+            !/^(ANTHROPIC_|CLAUDE_|NEXTCHAT_(?:BRIDGE|WIRE|SERVICE)_|BUN_OPTIONS$|NODE_OPTIONS$)/i.test(
+              name,
+            ),
         ),
       );
       Object.assign(env, {
