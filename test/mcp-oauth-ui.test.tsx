@@ -62,6 +62,7 @@ jest.unstable_mockModule("@/app/components/error", () => ({
 }));
 jest.unstable_mockModule("@/app/utils/stream", () => ({
   fetch: async () => ({ ok: true, json: async () => ({ data: [] }) }),
+  NativeStreamError: class NativeStreamError extends Error {},
 }));
 jest.unstable_mockModule("@/app/components/ui-lib", () => ({
   List: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
