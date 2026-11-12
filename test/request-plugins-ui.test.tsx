@@ -57,7 +57,10 @@ const { RequestPluginManager } = await import(
 const { EndpointConfigList } = await import(
   "../app/components/endpoint-config"
 );
-const Locale = (await import("../app/locales")).default;
+const { default: Locale, getLang } = await import("../app/locales");
+const { localizeText } = await import("../app/request-plugins/schema");
+const fieldTitle = (name: string) =>
+  localizeText(pkg.manifest.fields[name].title, getLang());
 
 beforeEach(() => {
   useAppConfig.setState({ requestPlugins: [], endpoints: [] });
@@ -100,48 +103,29 @@ test("install a package without rebuilding and bind its configurable version to 
   fireEvent.change(screen.getByLabelText(Locale.RequestPlugins.Select), {
     target: { value: "nextchat.claude-code@4.0.0" },
   });
-  expect(
-    screen.getByLabelText(pkg.manifest.fields.connection.title),
-  ).toHaveValue("builtin");
-  expect(
-    screen.queryByLabelText(pkg.manifest.fields.bridgeToken.title),
-  ).toBeNull();
-  fireEvent.change(
-    screen.getByLabelText(pkg.manifest.fields.connection.title),
-    {
-      target: { value: "external" },
-    },
+  expect(screen.getByLabelText(fieldTitle("connection"))).toHaveValue(
+    "builtin",
   );
-  fireEvent.change(
-    screen.getByLabelText(pkg.manifest.fields.bridgeToken.title),
-    {
-      target: { value: "local-cli-token-12345" },
-    },
+  expect(screen.queryByLabelText(fieldTitle("bridgeToken"))).toBeNull();
+  fireEvent.change(screen.getByLabelText(fieldTitle("connection")), {
+    target: { value: "external" },
+  });
+  fireEvent.change(screen.getByLabelText(fieldTitle("bridgeToken")), {
+    target: { value: "local-cli-token-12345" },
+  });
+  fireEvent.change(screen.getByLabelText(fieldTitle("nativeCliVersion")), {
+    target: { value: "2.1.322" },
+  });
+  fireEvent.change(screen.getByLabelText(fieldTitle("connection")), {
+    target: { value: "builtin" },
+  });
+  expect(screen.queryByLabelText(fieldTitle("bridgeToken"))).toBeNull();
+  fireEvent.change(screen.getByLabelText(fieldTitle("connection")), {
+    target: { value: "external" },
+  });
+  expect(screen.getByLabelText(fieldTitle("bridgeToken"))).toHaveValue(
+    "local-cli-token-12345",
   );
-  fireEvent.change(
-    screen.getByLabelText(pkg.manifest.fields.nativeCliVersion.title),
-    {
-      target: { value: "2.1.322" },
-    },
-  );
-  fireEvent.change(
-    screen.getByLabelText(pkg.manifest.fields.connection.title),
-    {
-      target: { value: "builtin" },
-    },
-  );
-  expect(
-    screen.queryByLabelText(pkg.manifest.fields.bridgeToken.title),
-  ).toBeNull();
-  fireEvent.change(
-    screen.getByLabelText(pkg.manifest.fields.connection.title),
-    {
-      target: { value: "external" },
-    },
-  );
-  expect(
-    screen.getByLabelText(pkg.manifest.fields.bridgeToken.title),
-  ).toHaveValue("local-cli-token-12345");
   fireEvent.click(
     screen.getByRole("button", { name: Locale.RequestPlugins.Preview }),
   );

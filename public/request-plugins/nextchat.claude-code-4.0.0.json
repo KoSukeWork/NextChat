@@ -4,7 +4,10 @@
     "id": "nextchat.claude-code",
     "version": "4.0.0",
     "name": "Claude Code",
-    "description": "使用桌面内置 Claude Code CLI 或自行部署的 Node 桥接服务。 / Use the built-in desktop CLI or a self-hosted Node bridge.",
+    "description": {
+      "cn": "使用桌面内置 Claude Code CLI 或自行部署的 Node 桥接服务。",
+      "en": "Use the built-in desktop CLI or a self-hosted Node bridge."
+    },
     "protocols": [
       "anthropic"
     ],
@@ -14,22 +17,34 @@
     ],
     "fields": {
       "connection": {
-        "title": "连接方式 / Connection",
+        "title": {
+          "cn": "连接方式",
+          "en": "Connection"
+        },
         "type": "select",
         "default": "builtin",
         "options": [
           {
             "value": "builtin",
-            "label": "内置（桌面）/ Built-in (desktop)"
+            "label": {
+              "cn": "内置（桌面）",
+              "en": "Built-in (desktop)"
+            }
           },
           {
             "value": "external",
-            "label": "外部桥接服务 / External bridge"
+            "label": {
+              "cn": "外部桥接服务",
+              "en": "External bridge"
+            }
           }
         ]
       },
       "authType": {
-        "title": "网关认证 / Gateway authentication",
+        "title": {
+          "cn": "网关认证",
+          "en": "Gateway authentication"
+        },
         "type": "select",
         "default": "api-key",
         "options": [
@@ -44,7 +59,10 @@
         ]
       },
       "bridgeUrl": {
-        "title": "桥接服务地址 / Bridge URL",
+        "title": {
+          "cn": "桥接服务地址",
+          "en": "Bridge URL"
+        },
         "type": "string",
         "default": "http://127.0.0.1:8788",
         "when": {
@@ -53,7 +71,10 @@
         }
       },
       "bridgeToken": {
-        "title": "桥接服务令牌 / Bridge token",
+        "title": {
+          "cn": "桥接服务令牌",
+          "en": "Bridge token"
+        },
         "type": "secret",
         "when": {
           "field": "connection",
@@ -61,8 +82,14 @@
         }
       },
       "nativeCliVersion": {
-        "title": "外部桥接 CLI 版本 / External CLI version",
-        "description": "外部桥接要求精确版本。 / External bridges require an exact version.",
+        "title": {
+          "cn": "外部桥接 CLI 版本",
+          "en": "External CLI version"
+        },
+        "description": {
+          "cn": "外部桥接要求精确版本。",
+          "en": "External bridges require an exact version."
+        },
         "type": "string",
         "default": "2.1.322",
         "when": {
@@ -71,13 +98,25 @@
         }
       },
       "nativeBeta": {
-        "title": "CLI Beta 标记 / CLI beta flags",
-        "description": "留空使用 CLI 默认值。 / Leave empty to use CLI defaults.",
+        "title": {
+          "cn": "CLI Beta 标记",
+          "en": "CLI beta flags"
+        },
+        "description": {
+          "cn": "留空使用 CLI 默认值。",
+          "en": "Leave empty to use CLI defaults."
+        },
         "type": "string"
       },
       "nativeEffort": {
-        "title": "CLI 思考强度 / CLI reasoning effort",
-        "description": "留空沿用对话设置。 / Leave empty to use the chat setting.",
+        "title": {
+          "cn": "CLI 思考强度",
+          "en": "CLI reasoning effort"
+        },
+        "description": {
+          "cn": "留空沿用对话设置。",
+          "en": "Leave empty to use the chat setting."
+        },
         "type": "string"
       }
     }

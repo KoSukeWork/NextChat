@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { SourceTextModule } from "node:vm";
 import {
   installPlugin,
+  localizeText,
   parsePluginPackage,
 } from "../app/request-plugins/schema";
 import { pluginSessionId } from "../app/request-plugins/identity";
@@ -96,6 +97,36 @@ test("packages retain immutable versions and bindings require an enabled package
   expect(resolveRequestPlugin(endpoint)?.manifest.version).toBe("1.0.0");
   useAppConfig.setState({ requestPlugins: [{ ...pkg, enabled: false }] });
   expect(() => resolveRequestPlugin(endpoint)).toThrow(/disabled/);
+});
+
+test("manifest text follows the UI language with English fallback", () => {
+  const title = { cn: "连接方式", en: "Connection" };
+  const localized = parsePluginPackage({
+    ...pkg,
+    manifest: {
+      ...pkg.manifest,
+      description: { en: "Adapter" },
+      fields: { mode: { title, type: "string" } },
+    },
+  });
+  expect(localizeText(localized.manifest.fields.mode.title, "cn")).toBe(
+    "连接方式",
+  );
+  expect(localizeText(localized.manifest.fields.mode.title, "jp")).toBe(
+    "Connection",
+  );
+  expect(localizeText({ cn: "仅中文" }, "en")).toBe("仅中文");
+  expect(localizeText(localized.manifest.description, "cn")).toBe("Adapter");
+  for (const bad of [{}, { "zh-CN": "名称" }, { cn: "" }])
+    expect(() =>
+      parsePluginPackage({
+        ...pkg,
+        manifest: {
+          ...pkg.manifest,
+          fields: { mode: { title: bad, type: "string" } },
+        },
+      }),
+    ).toThrow();
 });
 
 test("plugin identity is stable per endpoint and conversation", () => {

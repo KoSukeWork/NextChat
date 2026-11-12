@@ -8,15 +8,24 @@ const condition = z
     value: z.string(),
   })
   .strict();
+/** Plain text, or text keyed by NextChat language code such as `cn` or `en`. */
+const localized = (text: z.ZodString) =>
+  z.union([
+    text,
+    z.record(z.string().regex(/^[a-z]{2}$/), text).refine((value) => {
+      const count = Object.keys(value).length;
+      return count > 0 && count <= 30;
+    }, "Localized text needs 1-30 languages"),
+  ]);
 const field = z
   .object({
-    title: z.string().min(1).max(120),
-    description: z.string().max(1000).optional(),
+    title: localized(z.string().min(1).max(120)),
+    description: localized(z.string().max(1000)).optional(),
     type: z.enum(["string", "secret", "select"]),
     default: z.string().max(10000).optional(),
     when: condition.optional(),
     options: z
-      .array(z.object({ value: z.string(), label: z.string() }))
+      .array(z.object({ value: z.string(), label: localized(z.string()) }))
       .max(40)
       .optional(),
   })
@@ -31,7 +40,7 @@ export const pluginPackageSchema = z
         id: identifier,
         version,
         name: z.string().min(1).max(120),
-        description: z.string().max(2000),
+        description: localized(z.string().max(2000)),
         protocols: z
           .array(
             z.enum(["anthropic", "openai-chat", "openai-responses", "gemini"]),
@@ -63,6 +72,18 @@ export const pluginPackageSchema = z
   .strict();
 
 export type RequestPluginPackage = z.infer<typeof pluginPackageSchema>;
+export type LocalizedText = string | Record<string, string>;
+
+/** Picks the UI language, then English, then the first provided language. */
+export function localizeText(text: LocalizedText, lang: string): string;
+export function localizeText(
+  text: LocalizedText | undefined,
+  lang: string,
+): string | undefined;
+export function localizeText(text: LocalizedText | undefined, lang: string) {
+  if (text === undefined || typeof text === "string") return text;
+  return text[lang] ?? text.en ?? Object.values(text)[0];
+}
 export type InstalledRequestPlugin = RequestPluginPackage & {
   enabled: boolean;
 };

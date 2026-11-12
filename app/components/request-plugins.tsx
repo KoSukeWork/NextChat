@@ -1,8 +1,10 @@
 import { Fragment, useRef, useState } from "react";
-import Locale from "../locales";
+import Locale, { getLang } from "../locales";
 import { useAppConfig } from "../store/config";
 import {
   installPlugin,
+  localizeText,
+  type LocalizedText,
   parsePluginPackage,
   pluginDefaults,
 } from "../request-plugins/schema";
@@ -29,6 +31,7 @@ import ConfirmIcon from "../icons/confirm.svg";
 import styles from "./request-plugins.module.scss";
 
 const labels = () => Locale.RequestPlugins;
+const text = (value?: LocalizedText) => localizeText(value, getLang());
 const bundledClaudeVersion = "4.0.0";
 
 export function RequestPluginManager() {
@@ -44,9 +47,9 @@ export function RequestPluginManager() {
     const pkg = parsePluginPackage(value);
     if (
       !(await showConfirm(
-        `${pkg.manifest.name} ${pkg.manifest.version}\n\n${
-          pkg.manifest.description
-        }\n\n${labels().Trust}`,
+        `${pkg.manifest.name} ${pkg.manifest.version}\n\n${text(
+          pkg.manifest.description,
+        )}\n\n${labels().Trust}`,
       ))
     )
       return;
@@ -228,7 +231,7 @@ export function EndpointRequestPlugin(props: {
       <ListItem
         className={styles.field}
         title={labels().Select}
-        subTitle={pkg?.manifest.description}
+        subTitle={text(pkg?.manifest.description)}
       >
         <Select
           aria-label={labels().Select}
@@ -302,35 +305,36 @@ export function EndpointRequestPlugin(props: {
                   config: { ...config, [name]: value },
                 },
               });
+            const title = localizeText(field.title, getLang());
             return (
               <Fragment key={name}>
                 <ListItem
                   className={styles.field}
-                  title={field.title}
-                  subTitle={field.description}
+                  title={title}
+                  subTitle={text(field.description)}
                 >
                   {field.type === "select" ? (
                     <Select
-                      aria-label={field.title}
+                      aria-label={title}
                       value={config[name]}
                       onChange={(event) => update(event.currentTarget.value)}
                     >
                       {field.options?.map((option) => (
                         <option key={option.value} value={option.value}>
-                          {option.label}
+                          {text(option.label)}
                         </option>
                       ))}
                     </Select>
                   ) : field.type === "secret" ? (
                     <PasswordInput
-                      aria-label={field.title}
+                      aria-label={title}
                       value={config[name]}
                       onChange={(event) => update(event.currentTarget.value)}
                     />
                   ) : (
                     <input
                       type="text"
-                      aria-label={field.title}
+                      aria-label={title}
                       value={config[name]}
                       onChange={(event) => update(event.currentTarget.value)}
                     />

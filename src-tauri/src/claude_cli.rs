@@ -191,13 +191,19 @@ fn exact_executable(path: &str) -> Result<PathBuf, String> {
     {
         return Err("Select an installed Claude Code .exe using an absolute path".into());
     }
-    Ok(dunce::simplified(path).to_path_buf())
+    // Rebuilding from components normalizes mixed separators for display.
+    Ok(dunce::simplified(path).components().collect())
 }
 
 fn detect_cli() -> Option<PathBuf> {
     let mut paths = Vec::new();
     if let Some(home) = std::env::var_os("USERPROFILE") {
-        paths.push(PathBuf::from(home).join(".local/bin/claude.exe"));
+        paths.push(
+            PathBuf::from(home)
+                .join(".local")
+                .join("bin")
+                .join("claude.exe"),
+        );
     }
     if let Some(path) = std::env::var_os("PATH") {
         paths.extend(std::env::split_paths(&path).map(|part| part.join("claude.exe")));
@@ -925,6 +931,15 @@ mod tests {
         );
         assert_eq!(events[1]["text"], "before");
         assert_eq!(events[4]["text"], "\n\nafter");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn configured_executable_uses_native_separators() {
+        let path = fake_cli().to_string_lossy().into_owned();
+        let mixed = path.replace('\\', "/");
+        let resolved = exact_executable(&mixed).unwrap();
+        assert_eq!(resolved.to_string_lossy(), path);
     }
 
     #[test]

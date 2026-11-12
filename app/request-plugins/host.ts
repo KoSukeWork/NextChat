@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { useAppConfig } from "../store/config";
 import type { Endpoint } from "../utils/endpoints";
-import { parsePluginPackage, pluginDefaults } from "./schema";
+import { localizeText, parsePluginPackage, pluginDefaults } from "./schema";
 import { callPlugin } from "./worker";
 import type { PluginChat, PluginContext, PluginRequest } from "./sdk";
 import { pluginSessionId } from "./identity";
@@ -57,7 +57,9 @@ export function resolveRequestPlugin(endpoint: Endpoint) {
       field.type === "select" &&
       !field.options?.some((option) => option.value === config[key])
     )
-      throw new Error(`Invalid plugin configuration: ${field.title}`);
+      throw new Error(
+        `Invalid plugin configuration: ${localizeText(field.title, "en")}`,
+      );
   }
   // Snapshot the package and configuration for the entire operation.
   return { ...pkg, config };
