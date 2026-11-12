@@ -6,24 +6,31 @@ import { callPlugin } from "./worker";
 import type { PluginChat, PluginContext, PluginRequest } from "./sdk";
 import { pluginSessionId } from "./identity";
 import { nanoid } from "nanoid";
-import {
-  activeManagedServices,
-  connectionFields,
-  managedServices,
-  reconcileManagedServices,
-} from "./managed-services";
-import type { ServiceLease } from "./service-lifecycle";
+import { supportsLocalServices } from "./local-services";
 
 const requestSchema = z
   .object({
     url: z.string(),
     headers: z.record(z.string()),
     body: z.record(z.unknown()).optional(),
-    transport: z
-      .object({ profile: z.string().min(1).max(120) })
-      .strict()
-      .optional(),
   })
+  .strict();
+
+export type PreparedHostDriver = {
+  hostDriver: "claude-code";
+  input: {
+    endpoint: { baseUrl: string; apiKey: string };
+    sessionId: string;
+    model: string;
+    messages: PluginChat["messages"];
+    enableTools: boolean;
+    authType: string;
+    betas: string[];
+    reasoningEffort?: string;
+  };
+};
+const hostDriverSchema = z
+  .object({ hostDriver: z.literal("claude-code") })
   .strict();
 
 export function resolveRequestPlugin(endpoint: Endpoint) {
@@ -64,27 +71,12 @@ export function createPluginSession(
 ) {
   const pkg = resolveRequestPlugin(endpoint);
   if (!pkg) return;
-  const services = activeManagedServices(endpoint, pkg);
-  if (options.preview) {
-    for (const service of services) {
-      // Preview is side-effect free and never boots a process for placeholder credentials.
-      pkg.config[service.tokenField] = "managed-service-token-placeholder";
-    }
-  }
-  const leases: ServiceLease[] = [];
-  let preparation: Promise<void> | undefined;
   let disposed = false;
   const prepare = (signal?: AbortSignal) => {
     if (disposed) return Promise.reject(new Error("Plugin session is closed"));
-    return (preparation ??= (async () => {
-      if (options.preview || !services.length) return;
-      void reconcileManagedServices();
-      for (const service of services) {
-        const lease = await managedServices.acquire(service.id, signal);
-        leases.push(lease);
-        Object.assign(pkg.config, connectionFields(service, lease.connection));
-      }
-    })());
+    if (signal?.aborted)
+      return Promise.reject(new DOMException("Aborted", "AbortError"));
+    return Promise.resolve();
   };
   const context: PluginContext = {
     operation,
@@ -97,8 +89,13 @@ export function createPluginSession(
     config: pkg.config,
     sessionId: pluginSessionId(endpoint.id, sessionId),
     requestId: nanoid(),
+    hostDrivers: supportsLocalServices() ? ["claude-code"] : [],
   };
   const validate = (value: unknown, driver: boolean): PluginRequest => {
+    if (value && typeof value === "object" && "transport" in value)
+      throw new Error(
+        "Request plugin transport extensions are no longer supported",
+      );
     const request = requestSchema.parse(value);
     const url = new URL(request.url);
     if (
@@ -114,37 +111,12 @@ export function createPluginSession(
         "Plugin request destination differs from the configured endpoint",
       );
     new Headers(request.headers);
-    if (request.transport) {
-      if (
-        driver ||
-        pkg.manifest.sdkVersion !== 2 ||
-        !pkg.manifest.capabilities.includes("transport")
-      )
-        throw new Error("The plugin did not declare an independent transport");
-      const relay = new URL(pkg.config.transportUrl);
-      if (
-        !["http:", "https:"].includes(relay.protocol) ||
-        relay.username ||
-        relay.password ||
-        relay.search ||
-        relay.hash
-      )
-        throw new Error("Invalid independent transport URL");
-      if (!pkg.config.transportToken || pkg.config.transportToken.length < 16)
-        throw new Error(
-          "Configure a transport token of at least 16 characters",
-        );
-    }
     return request;
   };
   return {
     async dispose() {
       if (disposed) return;
       disposed = true;
-      await preparation?.catch(() => {});
-      await Promise.allSettled(
-        leases.splice(0).map((lease) => lease.release()),
-      );
     },
     async fetch(
       request: PluginRequest,
@@ -153,44 +125,14 @@ export function createPluginSession(
       signal?: AbortSignal,
     ) {
       await prepare(signal);
-      // Validation is repeated at this trust boundary; the transport token is
-      // taken from the frozen endpoint settings, never from worker output.
       const wire = validate(request, false);
-      if (!wire.transport)
-        return requestFetch(wire.url, {
-          method,
-          headers: wire.headers,
-          ...(wire.body === undefined
-            ? {}
-            : { body: JSON.stringify(wire.body) }),
-          redirect: "manual",
-          signal,
-        });
-      return requestFetch(
-        `${pkg.config.transportUrl.replace(/\/+$/, "")}/v1/requests`,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Bearer ${pkg.config.transportToken}`,
-          },
-          // Preserve header spelling and exact serialized body inside an opaque
-          // envelope. Browser Headers and the web/native relay only see the outer
-          // transport request, so they cannot normalize upstream headers.
-          body: JSON.stringify({
-            version: 1,
-            profile: wire.transport.profile,
-            url: wire.url,
-            method,
-            headers: Object.entries(wire.headers),
-            ...(wire.body === undefined
-              ? {}
-              : { body: JSON.stringify(wire.body) }),
-          }),
-          redirect: "manual",
-          signal,
-        },
-      );
+      return requestFetch(wire.url, {
+        method,
+        headers: wire.headers,
+        ...(wire.body === undefined ? {} : { body: JSON.stringify(wire.body) }),
+        redirect: "manual",
+        signal,
+      });
     },
     async request(request: PluginRequest, signal?: AbortSignal) {
       await prepare(signal);
@@ -214,7 +156,31 @@ export function createPluginSession(
         [chat, context],
         signal,
       );
-      return result === null ? null : validate(result, true);
+      if (result === null) return null;
+      const host = hostDriverSchema.safeParse(result);
+      if (host.success) {
+        if (!context.hostDrivers?.includes(host.data.hostDriver))
+          throw new Error("This built-in driver is unavailable");
+        const effort = pkg.config.nativeEffort || chat.reasoningEffort;
+        const input: PreparedHostDriver["input"] = {
+          endpoint: { baseUrl: endpoint.baseUrl, apiKey: endpoint.apiKey },
+          sessionId: context.sessionId,
+          model: chat.model,
+          messages: chat.messages,
+          enableTools: chat.enableTools,
+          authType: pkg.config.authType,
+          betas: (pkg.config.nativeBeta || "")
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean),
+          ...(effort ? { reasoningEffort: effort } : {}),
+        };
+        return {
+          hostDriver: host.data.hostDriver,
+          input,
+        } as PreparedHostDriver;
+      }
+      return validate(result, true);
     },
   };
 }

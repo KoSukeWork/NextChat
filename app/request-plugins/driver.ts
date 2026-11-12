@@ -8,6 +8,7 @@ import { nanoid } from "nanoid";
 import type { EndpointTool } from "../client/endpoint-protocol";
 import { formatMcpResult } from "../mcp/tool-runtime";
 import { untilAborted } from "../mcp/reconnect";
+import { openNativeDriver } from "./native-driver";
 
 type HostTools = { tools: EndpointTool[]; funcs: Record<string, Function> };
 
@@ -136,27 +137,27 @@ export async function runPluginDriver(
       controller.signal,
     );
     if (!request) return false;
-    const response = await endpointFetch(request.url, {
-      method: "POST",
-      headers: request.headers,
-      body: JSON.stringify({
-        ...request.body,
-        ...(options.enableTools && hostTools?.tools.length
-          ? {
-              hostTools: hostTools.tools.map(({ function: tool }) => ({
-                name: tool.name,
-                description: tool.description,
-                inputSchema: tool.parameters ?? {
-                  type: "object",
-                  properties: {},
-                },
-              })),
-            }
-          : {}),
-      }),
-      signal: controller.signal,
-      redirect: "manual",
-    });
+    const tools =
+      options.enableTools && hostTools?.tools.length
+        ? hostTools.tools.map(({ function: tool }) => ({
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.parameters ?? { type: "object", properties: {} },
+          }))
+        : [];
+    const response =
+      "hostDriver" in request
+        ? await openNativeDriver(request, tools, controller.signal)
+        : await endpointFetch(request.url, {
+            method: "POST",
+            headers: request.headers,
+            body: JSON.stringify({
+              ...request.body,
+              ...(tools.length ? { hostTools: tools } : {}),
+            }),
+            signal: controller.signal,
+            redirect: "manual",
+          });
     const completed = new Set<string>();
     await consumeDriverResponse(
       response,
@@ -194,6 +195,15 @@ export async function runPluginDriver(
         }
         if (controller.signal.aborted)
           throw new DOMException("Aborted", "AbortError");
+        if ("hostDriver" in request) {
+          await window.__TAURI__!.invoke("claude_cli_tool_result", {
+            runId: event.runId,
+            callId: event.id,
+            content: result.content,
+            isError: !!result.isError,
+          });
+          return;
+        }
         const resultUrl = request.url.replace(
           /\/drivers\/[a-z0-9.-]+\/chat$/,
           `/runs/${event.runId}/results/${event.id}`,

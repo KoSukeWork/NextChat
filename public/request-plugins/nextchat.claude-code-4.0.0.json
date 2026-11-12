@@ -1,0 +1,86 @@
+{
+  "manifest": {
+    "sdkVersion": 2,
+    "id": "nextchat.claude-code",
+    "version": "4.0.0",
+    "name": "Claude Code",
+    "description": "使用桌面内置 Claude Code CLI 或自行部署的 Node 桥接服务。 / Use the built-in desktop CLI or a self-hosted Node bridge.",
+    "protocols": [
+      "anthropic"
+    ],
+    "capabilities": [
+      "request",
+      "driver"
+    ],
+    "fields": {
+      "connection": {
+        "title": "连接方式 / Connection",
+        "type": "select",
+        "default": "builtin",
+        "options": [
+          {
+            "value": "builtin",
+            "label": "内置（桌面）/ Built-in (desktop)"
+          },
+          {
+            "value": "external",
+            "label": "外部桥接服务 / External bridge"
+          }
+        ]
+      },
+      "authType": {
+        "title": "网关认证 / Gateway authentication",
+        "type": "select",
+        "default": "api-key",
+        "options": [
+          {
+            "value": "api-key",
+            "label": "x-api-key"
+          },
+          {
+            "value": "bearer",
+            "label": "Bearer token"
+          }
+        ]
+      },
+      "bridgeUrl": {
+        "title": "桥接服务地址 / Bridge URL",
+        "type": "string",
+        "default": "http://127.0.0.1:8788",
+        "when": {
+          "field": "connection",
+          "value": "external"
+        }
+      },
+      "bridgeToken": {
+        "title": "桥接服务令牌 / Bridge token",
+        "type": "secret",
+        "when": {
+          "field": "connection",
+          "value": "external"
+        }
+      },
+      "nativeCliVersion": {
+        "title": "外部桥接 CLI 版本 / External CLI version",
+        "description": "外部桥接要求精确版本。 / External bridges require an exact version.",
+        "type": "string",
+        "default": "2.1.322",
+        "when": {
+          "field": "connection",
+          "value": "external"
+        }
+      },
+      "nativeBeta": {
+        "title": "CLI Beta 标记 / CLI beta flags",
+        "description": "留空使用 CLI 默认值。 / Leave empty to use CLI defaults.",
+        "type": "string"
+      },
+      "nativeEffort": {
+        "title": "CLI 思考强度 / CLI reasoning effort",
+        "description": "留空沿用对话设置。 / Leave empty to use the chat setting.",
+        "type": "string"
+      }
+    }
+  },
+  "source": "/******/ // The require scope\n/******/ var __webpack_require__ = {};\n/******/ \n/************************************************************************/\n/******/ /* webpack/runtime/define property getters */\n/******/ (() => {\n/******/ \t// define getter functions for harmony exports\n/******/ \t__webpack_require__.d = (exports, definition) => {\n/******/ \t\tfor(var key in definition) {\n/******/ \t\t\tif(__webpack_require__.o(definition, key) && !__webpack_require__.o(exports, key)) {\n/******/ \t\t\t\tObject.defineProperty(exports, key, { enumerable: true, get: definition[key] });\n/******/ \t\t\t}\n/******/ \t\t}\n/******/ \t};\n/******/ })();\n/******/ \n/******/ /* webpack/runtime/hasOwnProperty shorthand */\n/******/ (() => {\n/******/ \t__webpack_require__.o = (obj, prop) => (Object.prototype.hasOwnProperty.call(obj, prop))\n/******/ })();\n/******/ \n/************************************************************************/\nvar __webpack_exports__ = {};\n\n// EXPORTS\n__webpack_require__.d(__webpack_exports__, {\n  u: () => (/* binding */ prepareChat),\n  h: () => (/* binding */ prepareRequest)\n});\n\n;// CONCATENATED MODULE: ../claude-code/prepare-cli-chat.mjs\n// Portable frontend hook for the existing --print bridge. Process management\n// stays in driver.mjs; neither the host nor the HTTP adapter launches the CLI.\nfunction prepareCliChat(chat, context) {\n  const { config, endpoint, sessionId, requestId } = context;\n  if (!config.bridgeToken || config.bridgeToken.length < 16)\n    throw new Error(\n      \"请配置至少16字符的桥接服务令牌 / Configure a bridge token of at least 16 characters\",\n    );\n  if (!/^\\d+\\.\\d+\\.\\d+$/.test(config.nativeCliVersion || \"\"))\n    throw new Error(\"Specify the exact installed Claude Code version\");\n  if (![\"api-key\", \"bearer\"].includes(config.authType))\n    throw new Error(\"Invalid gateway authentication type\");\n  const bridge = new URL(config.bridgeUrl);\n  if (\n    ![\"http:\", \"https:\"].includes(bridge.protocol) ||\n    bridge.username ||\n    bridge.password ||\n    bridge.search ||\n    bridge.hash\n  )\n    throw new Error(\"Invalid CLI bridge URL\");\n  return {\n    url: `${bridge.toString().replace(/\\/+$/, \"\")}/v1/drivers/claude-code/chat`,\n    headers: {\n      \"content-type\": \"application/json\",\n      authorization: `Bearer ${config.bridgeToken}`,\n    },\n    body: {\n      ...chat,\n      endpoint: { baseUrl: endpoint.baseUrl, apiKey: endpoint.apiKey },\n      sessionId,\n      requestId,\n      cliVersion: config.nativeCliVersion,\n      authType: config.authType,\n      betas: (config.nativeBeta || \"\")\n        .split(\",\")\n        .map((value) => value.trim())\n        .filter(Boolean),\n    },\n  };\n}\n\n;// CONCATENATED MODULE: ./index.mjs\n\n\nfunction prepareChat(chat, context) {\n  if (context.config.connection === \"builtin\") {\n    if (!context.hostDrivers?.includes(\"claude-code\"))\n      throw new Error(\n        \"内置 CLI 仅在桌面版可用，请配置外部桥接服务 / Built-in CLI requires the desktop app; configure an external bridge\",\n      );\n    return { hostDriver: \"claude-code\" };\n  }\n  if (context.config.connection !== \"external\")\n    throw new Error(\"Select a CLI connection\");\n  const effort = context.config.nativeEffort || chat.reasoningEffort;\n  return prepareCliChat(\n    { ...chat, ...(effort ? { reasoningEffort: effort } : {}) },\n    context,\n  );\n}\n\nfunction prepareRequest(_request, context) {\n  if (context.operation === \"models\")\n    throw new Error(\n      \"CLI -p 模式请手动添加模型 / Add models manually in CLI -p mode\",\n    );\n  throw new Error(\"CLI -p requests must use the client driver\");\n}\n\nvar __webpack_exports__prepareChat = __webpack_exports__.u;\nvar __webpack_exports__prepareRequest = __webpack_exports__.h;\nexport { __webpack_exports__prepareChat as prepareChat, __webpack_exports__prepareRequest as prepareRequest };\n"
+}

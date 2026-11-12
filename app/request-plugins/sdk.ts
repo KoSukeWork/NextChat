@@ -3,8 +3,6 @@ export interface PluginRequest {
   url: string;
   headers: Record<string, string>;
   body?: Record<string, unknown>;
-  /** SDK 2: use the configured independent relay; never fall back to fetch. */
-  transport?: { profile: string };
 }
 
 export interface PluginContext {
@@ -14,6 +12,8 @@ export interface PluginContext {
   config: Record<string, string>;
   sessionId: string;
   requestId: string;
+  /** Host-owned driver registry; a plugin cannot register its own driver. */
+  hostDrivers?: string[];
 }
 
 export interface PluginChat {
@@ -46,5 +46,9 @@ export interface RequestPluginSDK {
   prepareChat?(
     chat: PluginChat,
     context: PluginContext,
-  ): PluginRequest | null | Promise<PluginRequest | null>;
+  ):
+    | PluginRequest
+    | { hostDriver: string }
+    | null
+    | Promise<PluginRequest | { hostDriver: string } | null>;
 }

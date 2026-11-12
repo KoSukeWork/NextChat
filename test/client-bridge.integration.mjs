@@ -5,34 +5,21 @@ import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { createBridge } from "../scripts/client-bridge/server.mjs";
 import { createDriver } from "../plugins/claude-code/driver.mjs";
-// Keep exercising the immutable legacy package's optional CLI driver.
-const legacy = JSON.parse(
+const bundled = JSON.parse(
   await readFile(
     new URL(
-      "../public/request-plugins/nextchat.claude-code-1.0.0.json",
+      "../public/request-plugins/nextchat.claude-code-4.0.0.json",
       import.meta.url,
     ),
     "utf8",
   ),
 );
-const { prepareChat, prepareRequest } = await import(
-  `data:text/javascript;base64,${Buffer.from(legacy.source).toString("base64")}`
-);
-import { mockAnthropic } from "./fixtures/anthropic-http.mjs";
-const switchablePackage = JSON.parse(
-  await readFile(
-    new URL(
-      "../public/request-plugins/nextchat.claude-code-3.1.0-beta.1.json",
-      import.meta.url,
-    ),
-    "utf8",
-  ),
-);
-const switchable = await import(
-  `data:text/javascript;base64,${Buffer.from(switchablePackage.source).toString(
+const { prepareChat } = await import(
+  `data:text/javascript;base64,${Buffer.from(bundled.source).toString(
     "base64",
   )}`
 );
+import { mockAnthropic } from "./fixtures/anthropic-http.mjs";
 
 const token = "nextchat-local-fixture-token";
 async function serve(driver) {
@@ -121,57 +108,6 @@ test("disconnect aborts a running driver", async () => {
   }
 });
 
-test("simulation is explicit, immutable, versioned, and separates models from chat", () => {
-  const context = {
-    config: { mode: "simulate", cliVersion: "2.1.322", authType: "api-key" },
-    sessionId: "session",
-    endpoint: { apiKey: "dummy" },
-    operation: "chat",
-  };
-  const request = {
-    url: "https://gateway.test/v1/messages",
-    headers: { "x-api-key": "dummy" },
-    body: {
-      system: "User system",
-      tools: [{ name: "real_tool" }],
-      messages: [],
-    },
-  };
-  const result = prepareRequest(request, context);
-  assert.equal(
-    result.headers["user-agent"],
-    "claude-cli/2.1.322 (external, sdk-cli)",
-  );
-  assert.equal(result.url, "https://gateway.test/v1/messages?beta=true");
-  assert.equal(result.body.system, "User system");
-  assert.deepEqual(result.body.tools, request.body.tools);
-  assert.equal(request.url, "https://gateway.test/v1/messages");
-  assert.equal(
-    prepareRequest(
-      { url: "https://gateway.test/v1/models", headers: {} },
-      { ...context, operation: "models" },
-    ).body,
-    undefined,
-  );
-  assert.throws(
-    () =>
-      prepareRequest(request, {
-        ...context,
-        config: { ...context.config, cliVersion: "9.9.9" },
-      }),
-    /No verified/,
-  );
-  assert.throws(
-    () =>
-      prepareRequest(request, {
-        ...context,
-        config: { ...context.config, headerOverrides: '{"Host":"evil.test"}' },
-      }),
-    /Transport header/,
-  );
-  assert.equal(prepareChat({}, context), null);
-});
-
 test(
   "real CLI sends its own headers, checks the executable version and resumes signed history",
   { skip: process.env.NEXTCHAT_TEST_REAL_CLAUDE !== "1", timeout: 90000 },
@@ -186,8 +122,8 @@ test(
     const bridge = await serve(driver);
     const context = {
       config: {
-        mode: "cli",
-        cliVersion: info.versions[0],
+        connection: "external",
+        nativeCliVersion: info.versions[0],
         bridgeUrl: bridge.url,
         bridgeToken: token,
         authType: "api-key",
@@ -197,18 +133,7 @@ test(
       requestId: "test-request",
     };
     const send = async (chat) => {
-      const request = switchable.prepareChat(chat, {
-        ...context,
-        config: {
-          ...context.config,
-          nativeCliVersion: context.config.cliVersion,
-        },
-      });
-      assert.deepEqual(
-        request,
-        prepareChat(chat, context),
-        "Both plugins must retain the same real CLI bridge request",
-      );
+      const request = prepareChat(chat, context);
       const response = await fetch(request.url, {
         method: "POST",
         headers: request.headers,
@@ -267,7 +192,10 @@ test(
           model: "m",
           enableTools: false,
         },
-        { ...context, config: { ...context.config, cliVersion: "0.0.0" } },
+        {
+          ...context,
+          config: { ...context.config, nativeCliVersion: "0.0.0" },
+        },
       );
       const response = await fetch(mismatch.url, {
         method: "POST",

@@ -37,9 +37,7 @@ export const pluginPackageSchema = z
             z.enum(["anthropic", "openai-chat", "openai-responses", "gemini"]),
           )
           .min(1),
-        capabilities: z
-          .array(z.enum(["request", "driver", "transport"]))
-          .min(1),
+        capabilities: z.array(z.enum(["request", "driver"])).min(1),
         fields: z
           .record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/), field)
           .default({}),
@@ -74,6 +72,7 @@ export type RequestPluginBinding = {
   config: Record<string, string>;
   /** Host-owned lifecycle preferences, separate from the portable plugin config. */
   localServices?: Record<string, "managed" | "external">;
+  migrationNotice?: "http-removed";
 };
 
 export type LocalServiceDeclaration = NonNullable<
@@ -81,12 +80,14 @@ export type LocalServiceDeclaration = NonNullable<
 >[number];
 
 export function parsePluginPackage(value: unknown): RequestPluginPackage {
+  const manifest = (value as { manifest?: { capabilities?: unknown } })
+    ?.manifest;
+  const capabilities = manifest?.capabilities;
+  if (Array.isArray(capabilities) && capabilities.includes("transport"))
+    throw new Error(
+      "Request plugin transport extensions are no longer supported",
+    );
   const result = pluginPackageSchema.parse(value);
-  if (
-    result.manifest.capabilities.includes("transport") &&
-    result.manifest.sdkVersion !== 2
-  )
-    throw new Error("Transport extensions require plugin SDK 2");
   for (const [key, value] of Object.entries(result.manifest.fields)) {
     if (["__proto__", "constructor", "prototype"].includes(key))
       throw new Error("Reserved configuration key");

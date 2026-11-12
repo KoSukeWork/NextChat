@@ -92,6 +92,79 @@ test("restored executable request plugins require trust unless already installed
   ).toThrow(/different contents/);
 });
 
+test("backup migration skips old Claude packages and preserves external connection and endpoint credentials", () => {
+  const local = clone(getLocalAppState());
+  local[StoreKey.Config].requestPlugins = [];
+  local[StoreKey.Config].endpoints = [];
+  const incoming = clone(local);
+  incoming[StoreKey.Config].requestPlugins = [
+    {
+      manifest: {
+        id: "nextchat.claude-code",
+        version: "3.2.0-beta.1",
+        capabilities: ["transport"],
+      },
+      source: "legacy",
+      enabled: true,
+    },
+  ] as any;
+  incoming[StoreKey.Config].endpoints = [
+    {
+      ...endpoint("legacy", "gateway-secret"),
+      protocol: "anthropic",
+      requestPlugin: {
+        id: "nextchat.claude-code",
+        version: "3.2.0-beta.1",
+        config: {
+          mode: "cli",
+          bridgeUrl: "https://bridge.example",
+          bridgeToken: "bridge-secret",
+          nativeBeta: "beta-one",
+        },
+        localServices: { "claude-cli": "external" },
+      },
+    },
+  ];
+  const restored = restoreBackup(local, incoming, { plugins: {} }, {});
+  expect(
+    restored.local[StoreKey.Config].requestPlugins.map(
+      (pkg) => pkg.manifest.version,
+    ),
+  ).toEqual(["4.0.0"]);
+  expect(restored.local[StoreKey.Config].endpoints[0]).toMatchObject({
+    apiKey: "gateway-secret",
+    baseUrl: "https://example.test",
+    requestPlugin: {
+      version: "4.0.0",
+      config: {
+        connection: "external",
+        bridgeUrl: "https://bridge.example",
+        bridgeToken: "bridge-secret",
+        nativeBeta: "beta-one",
+      },
+    },
+  });
+});
+
+test("backup rejects a transport capability in any other plugin", () => {
+  const local = clone(getLocalAppState());
+  const incoming = clone(local);
+  incoming[StoreKey.Config].requestPlugins = [
+    {
+      manifest: {
+        id: "other.plugin",
+        version: "1.0.0",
+        capabilities: ["transport"],
+      },
+      source: "legacy",
+      enabled: true,
+    },
+  ] as any;
+  expect(() => restoreBackup(local, incoming, { plugins: {} }, {})).toThrow(
+    /transport extensions are no longer supported/,
+  );
+});
+
 test("full backup restores settings, endpoints, plugins, sync and MCP without using timestamps", async () => {
   const local = clone(getLocalAppState());
   local[StoreKey.Config].lastUpdateTime = 9999;

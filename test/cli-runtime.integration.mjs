@@ -15,6 +15,9 @@ import { createRuntimeInspector } from "../scripts/client-bridge/runtime.mjs";
 import { createSessionStore } from "../scripts/client-bridge/sessions.mjs";
 import { createDriver } from "../plugins/claude-code/driver.mjs";
 import { createBridge } from "../scripts/client-bridge/server.mjs";
+import { createHostTools } from "../scripts/client-bridge/host-tools.mjs";
+import { createServer } from "node:http";
+import { execFileSync } from "node:child_process";
 import { mockAnthropic } from "./fixtures/anthropic-http.mjs";
 
 const token = "cli-runtime-test-secret";
@@ -37,6 +40,106 @@ const headers = {
   authorization: `Bearer ${token}`,
   "content-type": "application/json",
 };
+
+test(
+  "the shared fake CLI produces matching events, resumes, rejects overlap and masks errors",
+  { timeout: 30000 },
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "nextchat-fake-cli-"));
+    let driver;
+    try {
+      const executable = join(root, "claude.exe");
+      execFileSync(
+        "rustc",
+        [
+          join(process.cwd(), "test/fixtures/claude-cli-fake.rs"),
+          "-o",
+          executable,
+        ],
+        { windowsHide: true },
+      );
+      driver = await createDriver({
+        executable,
+        workingDirectory: join(root, "work"),
+        dataDirectory: join(root, "data"),
+      });
+      const input = {
+        endpoint: {
+          baseUrl: "http://127.0.0.1:12345/v1",
+          apiKey: "dummy-secret",
+        },
+        sessionId: "one",
+        model: "claude-test",
+        cliVersion: "1.2.3",
+        authType: "api-key",
+        enableTools: false,
+        messages: [
+          { role: "system", content: "system instructions" },
+          { role: "user", content: "events-request" },
+        ],
+      };
+      const events = [];
+      const run = (
+        request,
+        signal = new AbortController().signal,
+        emit = async (event) => events.push(event),
+      ) => driver.chat(request, { signal, emit });
+      await run(input);
+      assert.deepEqual(
+        events.map((event) => event.type),
+        ["thinking", "text", "tool_start", "tool_end", "text", "done"],
+      );
+      assert.equal(events[1].text, "before");
+      assert.equal(events[4].text, "\n\nafter");
+      events.length = 0;
+      await run({
+        ...input,
+        messages: [
+          ...input.messages,
+          { role: "assistant", content: "before\n\nafter" },
+          { role: "user", content: "second" },
+        ],
+      });
+      assert.equal(events[0].text, "resumed");
+      await assert.rejects(
+        run({
+          ...input,
+          sessionId: "error",
+          messages: [{ role: "user", content: "fail-request" }],
+        }),
+        (error) =>
+          !error.message.includes("dummy-secret") &&
+          !error.message.includes("another-secret"),
+      );
+      let markStarted;
+      const started = new Promise((resolve) => {
+        markStarted = resolve;
+      });
+      const controller = new AbortController();
+      const slow = run(
+        {
+          ...input,
+          sessionId: "slow",
+          messages: [{ role: "user", content: "slow-request" }],
+        },
+        controller.signal,
+        async (event) => {
+          if (event.type === "text") markStarted();
+        },
+      );
+      await started;
+      await assert.rejects(
+        run({ ...input, sessionId: "slow" }),
+        /already generating/,
+      );
+      controller.abort();
+      await assert.rejects(slow, /cancelled/);
+    } finally {
+      await driver?.close();
+      await cleanup(root);
+    }
+  },
+);
 async function serve(driver, options = {}) {
   const server = createBridge({
     token,
@@ -189,7 +292,21 @@ test("MCP facade authenticates CLI calls and exposes only the request's host too
         (await rpc("tools/list")).result.tools.map((tool) => tool.name),
         ["enabled"],
       );
-      assert.ok((await rpc("tools/call", { name: "disabled" })).error);
+      const disabled = await fetch(hostMcp.config.url, {
+        method: "POST",
+        headers: {
+          ...hostMcp.config.headers,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "disabled" },
+        }),
+      });
+      assert.equal(disabled.status, 200);
+      assert.ok((await disabled.json()).error);
       const result = await rpc("tools/call", {
         name: "enabled",
         arguments: { value: 42 },
@@ -215,6 +332,51 @@ test("MCP facade authenticates CLI calls and exposes only the request's host too
     assert.equal(events.at(-1).type, "done");
   } finally {
     await bridge.close();
+  }
+});
+
+test("a cancelled in-flight MCP tool returns a JSON-RPC error over HTTP 200", async () => {
+  const host = createHostTools();
+  const server = createServer((req, res) => {
+    void host.handle(
+      req,
+      res,
+      new URL(req.url, "http://localhost").pathname,
+      token,
+    );
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const controller = new AbortController();
+  let started;
+  const called = new Promise((resolve) => {
+    started = resolve;
+  });
+  const facade = host.begin(
+    [{ name: "enabled", inputSchema: { type: "object" } }],
+    server,
+    async () => started(),
+    controller.signal,
+  );
+  try {
+    const pending = fetch(facade.config.url, {
+      method: "POST",
+      headers: { ...facade.config.headers, "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: { name: "enabled" },
+      }),
+    });
+    await called;
+    controller.abort();
+    const response = await pending;
+    assert.equal(response.status, 200);
+    assert.match((await response.json()).error.message, /cancelled/);
+  } finally {
+    facade.dispose();
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
   }
 });
 

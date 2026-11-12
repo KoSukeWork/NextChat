@@ -89,23 +89,6 @@ const en: LocaleType = {
   },
   RequestPlugins: {
     Service: {
-      Mode: "Service connection",
-      Automatic: "Manage local service automatically",
-      External: "Connect to an external service",
-      AutomaticDescription:
-        "Save once to prepare the selected mode automatically, including after restarting the app. Connection settings refresh automatically.",
-      ExternalDescription:
-        "Enter an existing service URL and token. You manage its startup and shutdown.",
-      ManagedFieldDescription:
-        "Filled and refreshed automatically by NextChat; no manual setup needed.",
-      InUse:
-        "This service has active requests. Wait for completion or cancel them first.",
-      Description:
-        "Services are shared by this app instance. Unused modes stop automatically; a manually stopped service restarts on the next request.",
-      Checking: "Checking local service…",
-      Running: "Running",
-      Starting: "Starting…",
-      CancelStart: "Cancel startup",
       AllowedTools: "Preapproved CLI tools",
       AllowedToolsHint:
         "Comma-separated names, e.g. Read,Glob,Grep,Bash,Write,Edit,WebFetch. Empty disables local tools. Listed tools may execute without per-call confirmation. Shared by CLI endpoints; applies to the next request. Enabled NextChat MCP and plugin tools use their existing executors.",
@@ -113,29 +96,24 @@ const en: LocaleType = {
       TimeoutHint:
         "0 means no total limit; manual cancellation remains available. Shared by CLI endpoints; applies to the next request.",
       InvalidTimeout: "Request limit must be between 0 and 1440 minutes.",
-      Stopped: "Standby",
-      Missing:
-        "Bundled components are missing or unsupported. Use the complete Windows x64 installer or portable package.",
       Executable: "Installed Claude Code CLI",
+      Version: "Detected CLI version",
       ExecutableHint:
         "Use an existing claude.exe, detected automatically or selected manually.",
-      Connection: "Service connection",
-      Error: "Service notice",
+      Error: "CLI notice",
       AutoDetect: "Find installed Claude Code automatically",
       Browse: "Choose executable",
-      Start: "Start and connect",
-      Connect: "Use this service",
-      Stop: "Stop service",
     },
     Preview: "Preview request",
     PreviewDescription:
-      "Preview only; no requests or services are started. Automatic connections use a placeholder token until a real request is made.",
+      "Preview only; no request is sent and the CLI is not started.",
     Title: "Request extensions",
+    HttpRemoved: "HTTP simulation was removed; this endpoint now uses CLI -p.",
     Description:
       "Add request adapters to NextChat, then select a plugin in your API endpoint settings.",
     ClaudePlugin: "Claude Code request plugin",
     ClaudePluginDescription:
-      "Supports HTTP simulation and real CLI modes. CLI mode uses Claude Code already installed on your computer.",
+      "Use an installed Claude Code CLI on desktop, or a self-hosted bridge on the web.",
     AddClaudePlugin: "Add Claude Code request plugin",
     Add: "Add plugin",
     Added: "Added",

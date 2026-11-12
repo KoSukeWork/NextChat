@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import webpack from "webpack";
 
-const directory = resolve(process.argv[2] || "plugins/claude-code");
+const directory = resolve(process.argv[2] || "plugins/claude-code-managed");
 const manifest = JSON.parse(
   await readFile(resolve(directory, "manifest.json"), "utf8"),
 );

@@ -1,25 +1,19 @@
 {
   "sdkVersion": 2,
   "id": "nextchat.claude-code",
-  "version": "3.2.0-beta.1",
+  "version": "4.0.0",
   "name": "Claude Code",
-  "description": "双模式插件：桌面可在界面中启动、停止并连接本地服务；独立 HTTP 无需 CLI，真实 -p 模式选择本机 Claude Code。 / Desktop-managed HTTP and real CLI -p services.",
+  "description": "使用桌面内置 Claude Code CLI 或自行部署的 Node 桥接服务。 / Use the built-in desktop CLI or a self-hosted Node bridge.",
   "protocols": ["anthropic"],
-  "capabilities": ["request", "driver", "transport"],
+  "capabilities": ["request", "driver"],
   "fields": {
-    "mode": {
-      "title": "运行模式 / Mode",
+    "connection": {
+      "title": "连接方式 / Connection",
       "type": "select",
-      "default": "http",
+      "default": "builtin",
       "options": [
-        {
-          "value": "http",
-          "label": "独立 HTTP 模拟 / Independent HTTP"
-        },
-        {
-          "value": "cli",
-          "label": "真实 Claude Code CLI（-p）/ Real CLI (-p)"
-        }
+        { "value": "builtin", "label": "内置（桌面）/ Built-in (desktop)" },
+        { "value": "external", "label": "外部桥接服务 / External bridge" }
       ]
     },
     "authType": {
@@ -27,316 +21,37 @@
       "type": "select",
       "default": "api-key",
       "options": [
-        {
-          "value": "api-key",
-          "label": "x-api-key"
-        },
-        {
-          "value": "bearer",
-          "label": "Bearer token"
-        }
+        { "value": "api-key", "label": "x-api-key" },
+        { "value": "bearer", "label": "Bearer token" }
       ]
     },
-    "transportUrl": {
-      "title": "独立发包服务 / Wire relay URL",
-      "description": "桌面点击启动并连接后自动填写；网页由部署服务器访问此地址。",
-      "type": "string",
-      "default": "http://127.0.0.1:8789",
-      "when": {
-        "field": "mode",
-        "value": "http"
-      }
-    },
-    "transportToken": {
-      "title": "发包服务令牌 / Wire relay token",
-      "description": "桌面启动服务时自动生成；手动部署时填写对应服务令牌，至少 16 个字符。",
-      "type": "secret",
-      "when": {
-        "field": "mode",
-        "value": "http"
-      }
-    },
-    "profile": {
-      "title": "协议预设 / Protocol profile",
-      "type": "select",
-      "default": "verified",
-      "options": [
-        {
-          "value": "verified",
-          "label": "2.1.322 客户端特征基准（本地对照通过）"
-        },
-        {
-          "value": "custom",
-          "label": "自定义版本标记（未验证）/ Custom markers (unverified)"
-        }
-      ],
-      "when": {
-        "field": "mode",
-        "value": "http"
-      }
-    },
-    "cliVersion": {
-      "title": "HTTP 版本标记 / HTTP version marker",
-      "description": "影响 User-Agent 和动态 billing 后缀。自定义版本需核对 SDK、Node 标记与 beta；网络运行时仍固定，修改标记不会自动复现另一版本。",
-      "type": "string",
-      "default": "2.1.322",
-      "when": {
-        "field": "mode",
-        "value": "http"
-      }
-    },
-    "sdkVersion": {
-      "title": "Anthropic SDK 版本 / SDK version",
-      "type": "string",
-      "default": "0.128.0",
-      "when": {
-        "field": "mode",
-        "value": "http"
-      }
-    },
-    "runtimeVersion": {
-      "title": "Node 版本标记 / Runtime version",
-      "type": "string",
-      "default": "v26.12.1",
-      "when": {
-        "field": "mode",
-        "value": "http"
-      }
-    },
-    "platform": {
-      "title": "平台标记 / Platform",
-      "type": "select",
-      "default": "Windows",
-      "options": [
-        {
-          "value": "Windows",
-          "label": "Windows（当前唯一已测平台）"
-        }
-      ],
-      "when": {
-        "field": "mode",
-        "value": "http"
-      }
-    },
-    "arch": {
-      "title": "架构标记 / Architecture",
-      "type": "select",
-      "default": "x64",
-      "options": [
-        {
-          "value": "x64",
-          "label": "x64"
-        }
-      ],
-      "when": {
-        "field": "mode",
-        "value": "http"
-      }
-    },
-    "beta": {
-      "title": "Beta 标记 / Beta flags",
-      "description": "来自 API Key 模式的交互式抓包；可按网关要求调整，留空不发送。",
-      "type": "string",
-      "default": "claude-code-20250219,interleaved-thinking-2025-05-14,context-management-2025-06-27,thinking-token-count-2026-05-13,advanced-tool-use-2025-11-20,effort-2025-11-24,dangerous-tool-use-2026-09-03,thinking-display-updates-2026-08-18,afk-mode-2026-01-31",
-      "when": {
-        "field": "mode",
-        "value": "http"
-      }
-    },
-    "deviceId": {
-      "title": "设备标识 / Device ID",
-      "description": "64 位十六进制，留空时由接口 ID 稳定派生。不读取本机 Claude 账户。",
-      "type": "string",
-      "when": {
-        "field": "mode",
-        "value": "http"
-      }
-    },
-    "accountUuid": {
-      "title": "账户 UUID（可选）/ Account UUID",
-      "type": "string",
-      "when": {
-        "field": "mode",
-        "value": "http"
-      }
-    },
-    "thinking": {
-      "title": "思考模式 / Thinking",
-      "type": "select",
-      "default": "adaptive",
-      "options": [
-        {
-          "value": "adaptive",
-          "label": "交互式基准：adaptive / Interactive default"
-        },
-        {
-          "value": "preserve",
-          "label": "使用聊天设置 / Use chat settings"
-        },
-        {
-          "value": "disabled",
-          "label": "关闭 / Disabled"
-        }
-      ],
-      "when": {
-        "field": "mode",
-        "value": "http"
-      }
-    },
-    "effort": {
-      "title": "思考强度 / Effort",
-      "description": "留空保留聊天设置；默认 high 与抓包一致。",
-      "type": "string",
-      "default": "high",
-      "when": {
-        "field": "mode",
-        "value": "http"
-      }
-    },
-    "maxTokens": {
-      "title": "最大输出 Token / Max output tokens",
-      "description": "留空保留聊天设置；32000 来自 Sonnet 4.6 抓包。",
-      "type": "string",
-      "default": "32000",
-      "when": {
-        "field": "mode",
-        "value": "http"
-      }
-    },
-    "systemPrompt": {
-      "title": "附加系统提示词 / Additional system prompt",
-      "description": "放在身份块之后，与原有系统提示词合并；留空保留原有指令。",
-      "type": "string",
-      "when": {
-        "field": "mode",
-        "value": "http"
-      }
-    },
-    "cache": {
-      "title": "缓存断点 / Cache breakpoints",
-      "type": "select",
-      "default": "cli",
-      "options": [
-        {
-          "value": "cli",
-          "label": "系统块与最后一条消息 / System and last message"
-        },
-        {
-          "value": "preserve",
-          "label": "保留原有配置 / Preserve existing"
-        }
-      ],
-      "when": {
-        "field": "mode",
-        "value": "http"
-      }
-    },
-    "modelList": {
-      "title": "模型列表 / Model list",
-      "type": "select",
-      "default": "manual",
-      "options": [
-        {
-          "value": "manual",
-          "label": "手动添加模型 / Add models manually"
-        },
-        {
-          "value": "standard",
-          "label": "网关支持 GET /v1/models / Gateway supports model listing"
-        }
-      ],
-      "when": {
-        "field": "mode",
-        "value": "http"
-      }
-    },
-    "userAgent": {
-      "title": "User-Agent 覆盖（可选）/ User-Agent override",
-      "type": "string",
-      "when": {
-        "field": "mode",
-        "value": "http"
-      }
-    },
-    "headerOverrides": {
-      "title": "请求头覆盖 / Header overrides (JSON)",
-      "type": "string",
-      "default": "{}",
-      "when": {
-        "field": "mode",
-        "value": "http"
-      }
-    },
-    "bodyOverrides": {
-      "title": "请求体参数覆盖 / Body overrides (JSON)",
-      "description": "在系统块、metadata 和缓存规范化之前覆盖顶层参数。",
-      "type": "string",
-      "default": "{}",
-      "when": {
-        "field": "mode",
-        "value": "http"
-      }
-    },
     "bridgeUrl": {
-      "title": "CLI 桥接服务地址 / CLI bridge URL",
-      "description": "桌面点击启动并连接后自动填写；网页由部署服务器访问此地址。",
+      "title": "桥接服务地址 / Bridge URL",
       "type": "string",
       "default": "http://127.0.0.1:8788",
-      "when": {
-        "field": "mode",
-        "value": "cli"
-      }
+      "when": { "field": "connection", "value": "external" }
     },
     "bridgeToken": {
-      "title": "CLI 桥接服务令牌 / CLI bridge token",
-      "description": "桌面启动服务时自动生成；手动部署时填写对应服务令牌，至少 16 个字符。",
+      "title": "桥接服务令牌 / Bridge token",
       "type": "secret",
-      "when": {
-        "field": "mode",
-        "value": "cli"
-      }
+      "when": { "field": "connection", "value": "external" }
     },
     "nativeCliVersion": {
-      "title": "实际 CLI 版本 / Installed CLI version",
-      "description": "桌面连接时自动读取；必须与桥接服务实际运行的 Claude Code 版本匹配。",
+      "title": "外部桥接 CLI 版本 / External CLI version",
+      "description": "外部桥接要求精确版本。 / External bridges require an exact version.",
       "type": "string",
       "default": "2.1.322",
-      "when": {
-        "field": "mode",
-        "value": "cli"
-      }
+      "when": { "field": "connection", "value": "external" }
     },
     "nativeBeta": {
       "title": "CLI Beta 标记 / CLI beta flags",
-      "description": "留空使用真实 CLI 的默认值。",
-      "type": "string",
-      "when": {
-        "field": "mode",
-        "value": "cli"
-      }
-    }
-  },
-  "localServices": [
-    {
-      "id": "wire",
-      "title": "本地 HTTP 发包服务 / Local HTTP service",
-      "when": {
-        "field": "mode",
-        "value": "http"
-      },
-      "urlField": "transportUrl",
-      "tokenField": "transportToken"
+      "description": "留空使用 CLI 默认值。 / Leave empty to use CLI defaults.",
+      "type": "string"
     },
-    {
-      "id": "claude-cli",
-      "title": "本地 CLI 服务 / Local CLI service",
-      "when": {
-        "field": "mode",
-        "value": "cli"
-      },
-      "urlField": "bridgeUrl",
-      "tokenField": "bridgeToken",
-      "versionField": "nativeCliVersion"
+    "nativeEffort": {
+      "title": "CLI 思考强度 / CLI reasoning effort",
+      "description": "留空沿用对话设置。 / Leave empty to use the chat setting.",
+      "type": "string"
     }
-  ]
+  }
 }

@@ -19,7 +19,7 @@ import {
 import { IconButton } from "./button";
 import { createPluginSession } from "../request-plugins/host";
 import { buildEndpointRequest } from "../client/endpoint-protocol";
-import { LocalServiceControl } from "./local-service-control";
+import { ClaudeCliControl } from "./claude-cli-control";
 import { supportsLocalServices } from "../request-plugins/local-services";
 import AddIcon from "../icons/add.svg";
 import DownloadIcon from "../icons/download.svg";
@@ -27,14 +27,9 @@ import UploadIcon from "../icons/upload.svg";
 import ClearIcon from "../icons/clear.svg";
 import ConfirmIcon from "../icons/confirm.svg";
 import styles from "./request-plugins.module.scss";
-import {
-  activeManagedServices,
-  connectionFields,
-  serviceConnectionMode,
-} from "../request-plugins/managed-services";
 
 const labels = () => Locale.RequestPlugins;
-const bundledClaudeVersion = "3.2.0-beta.1";
+const bundledClaudeVersion = "4.0.0";
 
 export function RequestPluginManager() {
   const config = useAppConfig();
@@ -228,49 +223,6 @@ export function EndpointRequestPlugin(props: {
     p.manifest.protocols.includes(props.endpoint.protocol),
   );
   const config = pkg ? { ...pluginDefaults(pkg), ...binding?.config } : {};
-  const localServices = (afterField?: string) =>
-    pkg?.enabled &&
-    supportsLocalServices() &&
-    pkg.manifest.localServices
-      ?.filter(
-        (service) =>
-          service.when?.field === afterField &&
-          (!service.when || config[service.when.field] === service.when.value),
-      )
-      .map((service) => (
-        <LocalServiceControl
-          key={`${props.endpoint.id}:${pkg.manifest.id}@${pkg.manifest.version}:${service.id}`}
-          service={service.id}
-          title={service.title}
-          managed={serviceConnectionMode(binding!, service, pkg) === "managed"}
-          onModeChange={(mode) =>
-            props.onChange({
-              requestPlugin: {
-                ...binding!,
-                localServices: {
-                  ...binding!.localServices,
-                  [service.id]: mode,
-                },
-              },
-            })
-          }
-          onConnect={(connection) => {
-            props.onChange({
-              requestPlugin: {
-                ...binding!,
-                localServices: {
-                  ...binding!.localServices,
-                  [service.id]: "managed",
-                },
-                config: {
-                  ...config,
-                  ...connectionFields(service, connection),
-                },
-              },
-            });
-          }}
-        />
-      ));
   return (
     <>
       <ListItem
@@ -319,7 +271,23 @@ export function EndpointRequestPlugin(props: {
           ))}
         </Select>
       </ListItem>
-      {localServices()}
+      {binding?.migrationNotice === "http-removed" && (
+        <ListItem title={labels().HttpRemoved}>
+          <IconButton
+            text={Locale.UI.Confirm}
+            bordered
+            onClick={() =>
+              props.onChange({
+                requestPlugin: { ...binding, migrationNotice: undefined },
+              })
+            }
+          />
+        </ListItem>
+      )}
+      {pkg?.manifest.id === "nextchat.claude-code" &&
+        pkg.manifest.version === "4.0.0" &&
+        config.connection === "builtin" &&
+        supportsLocalServices() && <ClaudeCliControl />}
       {pkg &&
         Object.entries(pkg.manifest.fields)
           .filter(
@@ -327,14 +295,6 @@ export function EndpointRequestPlugin(props: {
               !field.when || config[field.when.field] === field.when.value,
           )
           .map(([name, field]) => {
-            const automatic = activeManagedServices(props.endpoint, pkg).some(
-              (service) =>
-                [
-                  service.urlField,
-                  service.tokenField,
-                  service.versionField,
-                ].includes(name),
-            );
             const update = (value: string) =>
               props.onChange({
                 requestPlugin: {
@@ -347,11 +307,7 @@ export function EndpointRequestPlugin(props: {
                 <ListItem
                   className={styles.field}
                   title={field.title}
-                  subTitle={
-                    automatic
-                      ? labels().Service.ManagedFieldDescription
-                      : field.description
-                  }
+                  subTitle={field.description}
                 >
                   {field.type === "select" ? (
                     <Select
@@ -367,7 +323,6 @@ export function EndpointRequestPlugin(props: {
                     </Select>
                   ) : field.type === "secret" ? (
                     <PasswordInput
-                      readOnly={automatic}
                       aria-label={field.title}
                       value={config[name]}
                       onChange={(event) => update(event.currentTarget.value)}
@@ -375,14 +330,12 @@ export function EndpointRequestPlugin(props: {
                   ) : (
                     <input
                       type="text"
-                      readOnly={automatic}
                       aria-label={field.title}
                       value={config[name]}
                       onChange={(event) => update(event.currentTarget.value)}
                     />
                   )}
                 </ListItem>
-                {localServices(name)}
               </Fragment>
             );
           })}
@@ -451,14 +404,7 @@ export function EndpointRequestPlugin(props: {
                 setPreview(
                   JSON.stringify(
                     redact({
-                      kind: driver
-                        ? "client-driver"
-                        : request.transport
-                        ? "independent-transport"
-                        : "http-request",
-                      ...(request.transport
-                        ? { transportUrl: config.transportUrl }
-                        : {}),
+                      kind: driver ? "client-driver" : "http-request",
                       ...request,
                     }),
                     null,

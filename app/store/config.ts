@@ -14,6 +14,7 @@ import {
 import type { Endpoint } from "../utils/endpoints";
 import type { InstalledRequestPlugin } from "../request-plugins/schema";
 import { indexedDBStorage } from "../utils/indexedDB-storage";
+import { migrateClaudeConfiguration } from "../request-plugins/claude-migration";
 import {
   LEGACY_ACCESS_BACKUP,
   LEGACY_CONFIG_BACKUP,
@@ -147,11 +148,15 @@ export const useAppConfig = createPersistStore(
     merge(persistedState, currentState) {
       const state = persistedState as ChatConfig | undefined;
       if (!state) return { ...currentState };
+      const migrated = migrateClaudeConfiguration(
+        state.endpoints ?? [],
+        state.requestPlugins ?? [],
+      );
       return {
         ...currentState,
         ...state,
-        endpoints: state.endpoints ?? [],
-        requestPlugins: state.requestPlugins ?? [],
+        endpoints: migrated.endpoints,
+        requestPlugins: migrated.packages,
         unmigratedEndpoints: state.unmigratedEndpoints ?? [],
         modelConfig: { ...currentState.modelConfig, ...state.modelConfig },
         zoom: normalizeZoom(state.zoom),

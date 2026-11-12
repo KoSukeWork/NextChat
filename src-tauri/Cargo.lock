@@ -2241,6 +2241,7 @@ dependencies = [
  "dunce",
  "futures-util",
  "getrandom 0.2.9",
+ "hyper",
  "num_cpus",
  "percent-encoding",
  "reqwest",

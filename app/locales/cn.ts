@@ -86,21 +86,6 @@ const cn = {
   },
   RequestPlugins: {
     Service: {
-      Mode: "服务连接方式",
-      Automatic: "自动管理本地服务",
-      External: "连接外部服务",
-      AutomaticDescription:
-        "保存后自动准备所选模式，重启软件可直接使用。连接信息自动更新，无需手动启动。",
-      ExternalDescription:
-        "填写已有服务的地址和令牌，由你管理服务的启动与停止。",
-      ManagedFieldDescription: "由 NextChat 自动填写和刷新，无需手动配置。",
-      InUse: "服务仍有请求进行中，请等待完成或先取消请求。",
-      Description:
-        "服务由当前软件实例共享。未使用的模式会自动停止；手动停止后，下次请求会自动启动。",
-      Checking: "正在检查本地服务…",
-      Running: "运行中",
-      Starting: "正在启动…",
-      CancelStart: "取消启动",
       AllowedTools: "预先允许的 CLI 工具",
       AllowedToolsHint:
         "逗号分隔，例如 Read,Glob,Grep,Bash,Write,Edit,WebFetch；留空禁用本地工具。填写后即授权这些工具执行，无需逐次确认。所有 CLI 接口共享，下次请求生效。当前对话启用的 NextChat MCP/工具插件另由原执行器处理。",
@@ -108,28 +93,22 @@ const cn = {
       TimeoutHint:
         "0 表示不设总时限，可手动取消。所有 CLI 接口共享，下次请求生效。",
       InvalidTimeout: "请求时限必须为 0 到 1440 分钟。",
-      Stopped: "待机",
-      Missing:
-        "附加组件缺失或平台不支持，请使用完整的 Windows x64 安装包或便携包。",
       Executable: "本机 Claude Code CLI",
+      Version: "检测到的 CLI 版本",
       ExecutableHint: "使用已安装的 claude.exe，可自动查找或手动选择。",
-      Connection: "服务连接",
-      Error: "服务提示",
+      Error: "CLI 提示",
       AutoDetect: "自动查找已安装的 Claude Code",
       Browse: "选择程序",
-      Start: "启动并连接",
-      Connect: "使用此服务",
-      Stop: "停止服务",
     },
     Preview: "预览请求",
-    PreviewDescription:
-      "仅预览，不发送或启动服务。自动管理模式使用占位令牌，实际连接信息在请求时确定。",
+    PreviewDescription: "仅预览，不发送请求或启动 CLI。",
     Title: "请求扩展插件",
+    HttpRemoved: "HTTP 模拟已移除，已切换为 CLI -p。",
     Description:
       "为 NextChat 添加请求适配能力。添加后，在接口配置中选择对应插件。",
     ClaudePlugin: "Claude Code 请求插件",
     ClaudePluginDescription:
-      "支持 HTTP 模拟和真实 CLI 两种模式。CLI 模式直接使用本机已安装的 Claude Code。",
+      "桌面使用已安装的 Claude Code，网页版连接自行部署的桥接服务。",
     AddClaudePlugin: "添加 Claude Code 请求插件",
     Add: "添加插件",
     Added: "已添加",

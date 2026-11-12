@@ -162,7 +162,14 @@ export function createHostTools() {
         }
         reply(res, 200, { jsonrpc: "2.0", id: rpc.id, result });
       } catch (error) {
-        reply(res, 400, {
+        // MCP method failures are JSON-RPC responses, not HTTP transport
+        // failures. Malformed requests and result uploads remain HTTP 400.
+        const isRpcCall =
+          !match[3] &&
+          rpc?.jsonrpc === "2.0" &&
+          typeof rpc.method === "string" &&
+          rpc.id !== undefined;
+        reply(res, isRpcCall ? 200 : 400, {
           jsonrpc: "2.0",
           id: rpc?.id ?? null,
           error: { code: -32602, message: error.message },

@@ -5,6 +5,10 @@ import type { Plugin } from "../store/plugin";
 import { merge } from "./merge";
 import { AppState, mergeAppState, prepareImportedState } from "./sync";
 import { parsePluginPackage } from "../request-plugins/schema";
+import {
+  isLegacyClaudePlugin,
+  migrateClaudeConfiguration,
+} from "../request-plugins/claude-migration";
 
 export type PluginSnapshot = {
   plugins: Record<string, Plugin>;
@@ -93,6 +97,13 @@ export function restoreBackup(
         ]),
       );
       for (const entry of incoming.requestPlugins) {
+        if (isLegacyClaudePlugin(entry?.manifest?.id, entry?.manifest?.version))
+          continue;
+        const capabilities: unknown = entry?.manifest?.capabilities;
+        if (Array.isArray(capabilities) && capabilities.includes("transport"))
+          throw new Error(
+            "Request plugin transport extensions are no longer supported",
+          );
         const pkg = parsePluginPackage({
           manifest: entry?.manifest,
           source: entry?.source,
@@ -111,6 +122,12 @@ export function restoreBackup(
       }
       local[StoreKey.Config].requestPlugins = [...packages.values()];
     }
+    const migrated = migrateClaudeConfiguration(
+      local[StoreKey.Config].endpoints,
+      local[StoreKey.Config].requestPlugins,
+    );
+    local[StoreKey.Config].endpoints = migrated.endpoints;
+    local[StoreKey.Config].requestPlugins = migrated.packages;
     local[StoreKey.Config]._hasHydrated = beforeConfig._hasHydrated;
   }
   if (!legacyApiSettings && backup[StoreKey.Access] !== undefined) {

@@ -2,7 +2,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod bundled_plugins;
-mod local_services;
+mod claude_cli;
+mod claude_cli_events;
+mod claude_cli_mcp;
+mod claude_cli_sessions;
+mod claude_cli_tauri;
 mod mcp;
 mod mcp_oauth;
 #[cfg(windows)]
@@ -48,15 +52,18 @@ fn main() {
             )));
             app.manage(Arc::new(mcp_oauth::OAuthCallbacks::default()));
             app.manage(Arc::new(stream::StreamState::default()));
+            app.manage(Arc::new(claude_cli_tauri::CliApp::new(directory.join("local-services"))?));
             app.manage(tts::setup(app)?);
-            app.manage(Arc::new(local_services::ServiceState::new(
-                directory.join("local-services"),
-                local_services::bundled_helper(app.handle()),
-            )));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             bundled_plugins::bundled_licenses,
+            claude_cli_tauri::claude_cli_start,
+            claude_cli_tauri::claude_cli_cancel,
+            claude_cli_tauri::claude_cli_tool_result,
+            claude_cli_tauri::claude_cli_status,
+            claude_cli_tauri::claude_cli_configure,
+            claude_cli_tauri::claude_cli_options,
             stream::stream_fetch,
             stream::stream_cancel,
             sync_http::sync_http,
@@ -81,11 +88,6 @@ fn main() {
             tts::melo_begin_speech,
             tts::melo_cancel_speech,
             tts::melo_synthesize,
-            local_services::local_service_status,
-            local_services::local_service_start,
-            local_services::local_service_stop,
-            local_services::local_service_configure,
-            local_services::local_service_options
         ])
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .build(context)
@@ -94,7 +96,7 @@ fn main() {
             if matches!(event, tauri::RunEvent::Exit) {
                 app.state::<Arc<mcp::McpState>>().kill_all();
                 app.state::<Arc<tts::TtsState>>().shutdown();
-                app.state::<Arc<local_services::ServiceState>>().shutdown();
+                app.state::<Arc<claude_cli_tauri::CliApp>>().shutdown();
             }
         });
 }
