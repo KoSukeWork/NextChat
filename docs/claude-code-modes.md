@@ -17,7 +17,7 @@
 
 ## 桌面界面启动（推荐）
 
-1. 便携版先完整解压，再双击 `NextChat.exe`。保留同目录的 `claude-code-tools` 文件夹；安装版自动部署这些文件。
+1. 便携版先完整解压，再双击 `NextChat.exe`。保留同目录的 `plugins` 文件夹；此插件的运行组件位于 `plugins/nextchat.claude-code/`，安装版自动部署到相同结构。源码、构建脚本和开发文档只保留在仓库。
 2. 按上方步骤安装并绑定 **3.2.0-beta.1**。网关地址、API Key 和供应商模型名仍填写在接口本身。
 3. 选择 **独立 HTTP 模拟**，保持 **自动管理本地服务** 并保存接口。软件会在后台启动随包服务、分配本机端口并自动填写服务地址和令牌，HTTP 模式不需要 CLI 文件。
 4. 使用 **真实 CLI（-p）** 时，同样保持自动管理并保存。软件会自动查找本机 `claude.exe`；也可点击 **选择程序** 指定，路径会立即保存，无需先启动服务。桥接地址、令牌和实际 CLI 版本自动填入。
@@ -45,7 +45,7 @@ Windows x64 随包组件内含桥接运行时，也可手动启动：
 ```powershell
 $env:NEXTCHAT_BRIDGE_TOKEN = '替换为至少16字符的随机令牌'
 $env:NEXTCHAT_CLAUDE_PATH = 'C:/Users/你的用户名/.local/bin/claude.exe'
-& ./claude-code-tools/nextchat-wire-relay.exe --bridge
+& ./plugins/nextchat.claude-code/nextchat-wire-relay.exe --bridge
 ```
 
 从源码部署或需要自定义多版本驱动时，继续使用 Node.js 桥接：

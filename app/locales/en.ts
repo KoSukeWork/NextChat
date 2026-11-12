@@ -376,6 +376,8 @@ const en: LocaleType = {
       SubTitle: "Newest message will be filled to this template",
     },
 
+    OpenSourceLicenses: "Open-source licenses",
+    ViewLicenses: "View",
     Update: {
       Version: (x: string) => `Version: ${x}`,
       IsLatest: "Latest version",

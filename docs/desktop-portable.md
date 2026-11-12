@@ -3,8 +3,20 @@
 完整解压 ZIP 后，双击 **NextChat.exe**。不需要逐个运行其他文件，也不需要打开终端。
 
 - `NextChat.exe`：软件入口。
-- `claude-code-tools`：软件自动调用的附加组件，保留在 EXE 同目录。
-- `build-info.json`、`LICENSE`：构建信息和许可。
+- `plugins/nextchat.claude-code/nextchat-wire-relay.exe`：此插件的运行组件，由软件自动调用，支持 HTTP 与 CLI 两种模式。
+
+解压后只保留入口和按插件 ID 分类的运行目录：
+
+```text
+NextChat.exe
+plugins/
+  nextchat.claude-code/
+    nextchat-wire-relay.exe
+```
+
+源码、构建脚本、开发文档和重复的请求插件 JSON 不随包附送；内置请求插件仍可在界面中直接添加。开源许可内嵌在软件中，可在 **设置 → 开源许可** 离线查看。构建信息位于 `release` 中与压缩包同名的 `_build-info.json`，不放进使用目录。
+
+升级便携版时，完整解压到新文件夹再运行，无需把旧版的 `claude-code-tools` 目录复制过去。
 
 ## 在界面里使用 Claude Code 请求插件
 
@@ -22,6 +34,6 @@
 
 自建或远端服务请选择 **连接外部服务**，填写其地址和令牌，服务的启停由你管理。旧版界面自动生成的本机连接会兼容为自动管理；固定端口的手动连接和远端连接继续按外部服务处理。
 
-旧插件不会自动升级，已有接口需要手动选择 3.2.0-beta.1 才能显示管理按钮。更详细的模式、配置和网页部署说明位于 `claude-code-tools/docs/claude-code-modes.md`。
+旧插件不会自动升级，已有接口需要手动选择 3.2.0-beta.1 才能显示管理按钮。更详细的模式、配置和网页部署说明保留在仓库的 [模式说明](claude-code-modes.md) 中。
 
 “便携版”表示免安装启动；聊天、设置和 CLI 会话仍存储在 Windows 用户数据目录中，不是全部保存在解压目录。迁移聊天和配置请使用软件的本地备份功能。

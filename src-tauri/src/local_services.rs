@@ -76,20 +76,14 @@ pub struct ServiceState {
 }
 
 pub fn bundled_helper(app: tauri::AppHandle) -> PathBuf {
-    let relative = Path::new("claude-code-tools/nextchat-wire-relay.exe");
-    let installed = app
-        .path_resolver()
-        .resource_dir()
-        .unwrap_or_default()
-        .join(relative);
+    let executable = std::env::current_exe().ok();
+    let installed = crate::bundled_plugins::resolve_executable(
+        "nextchat.claude-code",
+        &app.path_resolver().resource_dir().unwrap_or_default(),
+        executable.as_deref().and_then(Path::parent),
+    );
     if installed.is_file() {
         return installed;
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        let portable = exe.parent().unwrap_or(Path::new("")).join(relative);
-        if portable.is_file() {
-            return portable;
-        }
     }
     #[cfg(debug_assertions)]
     {

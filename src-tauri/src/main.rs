@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod bundled_plugins;
 mod local_services;
 mod mcp;
 mod mcp_oauth;
@@ -55,6 +56,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            bundled_plugins::bundled_licenses,
             stream::stream_fetch,
             stream::stream_cancel,
             sync_http::sync_http,
