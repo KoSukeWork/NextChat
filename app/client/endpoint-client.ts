@@ -31,7 +31,6 @@ export class EndpointClient {
         })),
       );
       const accessCode = useAccessStore.getState().accessCode;
-      if (await runPluginDriver(this.endpoint, messages, options)) return;
       const excluded = new Set(options.mcpDisabled ?? []);
       const mcp =
         options.enableTools && (await isMcpEnabled())
@@ -66,6 +65,8 @@ export class EndpointClient {
             accessCode,
           ),
       );
+      if (await runPluginDriver(this.endpoint, messages, options, registry))
+        return;
       const descriptions = mcp
         .map((group) =>
           MCP_TOOLS_TEMPLATE.replace("{{ clientId }}", group.clientId).replace(

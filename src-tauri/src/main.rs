@@ -84,7 +84,8 @@ fn main() {
             local_services::local_service_status,
             local_services::local_service_start,
             local_services::local_service_stop,
-            local_services::local_service_configure
+            local_services::local_service_configure,
+            local_services::local_service_options
         ])
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .build(context)

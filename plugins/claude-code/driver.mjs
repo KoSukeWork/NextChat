@@ -1,10 +1,12 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { terminateProcessTree } from "../../scripts/client-bridge/process.mjs";
+import { createRuntimeInspector } from "../../scripts/client-bridge/runtime.mjs";
+import { createSessionStore } from "../../scripts/client-bridge/sessions.mjs";
 
 const hash = (value) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -19,44 +21,6 @@ const historyHash = (messages) =>
     })),
   );
 const abortError = () => new Error("Claude Code request cancelled");
-
-async function cliVersion(executable, signal) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(executable, ["--version"], {
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let text = "";
-    const stop = () => {
-      child.kill();
-      reject(abortError());
-    };
-    const timer = setTimeout(stop, 10000);
-    signal?.addEventListener("abort", stop, { once: true });
-    child.stdout.on("data", (chunk) => {
-      if (text.length < 10000) text += chunk;
-    });
-    child.stderr.resume();
-    child.on("error", () => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", stop);
-      reject(new Error("Cannot start the configured Claude Code executable"));
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", stop);
-      const version = /^(\d+\.\d+\.\d+)\s+\(Claude Code\)/m.exec(text)?.[1];
-      code === 0 && version
-        ? resolve(version)
-        : reject(
-            new Error(
-              "Configured executable did not report a Claude Code version",
-            ),
-          );
-    });
-    if (signal?.aborted) stop();
-  });
-}
 
 function validate(input) {
   if (!/^\d+\.\d+\.\d+$/.test(input.cliVersion || ""))
@@ -162,10 +126,11 @@ export async function createDriver(options = {}) {
   const runtimes = options.runtimes || {};
   const fallback =
     options.executable || process.env.NEXTCHAT_CLAUDE_PATH || "claude";
-  const sessions = new Map();
-  const active = new Set();
+  const sessions = await createSessionStore(dataDirectory, options);
+  const cliVersion = createRuntimeInspector();
   return {
     id: "claude-code",
+    close: () => sessions.close(),
     async info() {
       const versions = await Promise.all(
         Object.entries(runtimes).map(async ([expected, path]) => {
@@ -178,12 +143,15 @@ export async function createDriver(options = {}) {
       if (!versions.length) versions.push(await cliVersion(fallback));
       return { sdkVersion: 1, versions };
     },
-    async chat(input, { signal, emit }) {
+    async chat(input, { signal, emit, hostMcp, settings = {} }) {
       validate(input);
       if (signal.aborted) throw abortError();
       const executable = runtimes[input.cliVersion] || fallback;
       const actualVersion = await cliVersion(executable, signal);
-      if (actualVersion !== input.cliVersion)
+      if (
+        actualVersion !== input.cliVersion &&
+        options.versionPolicy !== "installed"
+      )
         throw new Error(
           `Claude Code version mismatch: requested ${input.cliVersion}, installed ${actualVersion}. Configure the matching executable on the bridge.`,
         );
@@ -201,21 +169,27 @@ export async function createDriver(options = {}) {
         .join("\n\n");
       const messages = input.messages.filter((m) => m.role !== "system");
       // API key contributes only a hash to isolation; it never appears in paths.
+      const allowedTools =
+        settings.allowedTools ?? options.allowedTools ?? "Read,Glob,Grep";
+      if (typeof allowedTools !== "string" || allowedTools.length > 4096)
+        throw new Error("Invalid allowed CLI tools");
       const scope = hash([
         input.endpoint,
-        input.cliVersion,
+        actualVersion,
         input.model,
         systems,
         input.enableTools,
         input.betas,
         input.reasoningEffort,
+        allowedTools,
+        hostMcp?.tools,
       ]);
-      const key = `${scope}:${input.sessionId}`;
-      if (active.has(key))
-        throw new Error(
-          "This CLI conversation is already generating a response",
-        );
-      active.add(key);
+      const key = hash([input.endpoint, input.sessionId]);
+      const stored = await sessions.begin(
+        key,
+        scope,
+        historyHash(messages.slice(0, -1)),
+      );
       let child;
       let failure;
       let success = false;
@@ -229,11 +203,11 @@ export async function createDriver(options = {}) {
           .slice(0, 2000);
       let sawStream = false;
       let assistantStream = false;
-      const previous = sessions.get(key);
-      const canResume =
-        previous && previous.history === historyHash(messages.slice(0, -1));
-      const session = canResume ? previous.id : randomUUID();
-      const configDirectory = join(dataDirectory, scope);
+      const canResume = stored.resume;
+      const session = canResume ? stored.id : randomUUID();
+      const configDirectory = stored.directory;
+      let requestDirectory;
+      let committed = false;
       const env = Object.fromEntries(
         Object.entries(process.env).filter(
           ([name]) =>
@@ -271,10 +245,26 @@ export async function createDriver(options = {}) {
         canResume ? "--resume" : "--session-id",
         session,
       ];
-      if (systems) args.push("--append-system-prompt", systems);
-      if (!input.enableTools) args.push("--tools", "");
-      if (options.allowedTools && input.enableTools)
-        args.push("--allowedTools", options.allowedTools);
+      const permitted = input.enableTools
+        ? allowedTools
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean)
+        : [];
+      args.push(
+        "--tools",
+        [
+          ...new Set(
+            permitted
+              .filter((value) => !value.startsWith("mcp__"))
+              .map((value) => value.split("(")[0]),
+          ),
+        ].join(","),
+      );
+      if (input.enableTools && hostMcp)
+        // The per-request facade exposes only tools selected by the host.
+        permitted.push("mcp__nextchat__*");
+      if (permitted.length) args.push("--allowedTools", permitted.join(","));
       if (options.mcpConfig && input.enableTools)
         args.push("--mcp-config", resolve(options.mcpConfig));
       if (input.betas?.length) args.push("--betas", input.betas.join(","));
@@ -284,6 +274,21 @@ export async function createDriver(options = {}) {
       };
       try {
         await mkdir(configDirectory, { recursive: true });
+        requestDirectory = await mkdtemp(join(configDirectory, "request-"));
+        if (systems) {
+          const promptFile = join(requestDirectory, "system.txt");
+          await writeFile(promptFile, systems, { mode: 0o600 });
+          args.push("--append-system-prompt-file", promptFile);
+        }
+        if (input.enableTools && hostMcp) {
+          const configFile = join(requestDirectory, "mcp.json");
+          await writeFile(
+            configFile,
+            JSON.stringify({ mcpServers: { nextchat: hostMcp.config } }),
+            { mode: 0o600 },
+          );
+          args.push("--mcp-config", configFile);
+        }
         if (signal.aborted) throw abortError();
         child = spawn(executable, args, {
           cwd: workingDirectory,
@@ -330,6 +335,19 @@ export async function createDriver(options = {}) {
         child.once("close", () =>
           signal.removeEventListener("abort", stopReading),
         );
+        let separateText = false;
+        const appendText = async (chunk) => {
+          if (!chunk) return;
+          const separator =
+            separateText && text && !text.endsWith("\n\n")
+              ? text.endsWith("\n")
+                ? "\n"
+                : "\n\n"
+              : "";
+          separateText = false;
+          text += separator + chunk;
+          await emit({ type: "text", text: separator + chunk });
+        };
         for await (const line of lines) {
           if (signal.aborted) throw abortError();
           if (line.length > 8 * 1024 * 1024)
@@ -343,14 +361,16 @@ export async function createDriver(options = {}) {
           if (event.type === "stream_event") {
             if (event.parent_tool_use_id) continue;
             const e = event.event;
-            if (e?.type === "message_start") assistantStream = false;
+            if (e?.type === "message_start") {
+              assistantStream = false;
+              separateText = !!text;
+            }
             if (
               e?.type === "content_block_delta" &&
               e.delta?.type === "text_delta"
             ) {
               sawStream = assistantStream = true;
-              text += e.delta.text;
-              await emit({ type: "text", text: e.delta.text });
+              await appendText(e.delta.text);
             } else if (
               e?.type === "content_block_delta" &&
               e.delta?.type === "thinking_delta"
@@ -360,8 +380,7 @@ export async function createDriver(options = {}) {
           } else if (event.type === "assistant" && !event.parent_tool_use_id) {
             for (const part of event.message?.content || []) {
               if (part.type === "text" && !assistantStream) {
-                text += part.text;
-                await emit({ type: "text", text: part.text });
+                await appendText(part.text);
               }
               if (part.type === "tool_use")
                 await emit({
@@ -371,6 +390,7 @@ export async function createDriver(options = {}) {
                   input: part.input,
                 });
             }
+            separateText = !!text;
           } else if (
             event.type === "user" &&
             !event.parent_tool_use_id &&
@@ -413,23 +433,30 @@ export async function createDriver(options = {}) {
               diagnostic,
             )}`,
           );
-        sessions.set(key, {
-          id: session,
-          history: historyHash([
-            ...messages,
-            { role: "assistant", content: text },
-          ]),
-        });
-        // Bound memory even when a public deployment has many independent chats.
-        if (sessions.size > 1000) sessions.delete(sessions.keys().next().value);
+        stored.id = session;
+        stored.history = historyHash([
+          ...messages,
+          { role: "assistant", content: text },
+        ]);
+        committed = true;
         await emit({ type: "done", sessionId: session });
       } catch (error) {
-        sessions.delete(key);
+        committed = false;
         await terminateProcessTree(child);
         throw error;
       } finally {
         signal.removeEventListener("abort", stop);
-        active.delete(key);
+        try {
+          if (requestDirectory)
+            await rm(requestDirectory, {
+              recursive: true,
+              force: true,
+              maxRetries: 5,
+              retryDelay: 100,
+            });
+        } finally {
+          await sessions.end(key, stored, committed);
+        }
       }
     },
   };

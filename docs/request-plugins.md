@@ -85,7 +85,7 @@ node scripts/pack-request-plugin.mjs plugins/your-plugin output/your-plugin.json
 
 打包器将 ESM 及其浏览器兼容依赖打包成单个源文件。安装现成 JSON 包不需要重新编译宿主，也不需要下载运行时依赖。Claude Code 插件使用现有 `@noble/hashes` 依赖计算 SHA-256，避免依赖只在安全上下文中可用的 WebCrypto。
 
-同一 ID/版本内容不可覆盖。插件支持导入、导出、启停、卸载和按接口绑定版本。缺失或禁用时明确报错，不偷偷退回标准 API。插件及配置进入本地备份；不进入云聊天同步。旧驱动支持 NDJSON 的 text、thinking、tool_start、tool_end、error、done，参见 [旧版说明](request-plugins-legacy.md)。
+同一 ID/版本内容不可覆盖。插件支持导入、导出、启停、卸载和按接口绑定版本。缺失或禁用时明确报错，不偷偷退回标准 API。插件及配置进入本地备份；不进入云聊天同步。恢复备份按 ID/版本合并插件，保留本机独有插件及其启停状态；新增的可执行插件包默认禁用，相同 ID/版本内容冲突时拒绝导入，不覆盖本机包。驱动支持 NDJSON 的 text、thinking、tool_start、tool_end、error、done，以及调用宿主所选工具的 host_tool_call，参见 [CLI 说明](request-plugins-legacy.md)。
 
 ## 研究来源与验证
 

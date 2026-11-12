@@ -104,6 +104,15 @@ const en: LocaleType = {
         "Services are shared by this app instance. Unused modes stop automatically; a manually stopped service restarts on the next request.",
       Checking: "Checking local service…",
       Running: "Running",
+      Starting: "Starting…",
+      CancelStart: "Cancel startup",
+      AllowedTools: "Preapproved CLI tools",
+      AllowedToolsHint:
+        "Comma-separated names, e.g. Read,Glob,Grep,Bash,Write,Edit,WebFetch. Empty disables local tools. Listed tools may execute without per-call confirmation. Shared by CLI endpoints; applies to the next request. Enabled NextChat MCP and plugin tools use their existing executors.",
+      Timeout: "CLI request limit (minutes)",
+      TimeoutHint:
+        "0 means no total limit; manual cancellation remains available. Shared by CLI endpoints; applies to the next request.",
+      InvalidTimeout: "Request limit must be between 0 and 1440 minutes.",
       Stopped: "Standby",
       Missing:
         "Bundled components are missing or unsupported. Use the complete Windows x64 installer or portable package.",

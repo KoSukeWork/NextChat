@@ -86,23 +86,30 @@ export function restoreBackup(
     if (incoming.requestPlugins !== undefined) {
       if (!Array.isArray(incoming.requestPlugins))
         throw new Error("Invalid request plugins");
-      local[StoreKey.Config].requestPlugins = incoming.requestPlugins.map(
-        (entry: any) => {
-          const pkg = parsePluginPackage({
-            manifest: entry?.manifest,
-            source: entry?.source,
-          });
-          const trusted = beforeConfig.requestPlugins?.find(
-            (previous) =>
-              previous.manifest.id === pkg.manifest.id &&
-              previous.manifest.version === pkg.manifest.version &&
-              JSON.stringify(previous.manifest) ===
-                JSON.stringify(pkg.manifest) &&
-              previous.source === pkg.source,
-          );
-          return { ...pkg, enabled: trusted?.enabled === true };
-        },
+      const packages = new Map(
+        (beforeConfig.requestPlugins ?? []).map((pkg) => [
+          `${pkg.manifest.id}@${pkg.manifest.version}`,
+          pkg,
+        ]),
       );
+      for (const entry of incoming.requestPlugins) {
+        const pkg = parsePluginPackage({
+          manifest: entry?.manifest,
+          source: entry?.source,
+        });
+        const key = `${pkg.manifest.id}@${pkg.manifest.version}`;
+        const existing = packages.get(key);
+        if (
+          existing &&
+          (JSON.stringify(existing.manifest) !== JSON.stringify(pkg.manifest) ||
+            existing.source !== pkg.source)
+        )
+          throw new Error(
+            `Request plugin ${key} already exists with different contents`,
+          );
+        if (!existing) packages.set(key, { ...pkg, enabled: false });
+      }
+      local[StoreKey.Config].requestPlugins = [...packages.values()];
     }
     local[StoreKey.Config]._hasHydrated = beforeConfig._hasHydrated;
   }

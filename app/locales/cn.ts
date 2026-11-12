@@ -99,6 +99,15 @@ const cn = {
         "服务由当前软件实例共享。未使用的模式会自动停止；手动停止后，下次请求会自动启动。",
       Checking: "正在检查本地服务…",
       Running: "运行中",
+      Starting: "正在启动…",
+      CancelStart: "取消启动",
+      AllowedTools: "预先允许的 CLI 工具",
+      AllowedToolsHint:
+        "逗号分隔，例如 Read,Glob,Grep,Bash,Write,Edit,WebFetch；留空禁用本地工具。填写后即授权这些工具执行，无需逐次确认。所有 CLI 接口共享，下次请求生效。当前对话启用的 NextChat MCP/工具插件另由原执行器处理。",
+      Timeout: "CLI 请求时限（分钟）",
+      TimeoutHint:
+        "0 表示不设总时限，可手动取消。所有 CLI 接口共享，下次请求生效。",
+      InvalidTimeout: "请求时限必须为 0 到 1440 分钟。",
       Stopped: "待机",
       Missing:
         "附加组件缺失或平台不支持，请使用完整的 Windows x64 安装包或便携包。",

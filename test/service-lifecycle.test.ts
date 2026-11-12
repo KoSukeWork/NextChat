@@ -122,3 +122,25 @@ test("changing the saved mode while warmup is pending leaves only the latest ser
   expect([...live.keys()]).toEqual(["claude-cli"]);
   await manager.reconcile(new Set());
 });
+
+test("cancel startup bypasses the pending queue but cannot stop a ready request", async () => {
+  const { action } = fixture();
+  let rejectStart!: (error: Error) => void;
+  const manager = new ServiceLifecycle(async (method, service) => {
+    if (method === "start")
+      return new Promise((_, reject) => {
+        rejectStart = reject;
+      });
+    rejectStart(new Error("startup cancelled"));
+    return action(method, service);
+  });
+  const pending = manager.acquire("wire");
+  const rejected = expect(pending).rejects.toThrow(/cancelled/);
+  await Promise.resolve();
+  await manager.cancelStart("wire");
+  await rejected;
+  const ready = fixture().manager;
+  const lease = await ready.acquire("wire");
+  await expect(ready.cancelStart("wire")).rejects.toThrow(/active requests/);
+  await lease.release();
+});

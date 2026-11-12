@@ -9,6 +9,9 @@ export interface LocalServiceStatus {
   service: string;
   available: boolean;
   running: boolean;
+  starting?: boolean;
+  allowedTools?: string;
+  requestTimeoutMs?: number;
   pid?: number | null;
   executablePath: string;
   canSelectExecutable: boolean;
@@ -63,5 +66,19 @@ export async function saveServiceExecutable(
   return window.__TAURI__!.invoke("local_service_configure", {
     service,
     executablePath,
+  });
+}
+
+export async function saveServiceOptions(
+  service: string,
+  allowedTools: string,
+  requestTimeoutMs: number,
+): Promise<LocalServiceStatus> {
+  if (!supportsLocalServices())
+    throw new Error("Local services require the desktop app");
+  return window.__TAURI__!.invoke("local_service_options", {
+    service,
+    allowedTools,
+    requestTimeoutMs,
   });
 }

@@ -59,6 +59,37 @@ test("restored executable request plugins require trust unless already installed
   trusted[StoreKey.Config].requestPlugins = [pkg];
   const again = restoreBackup(trusted, incoming, { plugins: {} }, {});
   expect(again.local[StoreKey.Config].requestPlugins[0].enabled).toBe(true);
+  const localOnly = { ...pkg, manifest: { ...pkg.manifest, id: "local.only" } };
+  trusted[StoreKey.Config].requestPlugins = [localOnly, pkg];
+  trusted[StoreKey.Config].endpoints = [
+    {
+      ...endpoint("local", "key"),
+      requestPlugin: { id: "local.only", version: "1.0.0", config: {} },
+    },
+  ];
+  const merged = restoreBackup(clone(trusted), incoming, { plugins: {} }, {});
+  expect(
+    merged.local[StoreKey.Config].requestPlugins.map(
+      (entry) => entry.manifest.id,
+    ),
+  ).toEqual(["local.only", "test.adapter"]);
+  expect(
+    merged.local[StoreKey.Config].endpoints.some(
+      (entry) => entry.requestPlugin?.id === "local.only",
+    ),
+  ).toBe(true);
+  const empty = clone(incoming);
+  empty[StoreKey.Config].requestPlugins = [];
+  expect(
+    restoreBackup(clone(trusted), empty, { plugins: {} }, {}).local[
+      StoreKey.Config
+    ].requestPlugins,
+  ).toEqual(trusted[StoreKey.Config].requestPlugins);
+  const conflicting = clone(incoming);
+  conflicting[StoreKey.Config].requestPlugins[0].source += " // changed";
+  expect(() =>
+    restoreBackup(clone(trusted), conflicting, { plugins: {} }, {}),
+  ).toThrow(/different contents/);
 });
 
 test("full backup restores settings, endpoints, plugins, sync and MCP without using timestamps", async () => {

@@ -13,7 +13,10 @@ import { ListItem, Select } from "./ui-lib";
 import styles from "./request-plugins.module.scss";
 import { managedServices } from "../request-plugins/managed-services";
 import type { ServiceLease } from "../request-plugins/service-lifecycle";
-import { saveServiceExecutable } from "../request-plugins/local-services";
+import {
+  saveServiceExecutable,
+  saveServiceOptions,
+} from "../request-plugins/local-services";
 
 export function LocalServiceControl(props: {
   service: string;
@@ -26,7 +29,13 @@ export function LocalServiceControl(props: {
   const [status, setStatus] = useState<LocalServiceStatus>();
   const [path, setPath] = useState("");
   const [busy, setBusy] = useState(false);
+  const [startingHere, setStartingHere] = useState(false);
   const [error, setError] = useState("");
+  const [allowedTools, setAllowedTools] = useState("");
+  const [timeoutMinutes, setTimeoutMinutes] = useState("0");
+  const editingOptions = useRef(false);
+  const optionsRevision = useRef(0);
+  const startController = useRef<AbortController>();
   const active = useRef(true);
   const editingPath = useRef(false);
   const pending = useRef(false);
@@ -47,6 +56,10 @@ export function LocalServiceControl(props: {
           return;
         setStatus(state);
         if (!editingPath.current) setPath(state.executablePath);
+        if (!editingOptions.current) {
+          setAllowedTools(state.allowedTools ?? "Read,Glob,Grep");
+          setTimeoutMinutes(String((state.requestTimeoutMs ?? 0) / 60000));
+        }
       } catch (error) {
         if (!disposed && revision === generation.current)
           setError(String(error));
@@ -57,6 +70,7 @@ export function LocalServiceControl(props: {
     return () => {
       active.current = false;
       disposed = true;
+      startController.current?.abort();
       void editorLease.current?.release().catch(() => {});
       editorLease.current = undefined;
       clearInterval(interval);
@@ -68,13 +82,15 @@ export function LocalServiceControl(props: {
     pending.current = true;
     const revision = ++generation.current;
     setBusy(true);
+    setStartingHere(action === "start");
     setError("");
     try {
       let state: LocalServiceStatus;
       if (action === "start") {
+        startController.current = new AbortController();
         const lease = await managedServices.acquire(
           props.service,
-          undefined,
+          startController.current.signal,
           path,
         );
         if (!active.current || revision !== generation.current) {
@@ -105,13 +121,52 @@ export function LocalServiceControl(props: {
         );
     } finally {
       pending.current = false;
-      if (active.current) setBusy(false);
+      if (active.current) {
+        setBusy(false);
+        setStartingHere(false);
+      }
     }
   };
   const savePath = async (value: string) => {
     try {
       await saveServiceExecutable(props.service, value);
       if (active.current) setError("");
+    } catch (error) {
+      if (active.current) setError(String(error));
+    }
+  };
+  const saveOptions = async () => {
+    const revision = optionsRevision.current;
+    try {
+      const minutes = Number(timeoutMinutes);
+      if (!Number.isFinite(minutes) || minutes < 0 || minutes > 1440)
+        throw new Error(labels.InvalidTimeout);
+      const state = await saveServiceOptions(
+        props.service,
+        allowedTools,
+        Math.round(minutes * 60000),
+      );
+      if (active.current) {
+        setStatus(state);
+        if (optionsRevision.current === revision)
+          editingOptions.current = false;
+        setError("");
+      }
+    } catch (error) {
+      if (active.current) setError(String(error));
+    }
+  };
+  const cancelStart = async () => {
+    generation.current++;
+    startController.current?.abort();
+    try {
+      const state = await managedServices.cancelStart(props.service);
+      if (active.current) {
+        setStatus(state);
+        setBusy(false);
+        setStartingHere(false);
+        setError("");
+      }
     } catch (error) {
       if (active.current) setError(String(error));
     }
@@ -150,7 +205,9 @@ export function LocalServiceControl(props: {
             <div className={styles.actions}>
               <span role="status" className={styles.status}>
                 {status
-                  ? status.running
+                  ? status.starting || startingHere
+                    ? labels.Starting
+                    : status.running
                     ? labels.Running
                     : labels.Stopped
                   : labels.Checking}
@@ -158,16 +215,24 @@ export function LocalServiceControl(props: {
               <IconButton
                 text={status?.running ? labels.Connect : labels.Start}
                 bordered
-                disabled={busy || !status?.available}
+                disabled={busy || status?.starting || !status?.available}
                 onClick={() => void run("start")}
               />
-              {status?.running && (
+              {startingHere || status?.starting ? (
                 <IconButton
-                  text={labels.Stop}
+                  text={labels.CancelStart}
                   bordered
-                  disabled={busy}
-                  onClick={() => void run("stop")}
+                  onClick={() => void cancelStart()}
                 />
+              ) : (
+                status?.running && (
+                  <IconButton
+                    text={labels.Stop}
+                    bordered
+                    disabled={busy}
+                    onClick={() => void run("stop")}
+                  />
+                )
               )}
             </div>
           </ListItem>
@@ -183,7 +248,7 @@ export function LocalServiceControl(props: {
                   aria-label={labels.Executable}
                   value={path}
                   placeholder={labels.AutoDetect}
-                  disabled={busy || status.running}
+                  disabled={busy || status.running || status.starting}
                   onChange={(event) => {
                     editingPath.current = true;
                     setPath(event.currentTarget.value);
@@ -195,7 +260,7 @@ export function LocalServiceControl(props: {
                 <IconButton
                   text={labels.Browse}
                   bordered
-                  disabled={busy || status.running}
+                  disabled={busy || status.running || status.starting}
                   onClick={async () => {
                     try {
                       const selected = await chooseServiceExecutable();
@@ -211,6 +276,49 @@ export function LocalServiceControl(props: {
                 />
               </div>
             </ListItem>
+          )}
+          {status?.canSelectExecutable && (
+            <>
+              <ListItem
+                className={styles.field}
+                title={labels.AllowedTools}
+                subTitle={labels.AllowedToolsHint}
+              >
+                <input
+                  aria-label={labels.AllowedTools}
+                  value={allowedTools}
+                  onChange={(event) => {
+                    editingOptions.current = true;
+                    optionsRevision.current++;
+                    setAllowedTools(event.currentTarget.value);
+                  }}
+                  onBlur={() => {
+                    if (editingOptions.current) void saveOptions();
+                  }}
+                />
+              </ListItem>
+              <ListItem
+                className={styles.field}
+                title={labels.Timeout}
+                subTitle={labels.TimeoutHint}
+              >
+                <input
+                  type="number"
+                  min={0}
+                  max={1440}
+                  aria-label={labels.Timeout}
+                  value={timeoutMinutes}
+                  onChange={(event) => {
+                    editingOptions.current = true;
+                    optionsRevision.current++;
+                    setTimeoutMinutes(event.currentTarget.value);
+                  }}
+                  onBlur={() => {
+                    if (editingOptions.current) void saveOptions();
+                  }}
+                />
+              </ListItem>
+            </>
           )}
           {status?.connection?.url && (
             <ListItem

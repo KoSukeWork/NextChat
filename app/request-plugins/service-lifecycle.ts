@@ -12,6 +12,8 @@ type Slot = {
   required: boolean;
   paused: boolean;
   users: number;
+  readyUsers: number;
+  generation: number;
   queue: Promise<unknown>;
 };
 
@@ -37,6 +39,8 @@ export class ServiceLifecycle {
         required: false,
         paused: false,
         users: 0,
+        readyUsers: 0,
+        generation: 0,
         queue: Promise.resolve(),
       };
       this.slots.set(service, slot);
@@ -93,16 +97,23 @@ export class ServiceLifecycle {
     const slot = this.slot(service);
     slot.users++;
     slot.paused = false;
+    const generation = slot.generation;
+    let ready = false;
     let released = false;
     const release = async () => {
       if (released) return;
       released = true;
       slot.users--;
+      if (ready) slot.readyUsers--;
       await this.idle(service, slot);
     };
     const started = this.enqueue(slot, async () => {
-      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-      return this.start(service, executablePath);
+      if (signal?.aborted || generation !== slot.generation)
+        throw new DOMException("Aborted", "AbortError");
+      const connection = await this.start(service, executablePath);
+      if (generation !== slot.generation)
+        throw new DOMException("Aborted", "AbortError");
+      return connection;
     });
     let abort: (() => void) | undefined;
     try {
@@ -116,7 +127,10 @@ export class ServiceLifecycle {
             }),
           ])
         : await started;
-      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      if (signal?.aborted || generation !== slot.generation)
+        throw new DOMException("Aborted", "AbortError");
+      ready = true;
+      slot.readyUsers++;
       return { connection, release };
     } catch (error) {
       // Queue cleanup behind startup without delaying cancellation until CLI readiness.
@@ -135,5 +149,14 @@ export class ServiceLifecycle {
       if (slot.users) throw new Error("Local service has active requests");
       return this.action("stop", service);
     });
+  }
+
+  async cancelStart(service: string) {
+    const slot = this.slot(service);
+    if (slot.readyUsers) throw new Error("Local service has active requests");
+    slot.paused = true;
+    slot.generation++;
+    // Do not enqueue behind the startup that we need to interrupt.
+    return this.action("stop", service);
   }
 }

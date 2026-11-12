@@ -1,11 +1,13 @@
 param(
-    [Parameter(Mandatory = $true)][string]$BunExecutable
+    [Parameter(Mandatory = $true)][string]$BunExecutable,
+    [switch]$KeepBuildDirectory
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $bunPath = (Resolve-Path -LiteralPath $BunExecutable).Path
 $previousPath = $env:PATH
+$stageDir = $null
 Push-Location $repoRoot
 try {
     $sourceCommit = (& git rev-parse HEAD).Trim()
@@ -119,4 +121,13 @@ try {
 } finally {
     $env:PATH = $previousPath
     Pop-Location
+    if ($stageDir -and -not $KeepBuildDirectory -and (Test-Path -LiteralPath $stageDir)) {
+        $cleanupRoot = [IO.Path]::GetFullPath((Join-Path $repoRoot 'build')) + [IO.Path]::DirectorySeparatorChar
+        $cleanupTarget = [IO.Path]::GetFullPath($stageDir)
+        if (-not $cleanupTarget.StartsWith($cleanupRoot, [StringComparison]::OrdinalIgnoreCase) -or
+            [IO.Path]::GetFileName($cleanupTarget) -notmatch '^release-[a-f0-9]{8}-[a-f0-9]{8}$') {
+            throw 'Refusing to clean an unexpected build directory'
+        }
+        Remove-Item -LiteralPath $cleanupTarget -Recurse -Force
+    }
 }

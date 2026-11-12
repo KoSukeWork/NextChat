@@ -23,7 +23,7 @@ CLI 模式由实际 CLI 发出上游请求，包含该版本 CLI 生成的请求
 
 ## CLI 版本和运行配置
 
-插件版本与 CLI 版本彼此独立。每个接口固定一个已安装插件版本；安装新版本不会自动迁移已有接口，切换回旧版本即可回退。CLI 版本在接口中配置，桥接服务在每次请求前执行 `--version` 核对，实际版本不匹配时不会向网关发送请求。
+插件版本与 CLI 版本彼此独立。每个接口固定一个已安装插件版本；安装新版本不会自动迁移已有接口，切换回旧版本即可回退。桌面自动管理模式使用当前安装的 CLI，CLI 自动更新后会刷新实际版本，无需重启服务。版本探测按可执行文件路径、真实目标和文件元数据缓存，文件未改变时不重复启动 `claude --version`。手动桥接默认仍严格核对接口指定版本，管理员可明确配置 `versionPolicy: "installed"` 跟随当前安装版本。
 
 桥接配置是管理员维护的本地 JSON 文件，例如：
 
@@ -31,7 +31,7 @@ CLI 模式由实际 CLI 发出上游请求，包含该版本 CLI 生成的请求
 {
   "host": "127.0.0.1",
   "port": 8788,
-  "timeoutMs": 600000,
+  "timeoutMs": 0,
   "drivers": [
     {
       "module": "plugins/claude-code/driver.mjs",
@@ -43,7 +43,9 @@ CLI 模式由实际 CLI 发出上游请求，包含该版本 CLI 生成的请求
         "workingDirectory": "C:/NextChat/cli-workspace",
         "dataDirectory": "C:/NextChat/cli-data",
         "settingsSources": "",
-        "allowedTools": "Read,Glob,Grep"
+        "allowedTools": "Read,Glob,Grep",
+        "maxSessions": 100,
+        "retentionMs": 604800000
       }
     }
   ]
@@ -52,8 +54,14 @@ CLI 模式由实际 CLI 发出上游请求，包含该版本 CLI 生成的请求
 
 保存为自己的配置文件后运行 `node scripts/client-bridge.mjs <配置路径>`。路径和驱动模块相对于启动目录解析。`runtimes` 可省略，默认使用 `executable`、环境变量 `NEXTCHAT_CLAUDE_PATH` 或 PATH 中的 `claude`。不会下载、安装或更新 CLI。配置对应版本的二进制文件后，前端才能真正切换到那个版本。
 
-CLI 默认使用独立的配置目录、临时工作目录及 `dontAsk` 权限模式，不继承父进程的 Anthropic/Claude 凭据。不设置跳过权限检查选项。`settingsSources`、工作目录、允许的工具和可选 `mcpConfig` 文件由桥接管理员配置；设置它们可以接入自己的 CLI 工作环境。请求携带的 API Key 仅在子进程环境中使用，不写进命令行或桥接日志。
+CLI 默认使用独立的配置目录、临时工作目录及 `dontAsk` 权限模式，不继承父进程的 Anthropic/Claude 凭据。不设置跳过权限检查选项。本地工具默认仅开放 `Read,Glob,Grep`；桌面设置中的 **预先允许的 CLI 工具** 可填写 `Bash,Write,Edit,WebFetch` 等需要的名称，填写即授权对应工具执行，留空禁用本地工具。该设置由当前 NextChat 实例的 CLI 接口共享，下次请求生效。没有逐次弹窗；未预授权的工具不开放。
 
-CLI 模式由 CLI 管理工具和 MCP，NextChat 的工具插件/MCP 选择器不参与 CLI 执行。CLI 工具事件会显示在聊天中。标题、摘要等辅助请求关闭 CLI 工具。需要使用 NextChat 原有工具执行器时，选择标准模式或模拟模式。
+手动桥接由管理员设置 `allowedTools`、`settingsSources`、工作目录和可选的 `mcpConfig` 文件，默认并不加载用户本机的 MCP 或授权配置。请求携带的 API Key 仅在子进程环境中使用，不写进命令行或桥接日志。长系统提示词写入请求专属临时文件，通过 `--append-system-prompt-file` 传入，请求结束、失败或取消时删除。
 
-正常连续对话使用 CLI 原生会话续接，保留其历史和 thinking 签名。编辑、截断、导入聊天或更改模型/配置导致历史不一致时创建新 CLI 会话，将已有聊天作为带角色标记的上下文交给 CLI；不会伪造原有的工具结果或签名。桥接重启后会话映射重建，首次请求同样重新导入上下文。CLI 文件保存在配置的数据目录，可由管理员定期清理。
+当前桥接支持 NextChat 的 MCP 和工具插件：宿主只向 CLI 提供当前对话启用的工具定义，执行仍由 NextChat 原有的已注册执行器完成；每个对话的 MCP 禁用列表和插件选择生效。桥接为每个请求提供带独立随机令牌的临时 MCP 入口，不把 NextChat 的 MCP 服务器凭据或启动命令复制给 CLI。关闭工具的请求不会建立此入口，标题、摘要等辅助请求也关闭 CLI 本地工具。CLI 工具事件会显示在聊天中，工具调用前后的文字分段显示。手动部署须同步更新桥接代码才能使用此功能。
+
+默认不设桥接总时限，长工具任务不会在十分钟时被桥接主动中断；用户仍可取消。桌面可配置 **CLI 请求时限（分钟）**，0 表示不限；手动部署使用 `timeoutMs`，独立组件使用 `NEXTCHAT_BRIDGE_TIMEOUT_MS`。上传请求仍有单独的两分钟限制；模型服务或网页部署平台自身的超时由对应服务决定。
+
+只有历史与配置一致时才使用 CLI 原生续接，保留其历史和 thinking 签名。NextChat 的历史条数限制或长期记忆更新经常会改变上下文，此时创建新会话并立即回收同一对话旧的原生会话目录；不会伪造原有的工具结果或签名。失败或取消的会话也会删除。默认最多保留 100 个闲置会话，七天未使用的会话定期清理；活动请求不会被回收。
+
+新版会话位于数据目录的 `managed-v2/run-*/session-*`。桥接重启时清理已退出实例留下的会话，首次请求重新导入 NextChat 历史；旧版本产生的 64 位哈希目录仅在其中所有文件超过七天未修改后清理。清理不涉及 NextChat 聊天记录或用户原有的 Claude Code 配置。手动部署可以通过 `maxSessions`、`retentionMs` 调整保留上限和期限。

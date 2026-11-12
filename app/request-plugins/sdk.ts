@@ -27,6 +27,13 @@ export type DriverEvent =
   | { type: "text" | "thinking"; text: string }
   | { type: "done"; sessionId?: string }
   | { type: "error"; message: string }
+  | {
+      type: "host_tool_call";
+      runId: string;
+      id: string;
+      name: string;
+      input: unknown;
+    }
   | { type: "tool_start"; id: string; name: string; input: unknown }
   | { type: "tool_end"; id: string; content: string; isError?: boolean };
 

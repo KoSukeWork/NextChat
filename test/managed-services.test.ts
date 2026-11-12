@@ -336,3 +336,133 @@ test("preview never launches a helper; old desktop generated settings migrate wi
     "external",
   );
 });
+
+test("driver host tools execute only registered names and reply through the configured bridge", async () => {
+  const saved = endpoint("cli");
+  const id = "11111111-1111-4111-8111-111111111111";
+  const input = {
+    type: "host_tool_call",
+    runId: id,
+    id,
+    name: "enabled",
+    input: { x: 1 },
+  };
+  send.mockResolvedValueOnce(
+    new Response(JSON.stringify(input) + '\n{"type":"done"}\n'),
+  );
+  send.mockResolvedValueOnce(new Response(null, { status: 204 }));
+  const run = jest.fn(async () => ({
+    content: [{ type: "text", text: "result" }],
+  }));
+  await runPluginDriver(
+    saved,
+    [{ role: "user", content: "hi" }],
+    {
+      messages: [],
+      config: { model: "m" },
+      enableTools: true,
+      onFinish: jest.fn(),
+    },
+    {
+      tools: [
+        {
+          type: "function",
+          function: { name: "enabled", parameters: { type: "object" } },
+        },
+      ],
+      funcs: { enabled: run },
+    },
+  );
+  expect(run).toHaveBeenCalledWith({ x: 1 });
+  expect(send.mock.calls[1][0]).toMatch(
+    new RegExp(`/v1/runs/${id}/results/${id}$`),
+  );
+  expect(JSON.parse(send.mock.calls[1][1]!.body as string)).toEqual({
+    content: "result",
+    isError: false,
+  });
+});
+
+test.each([false, true])(
+  "driver rejects tools omitted from the request (tools enabled: %s)",
+  async (enableTools) => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    const run = jest.fn();
+    send.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          type: "host_tool_call",
+          runId: id,
+          id,
+          name: "disabled",
+          input: {},
+        }) + '\n{"type":"done"}\n',
+      ),
+    );
+    send.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    await runPluginDriver(
+      endpoint("cli"),
+      [{ role: "user", content: "hi" }],
+      {
+        messages: [],
+        config: { model: "m" },
+        enableTools,
+        onFinish: jest.fn(),
+      },
+      { tools: [], funcs: { disabled: run } },
+    );
+    expect(run).not.toHaveBeenCalled();
+    expect(JSON.parse(send.mock.calls[1][1]!.body as string)).toEqual({
+      content: "Tool is not enabled for this request",
+      isError: true,
+    });
+  },
+);
+
+test("cancel releases the CLI service while a host tool is still pending", async () => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  let controller!: AbortController;
+  const run = jest.fn(() => new Promise(() => {}));
+  const onFinish = jest.fn();
+  send.mockResolvedValueOnce(
+    new Response(
+      JSON.stringify({
+        type: "host_tool_call",
+        runId: id,
+        id,
+        name: "slow",
+        input: {},
+      }) + '\n{"type":"done"}\n',
+    ),
+  );
+  const chat = runPluginDriver(
+    endpoint("cli"),
+    [{ role: "user", content: "hi" }],
+    {
+      messages: [],
+      config: { model: "m" },
+      enableTools: true,
+      onFinish,
+      onController: (value) => {
+        controller = value;
+      },
+    },
+    {
+      tools: [
+        {
+          type: "function",
+          function: { name: "slow", parameters: { type: "object" } },
+        },
+      ],
+      funcs: { slow: run },
+    },
+  );
+  const rejected = expect(chat).rejects.toMatchObject({ name: "AbortError" });
+  await settled(() => run.mock.calls.length > 0);
+  expect(live.has("claude-cli")).toBe(true);
+  controller.abort();
+  await rejected;
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(onFinish).not.toHaveBeenCalled();
+  expect(live.has("claude-cli")).toBe(false);
+});

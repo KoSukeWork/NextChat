@@ -5,7 +5,7 @@
   "scripts": {
     "plugin:pack": "node scripts/pack-request-plugin.mjs",
     "client:bridge": "node scripts/client-bridge.mjs",
-    "test:client-bridge": "node --test test/client-bridge.integration.mjs",
+    "test:client-bridge": "node --test test/client-bridge.integration.mjs test/cli-runtime.integration.mjs",
     "test:claude-modes": "node --test test/claude-code-modes.integration.mjs",
     "test:local-services": "node --test test/standalone-bridge.integration.mjs",
     "test:claude-http": "node --test test/claude-code-http.integration.mjs",

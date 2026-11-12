@@ -7,9 +7,12 @@ use std::{
     io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::{mpsc, Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc, Condvar, Mutex,
+    },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -33,18 +36,65 @@ pub struct ServiceStatus {
     service: ServiceKind,
     available: bool,
     running: bool,
+    starting: bool,
     pid: Option<u32>,
     executable_path: String,
     can_select_executable: bool,
     connection: Option<Connection>,
     error: Option<String>,
+    allowed_tools: String,
+    request_timeout_ms: u64,
 }
 
-#[derive(Default, Deserialize, Serialize)]
+fn default_allowed_tools() -> String {
+    "Read,Glob,Grep".into()
+}
+
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Options {
     #[serde(default)]
     cli_path: String,
+    #[serde(default = "default_allowed_tools")]
+    allowed_tools: String,
+    #[serde(default)]
+    request_timeout_ms: u64,
+}
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            cli_path: String::new(),
+            allowed_tools: default_allowed_tools(),
+            request_timeout_ms: 0,
+        }
+    }
+}
+
+#[derive(Default)]
+struct Startup {
+    cancelled: AtomicBool,
+    result: Mutex<Option<Result<(), String>>>,
+    changed: Condvar,
+}
+impl Startup {
+    fn finish(&self, result: Result<(), String>) {
+        let mut slot = self.result.lock().unwrap();
+        if slot.is_none() {
+            *slot = Some(result);
+        }
+        self.changed.notify_all();
+    }
+    fn wait(&self) -> Result<(), String> {
+        let mut slot = self.result.lock().unwrap();
+        while slot.is_none() {
+            slot = self.changed.wait(slot).unwrap();
+        }
+        slot.as_ref().unwrap().clone()
+    }
+    fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+        self.finish(Err("Local service startup cancelled".into()));
+    }
 }
 
 struct Running {
@@ -65,6 +115,7 @@ impl Drop for Running {
 #[derive(Default)]
 struct Inner {
     processes: BTreeMap<ServiceKind, Running>,
+    starting: BTreeMap<ServiceKind, Arc<Startup>>,
     errors: BTreeMap<ServiceKind, String>,
     options: Options,
 }
@@ -106,7 +157,8 @@ fn exact_executable(path: &str) -> Result<PathBuf, String> {
     {
         return Err("Select an installed Claude Code .exe using an absolute path".into());
     }
-    dunce::canonicalize(path).map_err(|_| "Claude Code executable is unavailable".into())
+    // Preserve updater-managed links instead of pinning their current versioned target.
+    Ok(dunce::simplified(path).to_path_buf())
 }
 
 fn detect_cli() -> Option<PathBuf> {
@@ -210,6 +262,7 @@ impl ServiceState {
             service: kind,
             available: self.available(),
             running: run.is_some(),
+            starting: inner.starting.contains_key(&kind),
             pid: run.map(|p| p.child.id()),
             executable_path: if kind == ServiceKind::ClaudeCli {
                 if inner.options.cli_path.is_empty() {
@@ -225,6 +278,8 @@ impl ServiceState {
             can_select_executable: kind == ServiceKind::ClaudeCli,
             connection: run.and_then(|p| p.connection.clone()),
             error: inner.errors.get(&kind).cloned(),
+            allowed_tools: inner.options.allowed_tools.clone(),
+            request_timeout_ms: inner.options.request_timeout_ms,
         }
     }
 
@@ -236,7 +291,15 @@ impl ServiceState {
         Ok(self.snapshot(&mut inner, kind))
     }
 
-    fn launch(&self, kind: ServiceKind, cli: Option<&Path>) -> Result<Running, String> {
+    fn launch(
+        &self,
+        kind: ServiceKind,
+        cli: Option<&Path>,
+        cancelled: &AtomicBool,
+    ) -> Result<Running, String> {
+        if cancelled.load(Ordering::SeqCst) {
+            return Err("Local service startup cancelled".into());
+        }
         if !self.available() {
             return Err("Bundled local services are missing or unsupported; extract the complete Windows x64 package".into());
         }
@@ -277,6 +340,10 @@ impl ServiceState {
                         cli.ok_or("Select a Claude Code executable")?,
                     )
                     .env("NEXTCHAT_SERVICE_WORK_DIR", self.directory.join("cli-work"))
+                    .env(
+                        "NEXTCHAT_SERVICE_OPTIONS_FILE",
+                        self.directory.join("settings.json"),
+                    )
                     .env(
                         "NEXTCHAT_SERVICE_DATA_DIR",
                         self.directory.join("cli-sessions"),
@@ -327,12 +394,25 @@ impl ServiceState {
             );
             let _ = std::io::copy(&mut reader, &mut std::io::sink());
         });
-        let bytes = receiver
-            .recv_timeout(Duration::from_secs(15))
-            .map_err(|_| "Local service startup timed out; check the selected CLI executable")?
-            .ok_or(
-                "Local service could not start; check the bundled component and CLI executable",
-            )?;
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let bytes = loop {
+            if cancelled.load(Ordering::SeqCst) {
+                return Err("Local service startup cancelled".into());
+            }
+            match receiver.recv_timeout(Duration::from_millis(50)) {
+                Ok(value) => break value,
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err("Local service exited during startup".into())
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) if Instant::now() >= deadline => {
+                    return Err(
+                        "Local service startup timed out; check the selected CLI executable".into(),
+                    )
+                }
+                Err(_) => {}
+            }
+        }
+        .ok_or("Local service could not start; check the bundled component and CLI executable")?;
         running.connection = Some(parse_ready(kind, &bytes, token)?);
         if running
             .child
@@ -346,8 +426,15 @@ impl ServiceState {
     }
 
     fn save_cli_path(&self, inner: &mut Inner, path: String) -> Result<(), String> {
+        let options = Options {
+            cli_path: path,
+            ..inner.options.clone()
+        };
+        self.save_options(inner, options)
+    }
+
+    fn save_options(&self, inner: &mut Inner, options: Options) -> Result<(), String> {
         fs::create_dir_all(&self.directory).map_err(|_| "Could not save local service settings")?;
-        let options = Options { cli_path: path };
         let mut file = tempfile::NamedTempFile::new_in(&self.directory)
             .map_err(|_| "Could not save local service settings")?;
         serde_json::to_writer(&mut file, &options)
@@ -370,7 +457,7 @@ impl ServiceState {
             .inner
             .lock()
             .map_err(|_| "Local service state is unavailable")?;
-        if self.snapshot(&mut inner, kind).running {
+        if self.snapshot(&mut inner, kind).running || inner.starting.contains_key(&kind) {
             return Err("Stop the CLI service before changing its executable".into());
         }
         let path = if executable_path.trim().is_empty() {
@@ -389,8 +476,6 @@ impl ServiceState {
         kind: ServiceKind,
         executable_path: Option<String>,
     ) -> Result<ServiceStatus, String> {
-        // Serialize startup with stop and duplicate start requests. No external
-        // process is adopted, and no PID supplied by the renderer is ever killed.
         let mut inner = self
             .inner
             .lock()
@@ -399,8 +484,13 @@ impl ServiceState {
         if previous.running {
             return Ok(previous);
         }
-        let result = (|| {
-            let cli = if kind == ServiceKind::ClaudeCli {
+        if let Some(startup) = inner.starting.get(&kind).cloned() {
+            drop(inner);
+            startup.wait()?;
+            return self.status(kind);
+        }
+        let cli = if kind == ServiceKind::ClaudeCli {
+            let selected = (|| -> Result<PathBuf, String> {
                 let requested = executable_path.unwrap_or(previous.executable_path);
                 let path = if requested.trim().is_empty() {
                     detect_cli().ok_or("Claude Code was not found; select its executable")?
@@ -408,20 +498,51 @@ impl ServiceState {
                     exact_executable(requested.trim())?
                 };
                 self.save_cli_path(&mut inner, path.to_string_lossy().into_owned())?;
-                Some(path)
-            } else {
-                None
-            };
-            self.launch(kind, cli.as_deref())
-        })();
+                Ok(path)
+            })();
+            match selected {
+                Ok(path) => Some(path),
+                Err(error) => {
+                    inner.errors.insert(kind, error.clone());
+                    return Err(error);
+                }
+            }
+        } else {
+            None
+        };
+        let startup = Arc::new(Startup::default());
+        inner.starting.insert(kind, startup.clone());
+        inner.errors.remove(&kind);
+        drop(inner);
+        // Readiness never holds the shared state lock. Status, stop and another
+        // service remain responsive, and stop can cancel this generation.
+        let result = self.launch(kind, cli.as_deref(), &startup.cancelled);
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| "Local service state is unavailable")?;
+        if !inner
+            .starting
+            .get(&kind)
+            .is_some_and(|current| Arc::ptr_eq(current, &startup))
+            || startup.cancelled.load(Ordering::SeqCst)
+        {
+            drop(inner);
+            drop(result);
+            startup.cancel();
+            return Err("Local service startup cancelled".into());
+        }
+        inner.starting.remove(&kind);
         match result {
             Ok(process) => {
                 inner.processes.insert(kind, process);
                 inner.errors.remove(&kind);
+                startup.finish(Ok(()));
                 Ok(self.snapshot(&mut inner, kind))
             }
             Err(error) => {
                 inner.errors.insert(kind, error.clone());
+                startup.finish(Err(error.clone()));
                 Err(error)
             }
         }
@@ -432,16 +553,118 @@ impl ServiceState {
             .inner
             .lock()
             .map_err(|_| "Local service state is unavailable")?;
-        inner.processes.remove(&kind);
+        if let Some(startup) = inner.starting.remove(&kind) {
+            startup.cancel();
+        }
+        let running = inner.processes.remove(&kind);
         inner.errors.remove(&kind);
-        Ok(self.snapshot(&mut inner, kind))
+        let status = self.snapshot(&mut inner, kind);
+        drop(inner);
+        drop(running);
+        Ok(status)
     }
 
     pub fn shutdown(&self) {
         if let Ok(mut inner) = self.inner.lock() {
-            inner.processes.clear();
+            for (_, startup) in std::mem::take(&mut inner.starting) {
+                startup.cancel();
+            }
+            let processes = std::mem::take(&mut inner.processes);
+            drop(inner);
+            drop(processes);
         }
     }
+
+    async fn refresh_cli_version(&self, status: ServiceStatus) -> Result<ServiceStatus, String> {
+        if status.service != ServiceKind::ClaudeCli {
+            return Ok(status);
+        }
+        let connection = status
+            .connection
+            .as_ref()
+            .ok_or("CLI service is not running")?;
+        let response = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(12))
+            .build()
+            .map_err(|_| "Could not inspect CLI version")?
+            .get(format!("{}/v1/drivers", connection.url))
+            .bearer_auth(&connection.token)
+            .send()
+            .await
+            .map_err(|_| "Could not inspect CLI version")?;
+        if !response.status().is_success() {
+            return Err("CLI version check failed".into());
+        }
+        let text = response
+            .text()
+            .await
+            .map_err(|_| "Could not read CLI version")?;
+        let info: serde_json::Value =
+            serde_json::from_str(&text).map_err(|_| "Invalid CLI version response")?;
+        let version = info
+            .as_array()
+            .and_then(|drivers| drivers.iter().find(|driver| driver["id"] == "claude-code"))
+            .and_then(|driver| driver["versions"][0].as_str())
+            .ok_or("Missing CLI version")?;
+        if version.split('.').count() != 3
+            || !version
+                .split('.')
+                .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit()))
+        {
+            return Err("Invalid CLI version".into());
+        }
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| "Local service state is unavailable")?;
+        let current = inner
+            .processes
+            .get_mut(&ServiceKind::ClaudeCli)
+            .and_then(|run| run.connection.as_mut())
+            .filter(|current| current.url == connection.url && current.token == connection.token)
+            .ok_or("CLI service changed during version check")?;
+        current.cli_version = Some(version.into());
+        Ok(self.snapshot(&mut inner, ServiceKind::ClaudeCli))
+    }
+}
+
+#[tauri::command]
+pub async fn local_service_options(
+    state: tauri::State<'_, Arc<ServiceState>>,
+    service: ServiceKind,
+    allowed_tools: String,
+    request_timeout_ms: u64,
+) -> Result<ServiceStatus, String> {
+    if service != ServiceKind::ClaudeCli
+        || allowed_tools.len() > 1024
+        || request_timeout_ms > 86400000
+    {
+        return Err("Invalid CLI service options".into());
+    }
+    let tools: Vec<_> = allowed_tools
+        .split(',')
+        .map(str::trim)
+        .filter(|tool| !tool.is_empty())
+        .collect();
+    if tools.iter().any(|tool| {
+        !tool
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    }) {
+        return Err("Use comma-separated CLI tool names".into());
+    }
+    let mut inner = state
+        .inner
+        .lock()
+        .map_err(|_| "Local service state is unavailable")?;
+    let options = Options {
+        allowed_tools: tools.join(","),
+        request_timeout_ms,
+        ..inner.options.clone()
+    };
+    state.save_options(&mut inner, options)?;
+    Ok(state.snapshot(&mut inner, service))
 }
 
 #[tauri::command]
@@ -473,9 +696,12 @@ pub async fn local_service_start(
     executable_path: Option<String>,
 ) -> Result<ServiceStatus, String> {
     let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || state.start(service, executable_path))
-        .await
-        .map_err(|_| "Could not start local service")?
+    let starting = state.clone();
+    let status =
+        tauri::async_runtime::spawn_blocking(move || starting.start(service, executable_path))
+            .await
+            .map_err(|_| "Could not start local service")??;
+    state.refresh_cli_version(status).await
 }
 #[tauri::command]
 pub async fn local_service_stop(
@@ -491,6 +717,55 @@ pub async fn local_service_stop(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn invalid_cli_selection_is_reported_by_status() {
+        let directory = tempfile::tempdir().unwrap();
+        let state = ServiceState::new(directory.path().into(), directory.path().join("helper.exe"));
+        let error = state
+            .start(ServiceKind::ClaudeCli, Some("missing.cmd".into()))
+            .err()
+            .unwrap();
+        let status = state.status(ServiceKind::ClaudeCli).unwrap();
+        assert_eq!(status.error, Some(error));
+        assert!(!status.running && !status.starting);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn status_and_stop_remain_responsive_during_slow_startup() {
+        use std::os::windows::process::CommandExt;
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("slow.rs");
+        let helper = directory.path().join("slow.exe");
+        fs::write(
+            &source,
+            "fn main() { std::thread::sleep(std::time::Duration::from_secs(60)); }",
+        )
+        .unwrap();
+        assert!(Command::new("rustc")
+            .arg(&source)
+            .arg("-o")
+            .arg(&helper)
+            .creation_flags(0x08000000)
+            .status()
+            .unwrap()
+            .success());
+        let state = Arc::new(ServiceState::new(directory.path().join("data"), helper));
+        let starting = state.clone();
+        let worker = thread::spawn(move || starting.start(ServiceKind::Wire, None));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !state.status(ServiceKind::Wire).unwrap().starting {
+            assert!(Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(5));
+        }
+        thread::sleep(Duration::from_millis(100));
+        let began = Instant::now();
+        assert!(!state.status(ServiceKind::ClaudeCli).unwrap().starting);
+        assert!(!state.stop(ServiceKind::Wire).unwrap().starting);
+        assert!(began.elapsed() < Duration::from_millis(500));
+        assert!(worker.join().unwrap().err().unwrap().contains("cancelled"));
+        assert!(!state.status(ServiceKind::Wire).unwrap().running);
+    }
     #[test]
     fn readiness_rejects_non_loopback_and_wrong_service_identity() {
         for address in [
@@ -557,7 +832,11 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn bundled_service_lifecycle_reuses_one_process_and_rotates_credentials() {
-        let helper = Path::new(env!("CARGO_MANIFEST_DIR")).join("../build/nextchat-wire-relay.exe");
+        let helper = std::env::var_os("NEXTCHAT_TEST_WIRE_EXE")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("../build/nextchat-wire-relay.exe")
+            });
         if !helper.is_file() {
             eprintln!("Build the service helper to run the native lifecycle check");
             return;
@@ -588,7 +867,11 @@ mod tests {
         if std::env::var("NEXTCHAT_TEST_REAL_CLAUDE").as_deref() != Ok("1") {
             return;
         }
-        let helper = Path::new(env!("CARGO_MANIFEST_DIR")).join("../build/nextchat-wire-relay.exe");
+        let helper = std::env::var_os("NEXTCHAT_TEST_WIRE_EXE")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("../build/nextchat-wire-relay.exe")
+            });
         let cli = detect_cli().expect("Install Claude Code for the opt-in CLI test");
         let cli = exact_executable(&cli.to_string_lossy()).unwrap();
         let directory = tempfile::tempdir().unwrap();
@@ -601,6 +884,25 @@ mod tests {
             .unwrap();
         assert!(started.running);
         assert!(started.connection.as_ref().unwrap().cli_version.is_some());
+        state
+            .inner
+            .lock()
+            .unwrap()
+            .processes
+            .get_mut(&ServiceKind::ClaudeCli)
+            .unwrap()
+            .connection
+            .as_mut()
+            .unwrap()
+            .cli_version = Some("0.0.1".into());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let refreshed = runtime
+            .block_on(state.refresh_cli_version(state.status(ServiceKind::ClaudeCli).unwrap()))
+            .unwrap();
+        assert_eq!(
+            refreshed.connection.unwrap().cli_version,
+            started.connection.as_ref().unwrap().cli_version
+        );
         assert!(state
             .configure(ServiceKind::ClaudeCli, String::new())
             .is_err());

@@ -1,6 +1,11 @@
 import http from "node:http";
 
-export async function mockAnthropic({ toolFile, stall = false } = {}) {
+export async function mockAnthropic({
+  toolFile,
+  tool,
+  beforeToolText = "",
+  stall = false,
+} = {}) {
   const captures = [];
   let receive, disconnect;
   const received = new Promise((resolve) => {
@@ -47,7 +52,8 @@ export async function mockAnthropic({ toolFile, stall = false } = {}) {
       );
     }
     res.writeHead(200, { "content-type": "text/event-stream" });
-    const useTool = toolFile && captures.length === 1;
+    const useTool = (toolFile || tool) && captures.length === 1;
+    const toolIndex = useTool && beforeToolText ? 2 : 1;
     for (const event of [
       { type: "message_start", message },
       {
@@ -72,24 +78,41 @@ export async function mockAnthropic({ toolFile, stall = false } = {}) {
         },
       },
       { type: "content_block_stop", index: 0 },
-      ...(useTool
+      ...(useTool && beforeToolText
         ? [
             {
               type: "content_block_start",
               index: 1,
+              content_block: { type: "text", text: "" },
+            },
+            {
+              type: "content_block_delta",
+              index: 1,
+              delta: { type: "text_delta", text: beforeToolText },
+            },
+            { type: "content_block_stop", index: 1 },
+          ]
+        : []),
+      ...(useTool
+        ? [
+            {
+              type: "content_block_start",
+              index: toolIndex,
               content_block: {
                 type: "tool_use",
                 id: "tool_fixture_read",
-                name: "Read",
+                name: tool?.name || "Read",
                 input: {},
               },
             },
             {
               type: "content_block_delta",
-              index: 1,
+              index: toolIndex,
               delta: {
                 type: "input_json_delta",
-                partial_json: JSON.stringify({ file_path: toolFile }),
+                partial_json: JSON.stringify(
+                  tool?.input || { file_path: toolFile },
+                ),
               },
             },
           ]
@@ -105,7 +128,7 @@ export async function mockAnthropic({ toolFile, stall = false } = {}) {
               delta: { type: "text_delta", text },
             },
           ]),
-      { type: "content_block_stop", index: 1 },
+      { type: "content_block_stop", index: toolIndex },
       {
         type: "message_delta",
         delta: {

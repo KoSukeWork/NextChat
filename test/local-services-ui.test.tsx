@@ -105,6 +105,9 @@ beforeEach(() => {
       current.connection = null;
     } else if (command === "local_service_configure") {
       current.executablePath = args!.executablePath;
+    } else if (command === "local_service_options") {
+      current.allowedTools = args!.allowedTools;
+      current.requestTimeoutMs = args!.requestTimeoutMs;
     }
     states.set(service, current);
     return JSON.parse(JSON.stringify(current));
@@ -305,4 +308,61 @@ test("switching modes during startup does not connect the previous mode", async 
   );
   expect(screen.getByLabelText(fields.mode.title)).toHaveValue("cli");
   expect(screen.getByLabelText(fields.bridgeToken.title)).toHaveValue("");
+});
+
+test("startup can be cancelled without waiting for the readiness response", async () => {
+  let rejectStart!: (error: Error) => void;
+  const implementation = invoke.getMockImplementation()!;
+  invoke.mockImplementation(async (command, args) => {
+    if (command === "local_service_start")
+      return new Promise((_, reject) => {
+        rejectStart = reject;
+      });
+    if (command === "local_service_stop")
+      rejectStart?.(new Error("startup cancelled"));
+    return implementation(command, args);
+  });
+  render(<Harness />);
+  const start = screen.getByRole("button", {
+    name: Locale.RequestPlugins.Service.Start,
+  });
+  await waitFor(() => expect(start).toBeEnabled());
+  fireEvent.click(start);
+  await waitFor(() => expect(rejectStart).toBeDefined());
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: Locale.RequestPlugins.Service.CancelStart,
+    }),
+  );
+  await waitFor(() => expect(start).toBeEnabled());
+  expect(screen.getByLabelText(fields.transportToken.title)).toHaveValue("");
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("CLI preapproval and request limit save without starting a service", async () => {
+  render(<Harness />);
+  fireEvent.change(screen.getByLabelText(fields.mode.title), {
+    target: { value: "cli" },
+  });
+  const tools = await screen.findByLabelText(
+    Locale.RequestPlugins.Service.AllowedTools,
+  );
+  fireEvent.change(tools, { target: { value: "Read,Bash,Write" } });
+  fireEvent.blur(tools);
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("local_service_options", {
+      service: "claude-cli",
+      allowedTools: "Read,Bash,Write",
+      requestTimeoutMs: 0,
+    }),
+  );
+  const timeout = screen.getByLabelText(Locale.RequestPlugins.Service.Timeout);
+  fireEvent.change(timeout, { target: { value: "30" } });
+  fireEvent.blur(timeout);
+  await waitFor(() =>
+    expect(states.get("claude-cli").requestTimeoutMs).toBe(1800000),
+  );
+  expect(
+    invoke.mock.calls.some(([command]) => command === "local_service_start"),
+  ).toBe(false);
 });
