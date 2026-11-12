@@ -29,7 +29,7 @@ jest.unstable_mockModule("@/app/components/ui-lib", () => ({
     </div>
   ),
 }));
-for (const icon of ["archive", "delete", "pin-upright"])
+for (const icon of ["archive", "delete", "folder-move", "pin-upright"])
   jest.unstable_mockModule(`@/app/icons/${icon}.svg`, () => ({
     default: () => <svg />,
   }));

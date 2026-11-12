@@ -1,5 +1,6 @@
 import ArchiveIcon from "../icons/archive.svg";
 import DeleteIcon from "../icons/delete.svg";
+import FolderMoveIcon from "../icons/folder-move.svg";
 import PinIcon from "../icons/pin-upright.svg";
 
 import styles from "./home.module.scss";
@@ -129,18 +130,9 @@ export function ChatItem(props: {
                   props.onMove?.();
                 }}
               >
-                <svg
-                  viewBox="0 0 24 24"
-                  width="16"
-                  height="16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  aria-hidden="true"
-                >
-                  <path d="M3 5h7l2 2h9v12H3z" />
-                  <path d="M9 14h7m-3-3 3 3-3 3" />
-                </svg>
+                <div>
+                  <FolderMoveIcon />
+                </div>
               </button>
             )}
             {props.onPin && (
