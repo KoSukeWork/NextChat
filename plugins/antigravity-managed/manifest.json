@@ -1,0 +1,60 @@
+{
+  "sdkVersion": 2,
+  "id": "nextchat.antigravity",
+  "version": "1.0.0",
+  "name": "Antigravity",
+  "description": {
+    "cn": "通过已登录的 Antigravity CLI 使用 ACP。",
+    "en": "Use the signed-in Antigravity CLI over ACP."
+  },
+  "protocols": ["anthropic"],
+  "capabilities": ["request", "driver"],
+  "fields": {
+    "connection": {
+      "title": { "cn": "连接方式", "en": "Connection" },
+      "type": "select",
+      "default": "builtin",
+      "options": [
+        {
+          "value": "builtin",
+          "label": { "cn": "内置（桌面）", "en": "Built-in (desktop)" }
+        },
+        {
+          "value": "external",
+          "label": { "cn": "外部桥接服务", "en": "External bridge" }
+        }
+      ]
+    },
+    "bridgeUrl": {
+      "title": { "cn": "桥接服务地址", "en": "Bridge URL" },
+      "type": "string",
+      "default": "http://127.0.0.1:8788",
+      "when": { "field": "connection", "value": "external" }
+    },
+    "bridgeToken": {
+      "title": { "cn": "桥接服务令牌", "en": "Bridge token" },
+      "type": "secret",
+      "when": { "field": "connection", "value": "external" }
+    },
+    "nativeCliVersion": {
+      "title": { "cn": "外部桥接 agy 版本", "en": "External agy version" },
+      "type": "string",
+      "default": "1.5.11",
+      "when": { "field": "connection", "value": "external" }
+    },
+    "nativeEffort": {
+      "title": { "cn": "思考强度", "en": "Thinking level" },
+      "type": "select",
+      "default": "",
+      "options": [
+        {
+          "value": "",
+          "label": { "cn": "使用对话设置", "en": "Use chat setting" }
+        },
+        { "value": "low", "label": { "cn": "低", "en": "Low" } },
+        { "value": "medium", "label": { "cn": "中", "en": "Medium" } },
+        { "value": "high", "label": { "cn": "高", "en": "High" } }
+      ]
+    }
+  }
+}

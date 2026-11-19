@@ -166,7 +166,9 @@ test("Claude 4.0 selects only the registered driver or configured bridge and doe
   hook.mockImplementation(async (_source, method, args) =>
     method === "prepareChat"
       ? hooks.prepareChat(args[0], args[1])
-      : hooks.prepareRequest(args[0], args[1]),
+      : method === "prepareRequest"
+      ? hooks.prepareRequest(args[0], args[1])
+      : null,
   );
   const bound: Endpoint = {
     ...endpoint,

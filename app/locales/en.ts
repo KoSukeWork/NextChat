@@ -88,6 +88,20 @@ const en: LocaleType = {
     Pinned: "Pinned",
   },
   RequestPlugins: {
+    AgyService: {
+      Executable: "Installed Antigravity CLI",
+      ExecutableHint: "Find agy.exe automatically or choose an absolute path.",
+      AutoDetect: "Find agy automatically",
+      Browse: "Choose executable",
+      Version: "Detected agy version",
+      Login: "Sign-in status",
+      LoginHint:
+        "Uses agy's existing sign-in; run agy in a terminal if prompted to sign in.",
+      Timeout: "agy request limit (minutes)",
+      TimeoutHint: "0 means no limit; requests can still be cancelled.",
+      InvalidTimeout: "Request limit must be between 0 and 1440 minutes.",
+      Error: "agy notice",
+    },
     Service: {
       AllowedTools: "Preapproved CLI tools",
       AllowedToolsHint:
@@ -112,6 +126,10 @@ const en: LocaleType = {
     Description:
       "Add request adapters to NextChat, then select a plugin in your API endpoint settings.",
     ClaudePlugin: "Claude Code request plugin",
+    AgyPlugin: "Antigravity request plugin",
+    AgyPluginDescription:
+      "Use a signed-in Antigravity CLI or an external bridge.",
+    AddAgyPlugin: "Add Antigravity request plugin",
     ClaudePluginDescription:
       "Use an installed Claude Code CLI on desktop, or a self-hosted bridge on the web.",
     AddClaudePlugin: "Add Claude Code request plugin",

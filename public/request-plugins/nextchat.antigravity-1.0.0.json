@@ -1,0 +1,119 @@
+{
+  "manifest": {
+    "sdkVersion": 2,
+    "id": "nextchat.antigravity",
+    "version": "1.0.0",
+    "name": "Antigravity",
+    "description": {
+      "cn": "通过已登录的 Antigravity CLI 使用 ACP。",
+      "en": "Use the signed-in Antigravity CLI over ACP."
+    },
+    "protocols": [
+      "anthropic"
+    ],
+    "capabilities": [
+      "request",
+      "driver"
+    ],
+    "fields": {
+      "connection": {
+        "title": {
+          "cn": "连接方式",
+          "en": "Connection"
+        },
+        "type": "select",
+        "default": "builtin",
+        "options": [
+          {
+            "value": "builtin",
+            "label": {
+              "cn": "内置（桌面）",
+              "en": "Built-in (desktop)"
+            }
+          },
+          {
+            "value": "external",
+            "label": {
+              "cn": "外部桥接服务",
+              "en": "External bridge"
+            }
+          }
+        ]
+      },
+      "bridgeUrl": {
+        "title": {
+          "cn": "桥接服务地址",
+          "en": "Bridge URL"
+        },
+        "type": "string",
+        "default": "http://127.0.0.1:8788",
+        "when": {
+          "field": "connection",
+          "value": "external"
+        }
+      },
+      "bridgeToken": {
+        "title": {
+          "cn": "桥接服务令牌",
+          "en": "Bridge token"
+        },
+        "type": "secret",
+        "when": {
+          "field": "connection",
+          "value": "external"
+        }
+      },
+      "nativeCliVersion": {
+        "title": {
+          "cn": "外部桥接 agy 版本",
+          "en": "External agy version"
+        },
+        "type": "string",
+        "default": "1.5.11",
+        "when": {
+          "field": "connection",
+          "value": "external"
+        }
+      },
+      "nativeEffort": {
+        "title": {
+          "cn": "思考强度",
+          "en": "Thinking level"
+        },
+        "type": "select",
+        "default": "",
+        "options": [
+          {
+            "value": "",
+            "label": {
+              "cn": "使用对话设置",
+              "en": "Use chat setting"
+            }
+          },
+          {
+            "value": "low",
+            "label": {
+              "cn": "低",
+              "en": "Low"
+            }
+          },
+          {
+            "value": "medium",
+            "label": {
+              "cn": "中",
+              "en": "Medium"
+            }
+          },
+          {
+            "value": "high",
+            "label": {
+              "cn": "高",
+              "en": "High"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "source": "/******/ // The require scope\n/******/ var __webpack_require__ = {};\n/******/ \n/************************************************************************/\n/******/ /* webpack/runtime/define property getters */\n/******/ (() => {\n/******/ \t// define getter functions for harmony exports\n/******/ \t__webpack_require__.d = (exports, definition) => {\n/******/ \t\tfor(var key in definition) {\n/******/ \t\t\tif(__webpack_require__.o(definition, key) && !__webpack_require__.o(exports, key)) {\n/******/ \t\t\t\tObject.defineProperty(exports, key, { enumerable: true, get: definition[key] });\n/******/ \t\t\t}\n/******/ \t\t}\n/******/ \t};\n/******/ })();\n/******/ \n/******/ /* webpack/runtime/hasOwnProperty shorthand */\n/******/ (() => {\n/******/ \t__webpack_require__.o = (obj, prop) => (Object.prototype.hasOwnProperty.call(obj, prop))\n/******/ })();\n/******/ \n/************************************************************************/\nvar __webpack_exports__ = {};\n/* harmony export */ __webpack_require__.d(__webpack_exports__, {\n/* harmony export */   _s: () => (/* binding */ prepareModels),\n/* harmony export */   hD: () => (/* binding */ prepareRequest),\n/* harmony export */   uf: () => (/* binding */ prepareChat)\n/* harmony export */ });\nfunction bridge(context) {\n  const { bridgeUrl, bridgeToken, nativeCliVersion } = context.config;\n  if (!bridgeToken || bridgeToken.length < 16)\n    throw new Error(\n      \"桥接令牌至少需要 16 个字符 / Bridge token must contain at least 16 characters\",\n    );\n  if (!/^\\d+\\.\\d+\\.\\d+$/.test(nativeCliVersion || \"\"))\n    throw new Error(\"请填写准确的 agy 版本 / Enter the exact agy version\");\n  const url = new URL(bridgeUrl);\n  if (\n    ![\"http:\", \"https:\"].includes(url.protocol) ||\n    url.username ||\n    url.password ||\n    url.search ||\n    url.hash\n  )\n    throw new Error(\"桥接地址无效 / Invalid bridge URL\");\n  return {\n    base: url.toString().replace(/\\/+$/, \"\"),\n    headers: {\n      authorization: `Bearer ${bridgeToken}`,\n      \"content-type\": \"application/json\",\n    },\n    version: nativeCliVersion,\n  };\n}\n\nfunction prepareChat(chat, context) {\n  if (context.config.connection === \"builtin\") {\n    if (!context.hostDrivers?.includes(\"antigravity\"))\n      throw new Error(\n        \"内置 agy 仅支持桌面版 / Built-in agy is available on desktop\",\n      );\n    return { hostDriver: \"antigravity\" };\n  }\n  if (context.config.connection !== \"external\")\n    throw new Error(\"请选择连接方式 / Select a connection\");\n  const { base, headers, version } = bridge(context);\n  const effort = context.config.nativeEffort || chat.reasoningEffort;\n  return {\n    url: `${base}/v1/drivers/antigravity/chat`,\n    headers,\n    body: {\n      sessionId: context.sessionId,\n      model: chat.model,\n      messages: chat.messages,\n      enableTools: chat.enableTools,\n      cliVersion: version,\n      ...(effort ? { reasoningEffort: effort } : {}),\n    },\n  };\n}\n\nfunction prepareModels(context) {\n  if (context.config.connection === \"builtin\") {\n    if (!context.hostDrivers?.includes(\"antigravity\"))\n      throw new Error(\n        \"内置 agy 仅支持桌面版 / Built-in agy is available on desktop\",\n      );\n    return { hostDriver: \"antigravity\" };\n  }\n  const { base, headers, version } = bridge(context);\n  return {\n    url: `${base}/v1/drivers/antigravity/models?version=${encodeURIComponent(\n      version,\n    )}`,\n    headers,\n  };\n}\n\nfunction prepareRequest() {\n  throw new Error(\n    \"Antigravity 请求使用 ACP 驱动 / Antigravity requests use the ACP driver\",\n  );\n}\n\nvar __webpack_exports__prepareChat = __webpack_exports__.uf;\nvar __webpack_exports__prepareModels = __webpack_exports__._s;\nvar __webpack_exports__prepareRequest = __webpack_exports__.hD;\nexport { __webpack_exports__prepareChat as prepareChat, __webpack_exports__prepareModels as prepareModels, __webpack_exports__prepareRequest as prepareRequest };\n"
+}

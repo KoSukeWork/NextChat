@@ -9,8 +9,12 @@ export async function openNativeDriver(
   signal: AbortSignal,
 ) {
   const native = window.__TAURI__;
-  if (!native || request.hostDriver !== "claude-code")
+  if (!native || !["claude-code", "antigravity"].includes(request.hostDriver))
     throw new Error("Built-in CLI driver is unavailable");
+  const command =
+    request.hostDriver === "antigravity" ? "agy_acp" : "claude_cli";
+  const eventName =
+    request.hostDriver === "antigravity" ? "agy-acp-event" : "claude-cli-event";
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   const requestId = nanoid();
   const encoder = new TextEncoder();
@@ -20,7 +24,7 @@ export async function openNativeDriver(
   let closed = false;
   const cancelNative = () => {
     if (started)
-      void native.invoke("claude_cli_cancel", { requestId }).catch(() => {});
+      void native.invoke(`${command}_cancel`, { requestId }).catch(() => {});
   };
   const close = (cancelled = false) => {
     if (closed) return;
@@ -44,23 +48,20 @@ export async function openNativeDriver(
   });
   signal.addEventListener("abort", abort, { once: true });
   try {
-    unlisten = await native.event.listen(
-      "claude-cli-event",
-      ({ payload }: any) => {
-        if (closed || payload?.requestId !== requestId) return;
-        if (payload.event?.type === "stream_end") {
-          close();
-          return;
-        }
-        writer.enqueue(encoder.encode(`${JSON.stringify(payload.event)}\n`));
-      },
-    );
+    unlisten = await native.event.listen(eventName, ({ payload }: any) => {
+      if (closed || payload?.requestId !== requestId) return;
+      if (payload.event?.type === "stream_end") {
+        close();
+        return;
+      }
+      writer.enqueue(encoder.encode(`${JSON.stringify(payload.event)}\n`));
+    });
     if (closed || signal.aborted) {
       unlisten();
       throw new DOMException("Aborted", "AbortError");
     }
     started = true;
-    await native.invoke("claude_cli_start", {
+    await native.invoke(`${command}_start`, {
       requestId,
       input: request.input,
       hostTools,

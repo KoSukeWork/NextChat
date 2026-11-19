@@ -260,6 +260,7 @@ pub struct SessionLease {
 }
 
 impl SessionLease {
+    pub fn set_id(&mut self, id: String) { self.session.as_mut().unwrap().id = id; }
     pub fn path(&self) -> &Path {
         self.session.as_ref().unwrap().directory.path()
     }

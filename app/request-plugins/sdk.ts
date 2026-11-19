@@ -39,6 +39,13 @@ export type DriverEvent =
 
 /** Optional exports of a plugin's self-contained ESM source. */
 export interface RequestPluginSDK {
+  prepareModels?(
+    context: PluginContext,
+  ):
+    | PluginRequest
+    | { hostDriver: string }
+    | null
+    | Promise<PluginRequest | { hostDriver: string } | null>;
   prepareRequest?(
     request: PluginRequest,
     context: PluginContext,

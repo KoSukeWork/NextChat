@@ -2,6 +2,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod bundled_plugins;
+mod agy_acp;
+mod agy_acp_tauri;
+mod agy_mcp_proxy;
 mod claude_cli;
 mod claude_cli_events;
 mod claude_cli_mcp;
@@ -21,6 +24,10 @@ use std::sync::Arc;
 use tauri::Manager;
 
 fn main() {
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--nextchat-mcp-stdio")) {
+        if agy_mcp_proxy::run().is_err() { std::process::exit(1); }
+        return;
+    }
     let mut context = tauri::generate_context!();
     // Tests can isolate all Tauri config/state paths as well as WebView2 and MCP.
     // No path changes when this explicit environment variable is absent.
@@ -53,11 +60,19 @@ fn main() {
             app.manage(Arc::new(mcp_oauth::OAuthCallbacks::default()));
             app.manage(Arc::new(stream::StreamState::default()));
             app.manage(Arc::new(claude_cli_tauri::CliApp::new(directory.join("local-services"))?));
+            app.manage(Arc::new(agy_acp_tauri::AgyApp::new(directory.join("local-services"))?));
             app.manage(tts::setup(app)?);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             bundled_plugins::bundled_licenses,
+            agy_acp_tauri::agy_acp_start,
+            agy_acp_tauri::agy_acp_cancel,
+            agy_acp_tauri::agy_acp_tool_result,
+            agy_acp_tauri::agy_acp_models,
+            agy_acp_tauri::agy_acp_status,
+            agy_acp_tauri::agy_acp_configure,
+            agy_acp_tauri::agy_acp_options,
             claude_cli_tauri::claude_cli_start,
             claude_cli_tauri::claude_cli_cancel,
             claude_cli_tauri::claude_cli_tool_result,
@@ -97,6 +112,7 @@ fn main() {
                 app.state::<Arc<mcp::McpState>>().kill_all();
                 app.state::<Arc<tts::TtsState>>().shutdown();
                 app.state::<Arc<claude_cli_tauri::CliApp>>().shutdown();
+                app.state::<Arc<agy_acp_tauri::AgyApp>>().shutdown();
             }
         });
 }

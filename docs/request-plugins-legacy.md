@@ -35,3 +35,13 @@ node scripts/client-bridge.mjs
 路径相对于启动目录解析。省略 `executable` 时使用 `NEXTCHAT_CLAUDE_PATH` 或 PATH 中的 `claude`。外部桥接默认核对插件配置的 CLI 版本；文件更新后重新检测版本。`timeoutMs` 为 0 表示不限。管理员应根据部署环境保护桥接连接和令牌。
 
 桥接隔离 CLI 配置及凭据，通过临时文件传递系统提示词。预授权 CLI 工具由管理员的 `allowedTools` 控制；NextChat 当前对话启用的 MCP 和插件工具仍由 NextChat 执行。每次请求使用独立授权的临时 MCP 入口。桥接重启后重新导入 NextChat 的对话历史。
+
+## Antigravity ACP
+
+默认桥接同时注册 `antigravity` 驱动。安装 agy 并在桥接机器完成登录，在网页接口选择外部桥接，填写相同桥接令牌与 `agy --version` 输出的准确版本。可在自定义 `drivers` 配置中加入：
+
+```json
+{ "module": "plugins/antigravity/driver.mjs", "options": { "executable": "C:/Users/admin/AppData/Local/agy/bin/agy.exe", "dataDirectory": "C:/NextChat/agy-data" } }
+```
+
+Antigravity 使用独立配置与每次请求的临时工具入口。请先阅读 [Antigravity ACP 插件](antigravity.md) 中的当前验证状态。

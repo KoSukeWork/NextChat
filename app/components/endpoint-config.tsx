@@ -42,6 +42,7 @@ function EndpointEditor(props: { initial: Endpoint; onClose: () => void }) {
   const [found, setFound] = useState<EndpointModel[]>([]);
   const [selectedFound, setSelectedFound] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const agyEndpoint = draft.requestPlugin?.id === "nextchat.antigravity";
   const update = (changes: Partial<Endpoint>) =>
     setDraft((current) => ({ ...current, ...changes }));
   const toggle = (items: string[], value: string) =>
@@ -56,7 +57,7 @@ function EndpointEditor(props: { initial: Endpoint; onClose: () => void }) {
   const save = () => {
     try {
       if (!draft.name.trim()) throw new Error();
-      endpointUrl(draft, "models");
+      if (!agyEndpoint) endpointUrl(draft, "models");
       resolveRequestPlugin(draft);
     } catch (error) {
       showToast(
@@ -165,30 +166,34 @@ function EndpointEditor(props: { initial: Endpoint; onClose: () => void }) {
               </option>
             </Select>
           </ListItem>
-          <ListItem title={Locale.EndpointConfig.BaseUrl}>
-            <input
-              type="text"
-              aria-label={Locale.EndpointConfig.BaseUrl}
-              value={draft.baseUrl}
-              placeholder="https://api.example.com"
-              onChange={(event) =>
-                update({ baseUrl: event.currentTarget.value })
-              }
-            />
-          </ListItem>
-          <ListItem title={Locale.EndpointConfig.ApiKey}>
-            <PasswordInput
-              aria-label={Locale.EndpointConfig.ApiKey}
-              value={draft.apiKey}
-              onChange={(event) =>
-                update({ apiKey: event.currentTarget.value })
-              }
-            />
-          </ListItem>
-          <ListItem
-            title={Locale.EndpointConfig.RequestUrl}
-            subTitle={preview}
-          />
+          {!agyEndpoint && (
+            <>
+              <ListItem title={Locale.EndpointConfig.BaseUrl}>
+                <input
+                  type="text"
+                  aria-label={Locale.EndpointConfig.BaseUrl}
+                  value={draft.baseUrl}
+                  placeholder="https://api.example.com"
+                  onChange={(event) =>
+                    update({ baseUrl: event.currentTarget.value })
+                  }
+                />
+              </ListItem>
+              <ListItem title={Locale.EndpointConfig.ApiKey}>
+                <PasswordInput
+                  aria-label={Locale.EndpointConfig.ApiKey}
+                  value={draft.apiKey}
+                  onChange={(event) =>
+                    update({ apiKey: event.currentTarget.value })
+                  }
+                />
+              </ListItem>
+              <ListItem
+                title={Locale.EndpointConfig.RequestUrl}
+                subTitle={preview}
+              />
+            </>
+          )}
         </List>
         <List>
           <ListItem
@@ -226,40 +231,44 @@ function EndpointEditor(props: { initial: Endpoint; onClose: () => void }) {
               />
             </ListItem>
           ))}
-          <ListItem title={Locale.EndpointConfig.AddModel} vertical>
-            <div className={styles["model-entry"]}>
-              <input
-                type="text"
-                aria-label={Locale.EndpointConfig.ModelName}
-                value={name}
-                placeholder={Locale.EndpointConfig.ModelName}
-                onChange={(event) => setName(event.currentTarget.value)}
-              />
-              <input
-                type="text"
-                aria-label={Locale.EndpointConfig.DisplayName}
-                value={displayName}
-                placeholder={Locale.EndpointConfig.DisplayName}
-                onChange={(event) => setDisplayName(event.currentTarget.value)}
-              />
-              <IconButton
-                text={Locale.EndpointConfig.AddModel}
-                disabled={!name.trim()}
-                onClick={() => {
-                  addModels([
-                    {
-                      name: name.trim(),
-                      ...(displayName.trim()
-                        ? { displayName: displayName.trim() }
-                        : {}),
-                    },
-                  ]);
-                  setName("");
-                  setDisplayName("");
-                }}
-              />
-            </div>
-          </ListItem>
+          {!agyEndpoint && (
+            <ListItem title={Locale.EndpointConfig.AddModel} vertical>
+              <div className={styles["model-entry"]}>
+                <input
+                  type="text"
+                  aria-label={Locale.EndpointConfig.ModelName}
+                  value={name}
+                  placeholder={Locale.EndpointConfig.ModelName}
+                  onChange={(event) => setName(event.currentTarget.value)}
+                />
+                <input
+                  type="text"
+                  aria-label={Locale.EndpointConfig.DisplayName}
+                  value={displayName}
+                  placeholder={Locale.EndpointConfig.DisplayName}
+                  onChange={(event) =>
+                    setDisplayName(event.currentTarget.value)
+                  }
+                />
+                <IconButton
+                  text={Locale.EndpointConfig.AddModel}
+                  disabled={!name.trim()}
+                  onClick={() => {
+                    addModels([
+                      {
+                        name: name.trim(),
+                        ...(displayName.trim()
+                          ? { displayName: displayName.trim() }
+                          : {}),
+                      },
+                    ]);
+                    setName("");
+                    setDisplayName("");
+                  }}
+                />
+              </div>
+            </ListItem>
+          )}
           <ListItem title={Locale.EndpointConfig.FetchModels}>
             <IconButton
               text={Locale.EndpointConfig.FetchModels}

@@ -196,12 +196,17 @@ export async function runPluginDriver(
         if (controller.signal.aborted)
           throw new DOMException("Aborted", "AbortError");
         if ("hostDriver" in request) {
-          await window.__TAURI__!.invoke("claude_cli_tool_result", {
-            runId: event.runId,
-            callId: event.id,
-            content: result.content,
-            isError: !!result.isError,
-          });
+          await window.__TAURI__!.invoke(
+            request.hostDriver === "antigravity"
+              ? "agy_acp_tool_result"
+              : "claude_cli_tool_result",
+            {
+              runId: event.runId,
+              callId: event.id,
+              content: result.content,
+              isError: !!result.isError,
+            },
+          );
           return;
         }
         const resultUrl = request.url.replace(

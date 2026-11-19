@@ -10,4 +10,6 @@
 
 Claude Code 4.0.0 使用真实 CLI 的 `-p / --print`。桌面内置驱动和网页版桥接的使用方法见 [Claude Code CLI 插件](claude-code-modes.md)。模型需在接口配置中手动添加。
 
+Antigravity 1.0.0 使用 agy 的 ACP，模型从 agy 获取。设置及当前验证状态见 [Antigravity ACP 插件](antigravity.md)。
+
 旧版 Claude Code 包和绑定在配置加载后自动迁移到 4.0.0；原外部桥接地址与令牌保留，原本自动管理的 CLI 改为桌面内置。原 HTTP 模式会显示一次迁移提示。导入备份时同样迁移旧绑定，不导入旧包；其他声明 transport 的包会被拒绝。网关地址、密钥和模型不因迁移改变。

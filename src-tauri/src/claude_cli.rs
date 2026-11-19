@@ -78,13 +78,13 @@ pub(crate) fn random_uuid() -> Result<String, String> {
     Ok(format!("{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}", bytes[0],bytes[1],bytes[2],bytes[3],bytes[4],bytes[5],bytes[6],bytes[7],bytes[8],bytes[9],bytes[10],bytes[11],bytes[12],bytes[13],bytes[14],bytes[15]))
 }
 
-fn digest(value: &Value) -> String {
+pub(crate) fn digest(value: &Value) -> String {
     let mut hash = Sha256::new();
     hash.update(serde_json::to_vec(value).unwrap_or_default());
     format!("{:x}", hash.finalize())
 }
 
-fn history_hash(messages: &[Message]) -> String {
+pub(crate) fn history_hash(messages: &[Message]) -> String {
     digest(&Value::Array(messages.iter().map(|message| json!({
         "role": message.role,
         "content": if message.role == "assistant" { message.content.as_str().map(|text| Value::String(text.trim().into())).unwrap_or_else(|| message.content.clone()) } else { message.content.clone() },
@@ -181,7 +181,7 @@ fn content_blocks(content: &Value) -> Result<Vec<Value>, String> {
     Ok(result)
 }
 
-fn exact_executable(path: &str) -> Result<PathBuf, String> {
+pub(crate) fn exact_executable(path: &str) -> Result<PathBuf, String> {
     let path = Path::new(path);
     if !path.is_absolute()
         || !path.is_file()
@@ -211,7 +211,7 @@ fn detect_cli() -> Option<PathBuf> {
     paths.into_iter().find(|path| path.is_file())
 }
 
-fn hide_window(command: &mut Command) {
+pub(crate) fn hide_window(command: &mut Command) {
     #[cfg(windows)]
     {
         command.creation_flags(0x08000000);
@@ -223,7 +223,7 @@ fn hide_window(command: &mut Command) {
 }
 
 #[cfg(windows)]
-fn file_identity(path: &Path) -> Result<String, String> {
+pub(crate) fn file_identity(path: &Path) -> Result<String, String> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::{
         GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
@@ -249,7 +249,7 @@ fn file_identity(path: &Path) -> Result<String, String> {
     ))
 }
 #[cfg(not(windows))]
-fn file_identity(path: &Path) -> Result<String, String> {
+pub(crate) fn file_identity(path: &Path) -> Result<String, String> {
     let metadata =
         fs::metadata(path).map_err(|_| "Cannot inspect configured Claude Code executable")?;
     Ok(format!(
@@ -289,6 +289,7 @@ impl CliRuntime {
             .and_then(|value| serde_json::from_slice(&value).ok())
             .unwrap_or_default()
     }
+    #[cfg(test)]
     pub fn save_settings(&self, settings: &CliSettings) -> Result<(), String> {
         let _guard = self
             .settings_lock

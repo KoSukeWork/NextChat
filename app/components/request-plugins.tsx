@@ -22,6 +22,7 @@ import { IconButton } from "./button";
 import { createPluginSession } from "../request-plugins/host";
 import { buildEndpointRequest } from "../client/endpoint-protocol";
 import { ClaudeCliControl } from "./claude-cli-control";
+import { AgyControl } from "./agy-control";
 import { supportsLocalServices } from "../request-plugins/local-services";
 import AddIcon from "../icons/add.svg";
 import DownloadIcon from "../icons/download.svg";
@@ -33,6 +34,7 @@ import styles from "./request-plugins.module.scss";
 const labels = () => Locale.RequestPlugins;
 const text = (value?: LocalizedText) => localizeText(value, getLang());
 const bundledClaudeVersion = "4.0.0";
+const bundledAgyVersion = "1.0.0";
 
 export function RequestPluginManager() {
   const config = useAppConfig();
@@ -42,6 +44,11 @@ export function RequestPluginManager() {
     (pkg) =>
       pkg.manifest.id === "nextchat.claude-code" &&
       pkg.manifest.version === bundledClaudeVersion,
+  );
+  const agyAdded = config.requestPlugins.some(
+    (pkg) =>
+      pkg.manifest.id === "nextchat.antigravity" &&
+      pkg.manifest.version === bundledAgyVersion,
   );
   const install = async (value: unknown) => {
     const pkg = parsePluginPackage(value);
@@ -85,6 +92,29 @@ export function RequestPluginManager() {
             void guarded(async () => {
               const response = await fetch(
                 `./request-plugins/nextchat.claude-code-${bundledClaudeVersion}.json`,
+              );
+              if (!response.ok)
+                throw new Error(`Package HTTP ${response.status}`);
+              await install(await response.json());
+            })
+          }
+        />
+      </ListItem>
+      <ListItem
+        className={styles.row}
+        title={labels().AgyPlugin}
+        subTitle={labels().AgyPluginDescription}
+      >
+        <IconButton
+          text={agyAdded ? labels().Added : labels().Add}
+          aria={labels().AddAgyPlugin}
+          icon={agyAdded ? <ConfirmIcon /> : <AddIcon />}
+          bordered
+          disabled={busy || agyAdded}
+          onClick={() =>
+            void guarded(async () => {
+              const response = await fetch(
+                `./request-plugins/nextchat.antigravity-${bundledAgyVersion}.json`,
               );
               if (!response.ok)
                 throw new Error(`Package HTTP ${response.status}`);
@@ -291,6 +321,9 @@ export function EndpointRequestPlugin(props: {
         pkg.manifest.version === "4.0.0" &&
         config.connection === "builtin" &&
         supportsLocalServices() && <ClaudeCliControl />}
+      {pkg?.manifest.id === "nextchat.antigravity" &&
+        config.connection === "builtin" &&
+        supportsLocalServices() && <AgyControl />}
       {pkg &&
         Object.entries(pkg.manifest.fields)
           .filter(

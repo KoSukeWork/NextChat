@@ -9,6 +9,7 @@ const config = configPath
   : {};
 const entries = config.drivers || [
   { module: "plugins/claude-code/driver.mjs", options: {} },
+  { module: "plugins/antigravity/driver.mjs", options: {} },
 ];
 const drivers = new Map();
 for (const entry of entries) {

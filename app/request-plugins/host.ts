@@ -16,21 +16,26 @@ const requestSchema = z
   })
   .strict();
 
-export type PreparedHostDriver = {
-  hostDriver: "claude-code";
-  input: {
-    endpoint: { baseUrl: string; apiKey: string };
-    sessionId: string;
-    model: string;
-    messages: PluginChat["messages"];
-    enableTools: boolean;
-    authType: string;
-    betas: string[];
-    reasoningEffort?: string;
-  };
+type DriverInput = {
+  sessionId: string;
+  model: string;
+  messages: PluginChat["messages"];
+  enableTools: boolean;
+  reasoningEffort?: string;
 };
+export type PreparedHostDriver =
+  | {
+      hostDriver: "claude-code";
+      input: DriverInput & {
+        endpoint: { baseUrl: string; apiKey: string };
+        authType: string;
+        betas: string[];
+      };
+    }
+  | { hostDriver: "antigravity"; input: DriverInput };
+export const hostDriverNames = ["claude-code", "antigravity"] as const;
 const hostDriverSchema = z
-  .object({ hostDriver: z.literal("claude-code") })
+  .object({ hostDriver: z.enum(hostDriverNames) })
   .strict();
 
 export function resolveRequestPlugin(endpoint: Endpoint) {
@@ -91,7 +96,7 @@ export function createPluginSession(
     config: pkg.config,
     sessionId: pluginSessionId(endpoint.id, sessionId),
     requestId: nanoid(),
-    hostDrivers: supportsLocalServices() ? ["claude-code"] : [],
+    hostDrivers: supportsLocalServices() ? [...hostDriverNames] : [],
   };
   const validate = (value: unknown, driver: boolean): PluginRequest => {
     if (value && typeof value === "object" && "transport" in value)
@@ -149,6 +154,24 @@ export function createPluginSession(
         false,
       );
     },
+    async models(signal?: AbortSignal) {
+      await prepare(signal);
+      if (!pkg.manifest.capabilities.includes("driver")) return null;
+      const result = await callPlugin(
+        pkg.source,
+        "prepareModels",
+        [context],
+        signal,
+      );
+      if (result === null) return null;
+      const host = hostDriverSchema.safeParse(result);
+      if (host.success) {
+        if (!context.hostDrivers?.includes(host.data.hostDriver))
+          throw new Error("This built-in driver is unavailable");
+        return host.data;
+      }
+      return validate(result, true);
+    },
     async chat(chat: PluginChat, signal?: AbortSignal) {
       await prepare(signal);
       if (!pkg.manifest.capabilities.includes("driver")) return null;
@@ -164,22 +187,26 @@ export function createPluginSession(
         if (!context.hostDrivers?.includes(host.data.hostDriver))
           throw new Error("This built-in driver is unavailable");
         const effort = pkg.config.nativeEffort || chat.reasoningEffort;
-        const input: PreparedHostDriver["input"] = {
-          endpoint: { baseUrl: endpoint.baseUrl, apiKey: endpoint.apiKey },
+        const input: DriverInput = {
           sessionId: context.sessionId,
           model: chat.model,
           messages: chat.messages,
           enableTools: chat.enableTools,
-          authType: pkg.config.authType,
-          betas: (pkg.config.nativeBeta || "")
-            .split(",")
-            .map((value) => value.trim())
-            .filter(Boolean),
           ...(effort ? { reasoningEffort: effort } : {}),
         };
+        if (host.data.hostDriver === "antigravity")
+          return { hostDriver: "antigravity", input } as PreparedHostDriver;
         return {
-          hostDriver: host.data.hostDriver,
-          input,
+          hostDriver: "claude-code",
+          input: {
+            ...input,
+            endpoint: { baseUrl: endpoint.baseUrl, apiKey: endpoint.apiKey },
+            authType: pkg.config.authType,
+            betas: (pkg.config.nativeBeta || "")
+              .split(",")
+              .map((value) => value.trim())
+              .filter(Boolean),
+          },
         } as PreparedHostDriver;
       }
       return validate(result, true);

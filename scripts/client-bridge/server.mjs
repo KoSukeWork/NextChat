@@ -17,7 +17,8 @@ export function createBridge({
     throw new Error("Invalid bridge timeout");
   const hostTools = createHostTools();
   const server = http.createServer(async (req, res) => {
-    const route = new URL(req.url, "http://bridge.local").pathname;
+    const requestUrl = new URL(req.url, "http://bridge.local");
+    const route = requestUrl.pathname;
     if (await hostTools.handle(req, res, route, token)) return;
     if (!authorized(req.headers.authorization, token)) {
       res.writeHead(401);
@@ -40,6 +41,51 @@ export function createBridge({
         res.writeHead(503);
         return res.end("Client driver is unavailable");
       }
+    }
+    const modelDriverId = /^\/v1\/drivers\/([a-z0-9.-]+)\/models$/.exec(
+      route,
+    )?.[1];
+    if (req.method === "GET" && modelDriverId) {
+      const driver = drivers.get(modelDriverId);
+      if (!driver?.models) {
+        res.writeHead(404);
+        return res.end("Unknown client driver");
+      }
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      res.on("close", abort);
+      const timer = setTimeout(abort, 30000);
+      try {
+        const data = await driver.models(
+          { cliVersion: requestUrl.searchParams.get("version") },
+          { signal: controller.signal },
+        );
+        if (!res.destroyed) {
+          res.writeHead(200, {
+            "content-type": "application/json",
+            "cache-control": "no-store",
+          });
+          res.end(JSON.stringify({ data }));
+        }
+      } catch (error) {
+        if (!res.destroyed) {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: {
+                message:
+                  error instanceof Error
+                    ? error.message
+                    : "Cannot fetch models",
+              },
+            }),
+          );
+        }
+      } finally {
+        clearTimeout(timer);
+        res.removeListener("close", abort);
+      }
+      return;
     }
     const id = /^\/v1\/drivers\/([a-z0-9.-]+)\/chat$/.exec(route)?.[1];
     const driver = drivers.get(id);

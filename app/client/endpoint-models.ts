@@ -16,6 +16,49 @@ export async function fetchEndpointModels(
   const seenPages = new Set<string>();
   let page = "";
   try {
+    if (plugin) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+      try {
+        const prepared = await plugin.models(controller.signal);
+        if (prepared) {
+          let entries: any;
+          if ("hostDriver" in prepared) {
+            if (prepared.hostDriver !== "antigravity" || !window.__TAURI__)
+              throw new Error("Model discovery is unavailable for this driver");
+            entries = await window.__TAURI__.invoke("agy_acp_models");
+          } else {
+            const response = await requestFetch(prepared.url, {
+              method: "GET",
+              headers: prepared.headers,
+              redirect: "manual",
+              signal: controller.signal,
+            });
+            if (!response.ok)
+              throw new Error(
+                `HTTP ${response.status}: ${(await response.text()).slice(
+                  0,
+                  500,
+                )}`,
+              );
+            entries = (await response.json())?.data;
+          }
+          if (!Array.isArray(entries))
+            throw new Error("Invalid model list response");
+          return entries
+            .filter((item) => typeof item?.id === "string" && item.id)
+            .map((item) => ({
+              name: item.id,
+              ...(typeof item.display_name === "string" &&
+              item.display_name !== item.id
+                ? { displayName: item.display_name }
+                : {}),
+            }));
+        }
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
     do {
       const url = new URL(endpointUrl(endpoint, "models"));
       if (endpoint.protocol === "gemini") {

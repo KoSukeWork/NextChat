@@ -50,6 +50,12 @@ const pkg = JSON.parse(
     "utf8",
   ),
 );
+const agyPkg = JSON.parse(
+  readFileSync(
+    "public/request-plugins/nextchat.antigravity-1.0.0.json",
+    "utf8",
+  ),
+);
 const { useAppConfig } = await import("../app/store/config");
 const { RequestPluginManager } = await import(
   "../app/components/request-plugins"
@@ -157,4 +163,49 @@ test("install a package without rebuilding and bind its configurable version to 
   expect(useAppConfig.getState().endpoints[0].requestPlugin?.version).toBe(
     "4.0.0",
   );
+});
+
+test("Antigravity can be installed and bound without a gateway or manually typed model", async () => {
+  jest
+    .mocked(global.fetch)
+    .mockImplementation(
+      async () => ({ ok: true, json: async () => agyPkg }) as Response,
+    );
+  render(
+    <>
+      <RequestPluginManager />
+      <EndpointConfigList />
+    </>,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: Locale.RequestPlugins.AddAgyPlugin }),
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: new RegExp(Locale.UI.Confirm) }),
+  );
+  await waitFor(() =>
+    expect(useAppConfig.getState().requestPlugins).toHaveLength(1),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: Locale.EndpointConfig.Add }),
+  );
+  fireEvent.change(screen.getByLabelText(Locale.EndpointConfig.Name), {
+    target: { value: "agy" },
+  });
+  fireEvent.change(screen.getByLabelText(Locale.EndpointConfig.Protocol), {
+    target: { value: "anthropic" },
+  });
+  fireEvent.change(screen.getByLabelText(Locale.RequestPlugins.Select), {
+    target: { value: "nextchat.antigravity@1.0.0" },
+  });
+  expect(screen.queryByLabelText(Locale.EndpointConfig.BaseUrl)).toBeNull();
+  expect(screen.queryByLabelText(Locale.EndpointConfig.ApiKey)).toBeNull();
+  expect(screen.queryByLabelText(Locale.EndpointConfig.ModelName)).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: Locale.EndpointConfig.Save }),
+  );
+  expect(useAppConfig.getState().endpoints[0].requestPlugin).toMatchObject({
+    id: "nextchat.antigravity",
+    version: "1.0.0",
+  });
 });

@@ -97,6 +97,8 @@ code1,code2,code3
 
 需要 Claude Code CLI 专用接口时，可以安装请求插件。桌面版直接调用已安装的 Claude Code，网页版连接自行部署的 Node 桥接服务。配置方法参见 [Claude Code CLI 插件](docs/claude-code-modes.md)。
 
+Antigravity ACP 请求插件的配置和验证状态见 [Antigravity ACP 插件](docs/antigravity.md)。
+
 可选服务端配置见 `.env.template`。`CODE` 用于网页版访问验证；启用 `ENABLE_MCP=true` 时也必须配置 `CODE`。`WHITE_WEBDAV_ENDPOINTS` 用于增加允许的 WebDAV 转发地址。
 
 ## 开发

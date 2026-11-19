@@ -85,6 +85,19 @@ const cn = {
     Pinned: "已置顶",
   },
   RequestPlugins: {
+    AgyService: {
+      Executable: "本机 Antigravity CLI",
+      ExecutableHint: "自动查找已安装的 agy.exe，也可选择绝对路径。",
+      AutoDetect: "自动查找 agy",
+      Browse: "选择程序",
+      Version: "检测到的 agy 版本",
+      Login: "登录状态",
+      LoginHint: "使用 agy 已有的登录；如提示需要登录，请在终端运行 agy。",
+      Timeout: "agy 请求时限（分钟）",
+      TimeoutHint: "0 表示不限，可手动取消。",
+      InvalidTimeout: "请求时限必须为 0 到 1440 分钟。",
+      Error: "agy 提示",
+    },
     Service: {
       AllowedTools: "预先允许的 CLI 工具",
       AllowedToolsHint:
@@ -107,6 +120,9 @@ const cn = {
     Description:
       "为 NextChat 添加请求适配能力。添加后，在接口配置中选择对应插件。",
     ClaudePlugin: "Claude Code 请求插件",
+    AgyPlugin: "Antigravity 请求插件",
+    AgyPluginDescription: "使用已登录的 Antigravity CLI，或连接外部桥接服务。",
+    AddAgyPlugin: "添加 Antigravity 请求插件",
     ClaudePluginDescription:
       "桌面使用已安装的 Claude Code，网页版连接自行部署的桥接服务。",
     AddClaudePlugin: "添加 Claude Code 请求插件",
