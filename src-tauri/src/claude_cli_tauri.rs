@@ -220,6 +220,15 @@ pub async fn claude_cli_status(state: tauri::State<'_, Arc<CliApp>>) -> Result<C
         .map_err(|_| "Cannot inspect Claude Code".into())
 }
 #[tauri::command]
+pub async fn claude_cli_login_status(
+    state: tauri::State<'_, Arc<CliApp>>,
+) -> Result<String, String> {
+    let runtime = state.runtime.clone();
+    tauri::async_runtime::spawn_blocking(move || runtime.login_state().map(str::to_owned))
+        .await
+        .map_err(|_| "Cannot inspect Claude Code login")?
+}
+#[tauri::command]
 pub async fn claude_cli_configure(
     state: tauri::State<'_, Arc<CliApp>>,
     executable_path: String,

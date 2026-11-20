@@ -89,12 +89,12 @@ test("migrates built-in, external, removed HTTP and v1 bindings without changing
     unrelated,
   ]);
   expect(result.endpoints[0].requestPlugin).toMatchObject({
-    version: "4.0.0",
+    version: "4.1.0",
     config: { connection: "builtin", nativeBeta: "beta-one" },
   });
   expect(result.endpoints[0].requestPlugin!.config.bridgeToken).toBeUndefined();
   expect(result.endpoints[1].requestPlugin).toMatchObject({
-    version: "4.0.0",
+    version: "4.1.0",
     config: {
       connection: "external",
       bridgeUrl: "https://bridge.example",
@@ -103,7 +103,7 @@ test("migrates built-in, external, removed HTTP and v1 bindings without changing
     },
   });
   expect(result.endpoints[2].requestPlugin).toMatchObject({
-    version: "4.0.0",
+    version: "4.1.0",
     migrationNotice: "http-removed",
     config: { connection: "builtin" },
   });
@@ -111,7 +111,7 @@ test("migrates built-in, external, removed HTTP and v1 bindings without changing
     result.endpoints[2].requestPlugin!.config.transportToken,
   ).toBeUndefined();
   expect(result.endpoints[3].requestPlugin).toMatchObject({
-    version: "4.0.0",
+    version: "4.1.0",
     config: { connection: "external", nativeCliVersion: "2.1.9" },
   });
   expect(result.endpoints[4]).toEqual(endpoints[4]);
@@ -133,7 +133,7 @@ test("migrates built-in, external, removed HTTP and v1 bindings without changing
     result.packages.some(
       (item) =>
         item.manifest.id === "nextchat.claude-code" &&
-        item.manifest.version === "4.0.0" &&
+        item.manifest.version === "4.1.0" &&
         item.enabled,
     ),
   ).toBe(true);
@@ -145,6 +145,46 @@ test("migrates built-in, external, removed HTTP and v1 bindings without changing
   expect(migrateClaudeConfiguration(result.endpoints, result.packages)).toEqual(
     result,
   );
+});
+
+test("4.0.0 bindings and installed packages migrate without changing gateway settings", () => {
+  const old = endpoint("v4", "4.0.0", {
+    connection: "external",
+    authType: "bearer",
+    bridgeUrl: "https://bridge.example",
+    bridgeToken: "bridge-token-value",
+    nativeBeta: "beta-one",
+    nativeEffort: "high",
+  });
+  const result = migrateClaudeConfiguration([old], [pkg("4.0.0", false)]);
+  expect(result.endpoints[0].requestPlugin).toEqual({
+    ...old.requestPlugin,
+    version: "4.1.0",
+    config: { ...old.requestPlugin.config, credentials: "gateway" },
+  });
+  expect(result.endpoints[0].baseUrl).toBe(old.baseUrl);
+  expect(result.endpoints[0].apiKey).toBe(old.apiKey);
+  expect(
+    result.packages.find((item) => item.manifest.version === "4.1.0")?.enabled,
+  ).toBe(false);
+  expect(
+    result.packages.some((item) => item.manifest.version === "4.0.0"),
+  ).toBe(false);
+});
+
+test("4.0.0 prerelease bindings retain their v4 connection settings", () => {
+  const old = endpoint("v4-beta", "4.0.0-beta.1", {
+    connection: "external",
+    authType: "bearer",
+    bridgeUrl: "https://bridge.example",
+    bridgeToken: "bridge-token-value",
+  });
+  const result = migrateClaudeConfiguration([old], [pkg("4.0.0-beta.1")]);
+  expect(result.endpoints[0].requestPlugin).toEqual({
+    ...old.requestPlugin,
+    version: "4.1.0",
+    config: { ...old.requestPlugin.config, credentials: "gateway" },
+  });
 });
 
 test("disabled old packages do not become enabled during migration", () => {

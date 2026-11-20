@@ -86,6 +86,12 @@ const cn = {
   },
   RequestPlugins: {
     Service: {
+      Login: "Claude 订阅登录状态",
+      LoginChecking: "正在检查",
+      LoginSignedIn: "已登录",
+      LoginSignedOut: "未登录；请在终端运行 claude 登录",
+      LoginUnknown: "无法确认；请在终端运行 claude 检查",
+      LoginRefresh: "重新检查",
       AllowedTools: "预先允许的 CLI 工具",
       AllowedToolsHint:
         "逗号分隔，例如 Read,Glob,Grep,Bash,Write,Edit,WebFetch；留空禁用本地工具。填写后即授权这些工具执行，无需逐次确认。所有 CLI 接口共享，下次请求生效。当前对话启用的 NextChat MCP/工具插件另由原执行器处理。",
@@ -142,6 +148,8 @@ const cn = {
     BaseUrl: "基础地址",
     ApiKey: "API Key",
     RequestUrl: "请求地址",
+    Subscription: "Claude 订阅登录",
+    SubscriptionHint: "使用本机 Claude Code 登录；请手动添加模型。",
     Models: "模型列表",
     ModelName: "模型名称",
     DisplayName: "显示名称（可选）",

@@ -13,13 +13,18 @@ type Status = {
   error?: string;
 };
 
-export function ClaudeCliControl() {
+export function ClaudeCliControl({
+  showLogin = false,
+}: {
+  showLogin?: boolean;
+}) {
   const labels = Locale.RequestPlugins.Service;
   const [path, setPath] = useState("");
   const [version, setVersion] = useState("");
   const [tools, setTools] = useState("Read,Glob,Grep");
   const [timeout, setTimeoutValue] = useState("0");
   const [error, setError] = useState("");
+  const [login, setLogin] = useState("unknown");
   const mounted = useRef(true);
   const revisions = useRef({ path: 0, tools: 0, timeout: 0 });
   const queue = useRef<Promise<void>>(Promise.resolve());
@@ -64,6 +69,20 @@ export function ClaudeCliControl() {
       mounted.current = false;
     };
   }, []);
+  const checkLogin = () => {
+    setLogin("checking");
+    void window.__TAURI__!.invoke("claude_cli_login_status").then(
+      (state) => {
+        if (mounted.current) setLogin(state);
+      },
+      () => {
+        if (mounted.current) setLogin("unknown");
+      },
+    );
+  };
+  useEffect(() => {
+    if (showLogin) checkLogin();
+  }, [showLogin]);
   const saveOptions = () => {
     const minutes = Number(timeout);
     if (!Number.isFinite(minutes) || minutes < 0 || minutes > 1440) {
@@ -112,6 +131,26 @@ export function ClaudeCliControl() {
         </div>
       </ListItem>
       <ListItem title={labels.Version} subTitle={version || "—"} />
+      {showLogin && (
+        <ListItem
+          title={labels.Login}
+          subTitle={
+            login === "checking"
+              ? labels.LoginChecking
+              : login === "signed-in"
+              ? labels.LoginSignedIn
+              : login === "signed-out"
+              ? labels.LoginSignedOut
+              : labels.LoginUnknown
+          }
+        >
+          <IconButton
+            text={labels.LoginRefresh}
+            bordered
+            onClick={checkLogin}
+          />
+        </ListItem>
+      )}
       <ListItem
         className={styles.field}
         title={labels.AllowedTools}

@@ -19,19 +19,27 @@ const requestSchema = z
 export type PreparedHostDriver = {
   hostDriver: "claude-code";
   input: {
-    endpoint: { baseUrl: string; apiKey: string };
+    endpoint?: { baseUrl: string; apiKey: string };
     sessionId: string;
     model: string;
     messages: PluginChat["messages"];
     enableTools: boolean;
-    authType: string;
-    betas: string[];
+    credentials?: "gateway" | "subscription";
+    authType?: string;
+    betas?: string[];
     reasoningEffort?: string;
   };
 };
 const hostDriverSchema = z
   .object({ hostDriver: z.literal("claude-code") })
   .strict();
+
+export function usesClaudeSubscription(endpoint: Endpoint) {
+  return (
+    endpoint.requestPlugin?.id === "nextchat.claude-code" &&
+    endpoint.requestPlugin.config?.credentials === "subscription"
+  );
+}
 
 export function resolveRequestPlugin(endpoint: Endpoint) {
   const binding = endpoint.requestPlugin;
@@ -73,6 +81,9 @@ export function createPluginSession(
 ) {
   const pkg = resolveRequestPlugin(endpoint);
   if (!pkg) return;
+  const subscription =
+    pkg.manifest.id === "nextchat.claude-code" &&
+    pkg.config.credentials === "subscription";
   let disposed = false;
   const prepare = (signal?: AbortSignal) => {
     if (disposed) return Promise.reject(new Error("Plugin session is closed"));
@@ -85,8 +96,8 @@ export function createPluginSession(
     protocol: endpoint.protocol,
     endpoint: {
       id: endpoint.id,
-      baseUrl: endpoint.baseUrl,
-      apiKey: endpoint.apiKey,
+      baseUrl: subscription ? "" : endpoint.baseUrl,
+      apiKey: subscription ? "" : endpoint.apiKey,
     },
     config: pkg.config,
     sessionId: pluginSessionId(endpoint.id, sessionId),
@@ -165,16 +176,24 @@ export function createPluginSession(
           throw new Error("This built-in driver is unavailable");
         const effort = pkg.config.nativeEffort || chat.reasoningEffort;
         const input: PreparedHostDriver["input"] = {
-          endpoint: { baseUrl: endpoint.baseUrl, apiKey: endpoint.apiKey },
           sessionId: context.sessionId,
           model: chat.model,
           messages: chat.messages,
           enableTools: chat.enableTools,
-          authType: pkg.config.authType,
-          betas: (pkg.config.nativeBeta || "")
-            .split(",")
-            .map((value) => value.trim())
-            .filter(Boolean),
+          credentials: subscription ? "subscription" : "gateway",
+          ...(subscription
+            ? {}
+            : {
+                endpoint: {
+                  baseUrl: endpoint.baseUrl,
+                  apiKey: endpoint.apiKey,
+                },
+                authType: pkg.config.authType,
+                betas: (pkg.config.nativeBeta || "")
+                  .split(",")
+                  .map((value) => value.trim())
+                  .filter(Boolean),
+              }),
           ...(effort ? { reasoningEffort: effort } : {}),
         };
         return {

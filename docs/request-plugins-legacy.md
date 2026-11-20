@@ -24,6 +24,7 @@ node scripts/client-bridge.mjs
       "executable": "C:/Users/admin/.local/bin/claude.exe",
       "workingDirectory": "C:/NextChat/cli-work",
       "dataDirectory": "C:/NextChat/cli-data",
+      "subscriptionLogin": false,
       "allowedTools": "Read,Glob,Grep",
       "maxSessions": 100,
       "retentionMs": 604800000
@@ -34,4 +35,6 @@ node scripts/client-bridge.mjs
 
 路径相对于启动目录解析。省略 `executable` 时使用 `NEXTCHAT_CLAUDE_PATH` 或 PATH 中的 `claude`。外部桥接默认核对插件配置的 CLI 版本；文件更新后重新检测版本。`timeoutMs` 为 0 表示不限。管理员应根据部署环境保护桥接连接和令牌。
 
-桥接隔离 CLI 配置及凭据，通过临时文件传递系统提示词。预授权 CLI 工具由管理员的 `allowedTools` 控制；NextChat 当前对话启用的 MCP 和插件工具仍由 NextChat 执行。每次请求使用独立授权的临时 MCP 入口。桥接重启后重新导入 NextChat 的对话历史。
+个人订阅登录默认关闭。仅当桥接和连接它的 NextChat 均只供订阅持有人本人使用时，管理员才可将驱动 `options.subscriptionLogin` 改为 `true`。不要把该桥接或使用它的 NextChat 部署提供给其他人；令牌验证仍然必需。先在桥接机器的终端运行官方、未经修改的 `claude` 并自行登录，NextChat 不读取或保存登录凭据。有关限制与官方条款链接见 [Claude Code CLI 插件](claude-code-modes.md)。
+
+网关模式使用隔离的 CLI 配置；订阅模式使用 Claude Code 默认配置以访问它自己的登录。两种模式都通过临时文件传递系统提示词。预授权 CLI 工具由管理员的 `allowedTools` 控制；NextChat 当前对话启用的 MCP 和插件工具仍由 NextChat 执行。每次请求使用独立授权的临时 MCP 入口。桥接重启后重新导入 NextChat 的对话历史。

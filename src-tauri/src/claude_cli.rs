@@ -42,7 +42,7 @@ impl Default for CliSettings {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EndpointInput {
     pub base_url: String,
@@ -57,17 +57,24 @@ pub struct Message {
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CliInput {
+    #[serde(default)]
     pub endpoint: EndpointInput,
     pub session_id: String,
     pub model: String,
     pub messages: Vec<Message>,
+    #[serde(default)]
     pub auth_type: String,
+    #[serde(default = "gateway_credentials")]
+    pub credentials: String,
     #[serde(default)]
     pub enable_tools: bool,
     #[serde(default)]
     pub betas: Vec<String>,
     #[serde(default)]
     pub reasoning_effort: Option<String>,
+}
+fn gateway_credentials() -> String {
+    "gateway".into()
 }
 
 pub(crate) fn random_uuid() -> Result<String, String> {
@@ -114,19 +121,32 @@ fn validate(input: &CliInput) -> Result<(), String> {
     }) {
         return Err("Invalid message".into());
     }
-    let url = reqwest::Url::parse(&input.endpoint.base_url)
-        .map_err(|_| "Use a plain HTTP(S) gateway base URL")?;
-    if !matches!(url.scheme(), "http" | "https")
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-        || input.endpoint.api_key.is_empty()
-    {
-        return Err("Invalid gateway configuration".into());
+    if !matches!(input.credentials.as_str(), "gateway" | "subscription") {
+        return Err("Invalid Claude Code credential mode".into());
     }
-    if !matches!(input.auth_type.as_str(), "api-key" | "bearer") {
-        return Err("Invalid gateway authentication".into());
+    if input.credentials == "gateway" {
+        let url = reqwest::Url::parse(&input.endpoint.base_url)
+            .map_err(|_| "Use a plain HTTP(S) gateway base URL")?;
+        if !matches!(url.scheme(), "http" | "https")
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+            || input.endpoint.api_key.is_empty()
+        {
+            return Err("Invalid gateway configuration".into());
+        }
+        if !matches!(input.auth_type.as_str(), "api-key" | "bearer") {
+            return Err("Invalid gateway authentication".into());
+        }
+    } else if !input.endpoint.base_url.is_empty()
+        || !input.endpoint.api_key.is_empty()
+        || !input.auth_type.is_empty()
+        || !input.betas.is_empty()
+    {
+        return Err(
+            "Subscription requests cannot contain gateway credentials or beta flags".into(),
+        );
     }
     if input.betas.len() > 30
         || input.betas.iter().any(|beta| {
@@ -222,6 +242,146 @@ fn hide_window(command: &mut Command) {
     }
 }
 
+// Do not enumerate or read inherited Claude/Anthropic credential values.
+fn clean_environment(command: &mut Command) {
+    command.env_clear();
+    for name in [
+        "PATH",
+        "PATHEXT",
+        "SystemRoot",
+        "WINDIR",
+        "USERPROFILE",
+        "HOME",
+        "HOMEDRIVE",
+        "HOMEPATH",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "TMP",
+        "TEMP",
+        "TMPDIR",
+        "SHELL",
+        "TERM",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_CACHE_HOME",
+        "XDG_RUNTIME_DIR",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "NODE_EXTRA_CA_CERTS",
+        "COMSPEC",
+        "PROGRAMDATA",
+        "PROGRAMFILES",
+        "PROCESSOR_ARCHITECTURE",
+        "NUMBER_OF_PROCESSORS",
+        "USERNAME",
+        "USERDOMAIN",
+        "LANG",
+        "LC_ALL",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "ALL_PROXY",
+    ] {
+        if let Some(value) = std::env::var_os(name) {
+            command.env(name, value);
+        }
+    }
+    command
+        .env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
+        .env("DISABLE_AUTOUPDATER", "1");
+}
+
+fn subscription_environment(command: &mut Command) {
+    clean_environment(command);
+    command.env("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");
+}
+
+fn login_status(
+    path: &Path,
+    work: &Path,
+    cancel: &CancellationToken,
+    deadline: Option<Instant>,
+) -> Result<&'static str, String> {
+    if cancel.is_cancelled() {
+        return Err("Claude Code request cancelled".into());
+    }
+    let mut command = Command::new(path);
+    hide_window(&mut command);
+    subscription_environment(&mut command);
+    command
+        .current_dir(work)
+        .args(["auth", "status", "--json"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    let mut child = command
+        .spawn()
+        .map_err(|_| "Cannot inspect Claude Code login")?;
+    #[cfg(windows)]
+    let job = attach_job(&child).map_err(|_| {
+        let _ = child.kill();
+        "Cannot protect Claude Code process"
+    })?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("Cannot inspect Claude Code login")?;
+    let reader = thread::spawn(move || {
+        let mut data = Vec::new();
+        let _ = stdout.take(65537).read_to_end(&mut data);
+        data
+    });
+    let started = Instant::now();
+    let status = loop {
+        if cancel.is_cancelled()
+            || deadline.map_or(false, |end| Instant::now() >= end)
+            || started.elapsed() >= Duration::from_secs(10)
+        {
+            #[cfg(windows)]
+            drop(job);
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = reader.join();
+            return Err(if cancel.is_cancelled() {
+                "Claude Code request cancelled"
+            } else {
+                "Cannot inspect Claude Code login"
+            }
+            .into());
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => thread::sleep(Duration::from_millis(20)),
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = reader.join();
+                return Err("Cannot inspect Claude Code login".into());
+            }
+        }
+    };
+    let data = reader.join().unwrap_or_default();
+    if data.len() > 65536 || !(status.success() || status.code() == Some(1)) {
+        return Ok("unknown");
+    }
+    let value: Value = match serde_json::from_slice(&data) {
+        Ok(value) => value,
+        Err(_) => return Ok("unknown"),
+    };
+    if value["loggedIn"] == false {
+        return Ok("signed-out");
+    }
+    if value["loggedIn"] == true
+        && matches!(
+            value["authMethod"].as_str(),
+            Some("oauth_token" | "oauth" | "claude.ai")
+        )
+    {
+        return Ok("signed-in");
+    }
+    Ok("unknown")
+}
+
 #[cfg(windows)]
 fn file_identity(path: &Path) -> Result<String, String> {
     use std::os::windows::io::AsRawHandle;
@@ -271,6 +431,7 @@ pub struct CliRuntime {
     pub sessions: Arc<SessionStore>,
     version: Mutex<HashMap<PathBuf, (String, String)>>,
     settings_lock: Mutex<()>,
+    owned_sessions: Mutex<Option<Arc<crate::claude_cli_owned::OwnedSessions>>>,
 }
 impl CliRuntime {
     pub fn new(directory: PathBuf) -> Result<Arc<Self>, String> {
@@ -281,6 +442,7 @@ impl CliRuntime {
             sessions,
             version: Mutex::new(HashMap::new()),
             settings_lock: Mutex::new(()),
+            owned_sessions: Mutex::new(None),
         }))
     }
     pub fn settings(&self) -> CliSettings {
@@ -335,6 +497,13 @@ impl CliRuntime {
             exact_executable(&settings.cli_path)
         }
     }
+    pub fn login_state(&self) -> Result<&'static str, String> {
+        let settings = self.settings();
+        let path = self.executable(&settings)?;
+        let work = self.directory.join("cli-work");
+        fs::create_dir_all(&work).map_err(|_| "Cannot prepare CLI working directory")?;
+        login_status(&path, &work, &CancellationToken::new(), None)
+    }
     pub fn cli_version(
         &self,
         path: &Path,
@@ -354,6 +523,7 @@ impl CliRuntime {
         }
         let mut command = Command::new(path);
         hide_window(&mut command);
+        subscription_environment(&mut command);
         command
             .arg("--version")
             .stdin(Stdio::null())
@@ -435,6 +605,7 @@ impl CliRuntime {
     ) -> Result<(), String> {
         validate(&input)?;
         let settings = self.settings();
+        let subscription = input.credentials == "subscription";
         let started = Instant::now();
         let expired = || {
             settings.request_timeout_ms > 0
@@ -450,6 +621,15 @@ impl CliRuntime {
             started.checked_add(Duration::from_millis(settings.request_timeout_ms))
         };
         let version = self.cli_version(&path, &cancel, deadline)?;
+        let work = self.directory.join("cli-work");
+        fs::create_dir_all(&work).map_err(|_| "Cannot prepare CLI working directory")?;
+        if subscription {
+            match login_status(&path, &work, &cancel, deadline)? {
+                "signed-in" => {},
+                "signed-out" => return Err("请先在终端运行 claude 并登录订阅账号 / Run claude in a terminal and sign in to your subscription first".into()),
+                _ => return Err("无法确认 Claude 订阅登录状态 / Cannot verify Claude subscription login status".into()),
+            }
+        }
         let mut systems = Vec::new();
         let mut messages = Vec::new();
         for message in &input.messages {
@@ -474,7 +654,12 @@ impl CliRuntime {
         }
         let system = systems.join("\n\n");
         let scope = digest(&json!([
-            input.endpoint,
+            input.credentials,
+            if subscription {
+                Value::Null
+            } else {
+                json!(input.endpoint)
+            },
             version,
             input.model,
             system,
@@ -484,7 +669,15 @@ impl CliRuntime {
             settings.allowed_tools,
             host_tools
         ]));
-        let key = digest(&json!([input.endpoint, input.session_id]));
+        let key = digest(&json!([
+            input.credentials,
+            if subscription {
+                Value::Null
+            } else {
+                json!(input.endpoint)
+            },
+            input.session_id
+        ]));
         let lease = self.sessions.begin(
             &key,
             &scope,
@@ -497,45 +690,37 @@ impl CliRuntime {
             .map_err(|_| "Cannot prepare CLI request")?;
         let mut command = Command::new(path);
         hide_window(&mut command);
-        let work = self.directory.join("cli-work");
-        fs::create_dir_all(&work).map_err(|_| "Cannot prepare CLI working directory")?;
         command
-            .current_dir(work)
+            .current_dir(&work)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        for (name, _) in std::env::vars_os() {
-            let key = name.to_string_lossy().to_ascii_uppercase();
-            if key.starts_with("ANTHROPIC_")
-                || key.starts_with("CLAUDE_")
-                || key.starts_with("NEXTCHAT_BRIDGE_")
-                || key.starts_with("NEXTCHAT_WIRE_")
-                || key.starts_with("NEXTCHAT_SERVICE_")
-                || key == "BUN_OPTIONS"
-                || key == "NODE_OPTIONS"
-            {
-                command.env_remove(name);
-            }
+        if subscription {
+            subscription_environment(&mut command);
+        } else {
+            // Start from a safe allowlist so even inherited credential values
+            // are never read by this process while preparing the child.
+            clean_environment(&mut command);
+            let gateway = input
+                .endpoint
+                .base_url
+                .trim_end_matches('/')
+                .strip_suffix("/v1")
+                .unwrap_or(input.endpoint.base_url.trim_end_matches('/'));
+            command
+                .env("ANTHROPIC_BASE_URL", gateway)
+                .env(
+                    if input.auth_type == "bearer" {
+                        "ANTHROPIC_AUTH_TOKEN"
+                    } else {
+                        "ANTHROPIC_API_KEY"
+                    },
+                    &input.endpoint.api_key,
+                )
+                .env("CLAUDE_CONFIG_DIR", lease.path())
+                .env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
+                .env("DISABLE_AUTOUPDATER", "1");
         }
-        let gateway = input
-            .endpoint
-            .base_url
-            .trim_end_matches('/')
-            .strip_suffix("/v1")
-            .unwrap_or(input.endpoint.base_url.trim_end_matches('/'));
-        command
-            .env("ANTHROPIC_BASE_URL", gateway)
-            .env(
-                if input.auth_type == "bearer" {
-                    "ANTHROPIC_AUTH_TOKEN"
-                } else {
-                    "ANTHROPIC_API_KEY"
-                },
-                &input.endpoint.api_key,
-            )
-            .env("CLAUDE_CONFIG_DIR", lease.path())
-            .env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
-            .env("DISABLE_AUTOUPDATER", "1");
         command.args([
             "--print",
             "--input-format",
@@ -558,6 +743,9 @@ impl CliRuntime {
             },
             lease.id(),
         ]);
+        if subscription {
+            command.args(["--disable-slash-commands", "--settings", r#"{"disableAllHooks":true,"disableClaudeAiConnectors":true,"autoMemoryEnabled":false}"#]);
+        }
         let mut allowed: Vec<&str> = if input.enable_tools {
             settings
                 .allowed_tools
@@ -580,7 +768,7 @@ impl CliRuntime {
         if !allowed.is_empty() {
             command.args(["--allowedTools", &allowed.join(",")]);
         }
-        if !input.betas.is_empty() {
+        if !subscription && !input.betas.is_empty() {
             command.args(["--betas", &input.betas.join(",")]);
         }
         if let Some(effort) = input
@@ -625,6 +813,24 @@ impl CliRuntime {
             }
             .into());
         }
+        let _owned = if subscription {
+            let registry = {
+                let mut state = self
+                    .owned_sessions
+                    .lock()
+                    .map_err(|_| "Subscription session state unavailable")?;
+                if state.is_none() {
+                    *state = Some(crate::claude_cli_owned::OwnedSessions::new(
+                        self.directory.join("subscription-owned"),
+                        &work,
+                    )?);
+                }
+                state.as_ref().unwrap().clone()
+            };
+            Some(registry.begin(lease.id())?)
+        } else {
+            None
+        };
         let mut child = command.spawn().map_err(|_| "Cannot launch Claude Code")?;
         #[cfg(windows)]
         let job = attach_job(&child).map_err(|_| {
@@ -697,6 +903,24 @@ impl CliRuntime {
                     Ok(Ok(line)) => {
                         let event: Value = serde_json::from_slice(&line)
                             .map_err(|_| "Claude Code returned an invalid stream event")?;
+                        if subscription
+                            && event["type"] == "result"
+                            && (event["is_error"] == true || event["subtype"] != "success")
+                        {
+                            let message = event["errors"]
+                                .as_array()
+                                .map(|values| {
+                                    values
+                                        .iter()
+                                        .filter_map(Value::as_str)
+                                        .collect::<Vec<_>>()
+                                        .join("\n")
+                                })
+                                .filter(|text| !text.is_empty())
+                                .or_else(|| event["result"].as_str().map(str::to_owned))
+                                .unwrap_or_else(|| "Request failed".into());
+                            return Err(redact(&message, ""));
+                        }
                         for output in parser.accept(&event, &input.endpoint.api_key)? {
                             emit(output)?;
                         }
@@ -726,6 +950,28 @@ impl CliRuntime {
         let _ = out_thread.join();
         let diagnostic = err_thread.join().unwrap_or_default();
         if let Err(error) = result {
+            if subscription {
+                let message = if error == "Claude Code stopped without a successful result"
+                    && !diagnostic.is_empty()
+                {
+                    redact(&diagnostic, "")
+                } else {
+                    redact(&error, "")
+                };
+                let lower = message.to_ascii_lowercase();
+                if [
+                    "not logged in",
+                    "not signed in",
+                    "please log in",
+                    "please sign in",
+                ]
+                .iter()
+                .any(|value| lower.contains(value))
+                {
+                    return Err("请先在终端运行 claude 并登录订阅账号 / Run claude in a terminal and sign in to your subscription first".into());
+                }
+                return Err(message);
+            }
             return Err(format!(
                 "{}{}",
                 redact(&error, &input.endpoint.api_key),
@@ -808,6 +1054,7 @@ mod tests {
                 },
             ],
             auth_type: "api-key".into(),
+            credentials: "gateway".into(),
             enable_tools: false,
             betas: vec![],
             reasoning_effort: None,
@@ -875,6 +1122,85 @@ mod tests {
             .unwrap()
             .path();
         assert!(fs::read_dir(session).unwrap().next().is_none());
+    }
+    #[test]
+    fn subscription_environment_login_resume_and_limit() {
+        // Set dummy inherited credentials only in a child test process, so
+        // parallel tests and the parent process never have their env changed.
+        if std::env::var_os("NEXTCHAT_SUBSCRIPTION_TEST_CHILD").is_none() {
+            let mut command = Command::new(std::env::current_exe().unwrap());
+            hide_window(&mut command);
+            assert!(command
+                .args([
+                    "--exact",
+                    "claude_cli::tests::subscription_environment_login_resume_and_limit"
+                ])
+                .env("NEXTCHAT_SUBSCRIPTION_TEST_CHILD", "1")
+                .env("ANTHROPIC_API_KEY", "dummy-inherited-key")
+                .env("ANTHROPIC_BASE_URL", "http://invalid.test")
+                .env("CLAUDE_CONFIG_DIR", "dummy-config")
+                .env("CLAUDE_CODE_OAUTH_TOKEN", "dummy-inherited-token")
+                .status()
+                .unwrap()
+                .success());
+            return;
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let runtime = runtime(temp.path(), 0);
+        let mut first = input("subscription-test");
+        first.credentials = "subscription".into();
+        first.endpoint = EndpointInput::default();
+        first.auth_type.clear();
+        let events = Mutex::new(Vec::new());
+        runtime
+            .run(
+                first.clone(),
+                None,
+                None,
+                CancellationToken::new(),
+                |event| {
+                    events.lock().unwrap().push(event);
+                    Ok(())
+                },
+            )
+            .unwrap();
+        assert_eq!(events.lock().unwrap()[0]["text"], "reply");
+        let mut next = first.clone();
+        next.messages.push(Message {
+            role: "assistant".into(),
+            content: json!("reply"),
+        });
+        next.messages.push(Message {
+            role: "user".into(),
+            content: json!("subscription-test again"),
+        });
+        events.lock().unwrap().clear();
+        runtime
+            .run(next, None, None, CancellationToken::new(), |event| {
+                events.lock().unwrap().push(event);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(events.lock().unwrap()[0]["text"], "resumed");
+        let mut limited = first.clone();
+        limited.session_id = "limit".into();
+        limited.messages.last_mut().unwrap().content =
+            json!("subscription-test subscription-limit");
+        assert_eq!(
+            runtime
+                .run(limited, None, None, CancellationToken::new(), |_| Ok(()))
+                .unwrap_err(),
+            "Usage limit reached; try again later"
+        );
+        fs::write(
+            temp.path().join("local-services/cli-work/fake-signed-out"),
+            "",
+        )
+        .unwrap();
+        assert!(runtime
+            .run(first, None, None, CancellationToken::new(), |_| Ok(()))
+            .unwrap_err()
+            .contains("运行 claude"));
     }
     #[test]
     fn timeout_and_diagnostics_are_redacted() {
@@ -1163,5 +1489,56 @@ mod tests {
             .filter_map(|event| event["text"].as_str())
             .collect();
         assert!(text.contains("Before tool\n\nReply"), "{text}");
+    }
+
+    #[test]
+    fn real_subscription_uses_official_cli_when_explicitly_enabled() {
+        if std::env::var("NEXTCHAT_TEST_REAL_CLAUDE_SUBSCRIPTION").as_deref() != Ok("1") {
+            return;
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let runtime = CliRuntime::new(temp.path().join("local-services")).unwrap();
+        let path = std::env::var("NEXTCHAT_CLAUDE_PATH")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(detect_cli)
+            .expect("Claude Code executable");
+        runtime
+            .save_settings(&CliSettings {
+                cli_path: path.to_string_lossy().into_owned(),
+                allowed_tools: String::new(),
+                request_timeout_ms: 90_000,
+            })
+            .unwrap();
+        let mut request = input("Reply with the word hello.");
+        request.credentials = "subscription".into();
+        request.endpoint = EndpointInput::default();
+        request.auth_type.clear();
+        request.model = "sonnet".into();
+        let events = Mutex::new(Vec::new());
+        // This is one attempted prompt, even if the CLI rejects it early.
+        let result = runtime.run(request, None, None, CancellationToken::new(), |event| {
+            events.lock().unwrap().push(event);
+            Ok(())
+        });
+        println!("Real Claude subscription prompts attempted: 1");
+        let cleanup = runtime
+            .owned_sessions
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|registry| registry.cleanup_test_sessions())
+            .unwrap_or(Ok(()));
+        if let Err(error) = cleanup {
+            let preserved = temp.into_path();
+            panic!("{error}; test index preserved at {}", preserved.display());
+        }
+        result.unwrap();
+        let events = events.lock().unwrap();
+        assert!(events.iter().any(|event| event["type"] == "done"));
+        assert!(events.iter().any(|event| event["type"] == "text"
+            && event["text"]
+                .as_str()
+                .map_or(false, |text| !text.trim().is_empty())));
     }
 }

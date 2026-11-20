@@ -21,7 +21,10 @@ import {
 } from "./ui-lib";
 import styles from "./endpoint-config.module.scss";
 import { EndpointRequestPlugin } from "./request-plugins";
-import { resolveRequestPlugin } from "../request-plugins/host";
+import {
+  resolveRequestPlugin,
+  usesClaudeSubscription,
+} from "../request-plugins/host";
 
 const protocolNames: Record<EndpointProtocol, string> = {
   "openai-chat": "OpenAI Chat",
@@ -42,6 +45,7 @@ function EndpointEditor(props: { initial: Endpoint; onClose: () => void }) {
   const [found, setFound] = useState<EndpointModel[]>([]);
   const [selectedFound, setSelectedFound] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const subscription = usesClaudeSubscription(draft);
   const update = (changes: Partial<Endpoint>) =>
     setDraft((current) => ({ ...current, ...changes }));
   const toggle = (items: string[], value: string) =>
@@ -56,7 +60,7 @@ function EndpointEditor(props: { initial: Endpoint; onClose: () => void }) {
   const save = () => {
     try {
       if (!draft.name.trim()) throw new Error();
-      endpointUrl(draft, "models");
+      if (!subscription) endpointUrl(draft, "models");
       resolveRequestPlugin(draft);
     } catch (error) {
       showToast(
@@ -165,30 +169,40 @@ function EndpointEditor(props: { initial: Endpoint; onClose: () => void }) {
               </option>
             </Select>
           </ListItem>
-          <ListItem title={Locale.EndpointConfig.BaseUrl}>
-            <input
-              type="text"
-              aria-label={Locale.EndpointConfig.BaseUrl}
-              value={draft.baseUrl}
-              placeholder="https://api.example.com"
-              onChange={(event) =>
-                update({ baseUrl: event.currentTarget.value })
-              }
+          {!subscription && (
+            <>
+              <ListItem title={Locale.EndpointConfig.BaseUrl}>
+                <input
+                  type="text"
+                  aria-label={Locale.EndpointConfig.BaseUrl}
+                  value={draft.baseUrl}
+                  placeholder="https://api.example.com"
+                  onChange={(event) =>
+                    update({ baseUrl: event.currentTarget.value })
+                  }
+                />
+              </ListItem>
+              <ListItem title={Locale.EndpointConfig.ApiKey}>
+                <PasswordInput
+                  aria-label={Locale.EndpointConfig.ApiKey}
+                  value={draft.apiKey}
+                  onChange={(event) =>
+                    update({ apiKey: event.currentTarget.value })
+                  }
+                />
+              </ListItem>
+              <ListItem
+                title={Locale.EndpointConfig.RequestUrl}
+                subTitle={preview}
+              />
+            </>
+          )}
+          {subscription && (
+            <ListItem
+              title={Locale.EndpointConfig.Subscription}
+              subTitle={Locale.EndpointConfig.SubscriptionHint}
             />
-          </ListItem>
-          <ListItem title={Locale.EndpointConfig.ApiKey}>
-            <PasswordInput
-              aria-label={Locale.EndpointConfig.ApiKey}
-              value={draft.apiKey}
-              onChange={(event) =>
-                update({ apiKey: event.currentTarget.value })
-              }
-            />
-          </ListItem>
-          <ListItem
-            title={Locale.EndpointConfig.RequestUrl}
-            subTitle={preview}
-          />
+          )}
         </List>
         <List>
           <ListItem
@@ -260,25 +274,27 @@ function EndpointEditor(props: { initial: Endpoint; onClose: () => void }) {
               />
             </div>
           </ListItem>
-          <ListItem title={Locale.EndpointConfig.FetchModels}>
-            <IconButton
-              text={Locale.EndpointConfig.FetchModels}
-              disabled={loading}
-              onClick={async () => {
-                setLoading(true);
-                try {
-                  setFound(await fetchEndpointModels(draft));
-                  setSelectedFound([]);
-                } catch (error) {
-                  showToast(
-                    error instanceof Error ? error.message : String(error),
-                  );
-                } finally {
-                  setLoading(false);
-                }
-              }}
-            />
-          </ListItem>
+          {!subscription && (
+            <ListItem title={Locale.EndpointConfig.FetchModels}>
+              <IconButton
+                text={Locale.EndpointConfig.FetchModels}
+                disabled={loading}
+                onClick={async () => {
+                  setLoading(true);
+                  try {
+                    setFound(await fetchEndpointModels(draft));
+                    setSelectedFound([]);
+                  } catch (error) {
+                    showToast(
+                      error instanceof Error ? error.message : String(error),
+                    );
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+              />
+            </ListItem>
+          )}
           {found.map((model) => (
             <ListItem
               key={model.name}
@@ -343,7 +359,9 @@ export function EndpointConfigList() {
             key={endpoint.id}
             title={endpoint.name}
             subTitle={`${protocolNames[endpoint.protocol]} · ${
-              endpoint.baseUrl
+              usesClaudeSubscription(endpoint)
+                ? Locale.EndpointConfig.Subscription
+                : endpoint.baseUrl
             } · ${endpoint.models.length}`}
           >
             <div className={styles.actions}>

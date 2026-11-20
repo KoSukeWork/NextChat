@@ -1,12 +1,17 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile, rm, lstat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { terminateProcessTree } from "../../scripts/client-bridge/process.mjs";
 import { createRuntimeInspector } from "../../scripts/client-bridge/runtime.mjs";
 import { createSessionStore } from "../../scripts/client-bridge/sessions.mjs";
+import {
+  cleanCliEnvironment,
+  createOwnedSessions,
+  subscriptionStatus,
+} from "./subscription.mjs";
 
 const hash = (value) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -23,6 +28,9 @@ const historyHash = (messages) =>
 const abortError = () => new Error("Claude Code request cancelled");
 
 function validate(input) {
+  const credentials = input.credentials || "gateway";
+  if (!["gateway", "subscription"].includes(credentials))
+    throw new Error("Invalid Claude Code credential mode");
   if (!/^\d+\.\d+\.\d+$/.test(input.cliVersion || ""))
     throw new Error("An exact CLI version is required");
   if (
@@ -52,19 +60,29 @@ function validate(input) {
   }
   if (input.messages.at(-1).role !== "user")
     throw new Error("The last message must be a user message");
-  const target = new URL(input.endpoint?.baseUrl);
-  if (
-    !["http:", "https:"].includes(target.protocol) ||
-    target.username ||
-    target.password ||
-    target.search ||
-    target.hash
-  )
-    throw new Error("Use a plain HTTP(S) gateway base URL");
-  if (typeof input.endpoint.apiKey !== "string" || !input.endpoint.apiKey)
-    throw new Error("Gateway API key is required");
-  if (!["api-key", "bearer"].includes(input.authType))
-    throw new Error("Invalid gateway authentication");
+  if (credentials === "gateway") {
+    const target = new URL(input.endpoint?.baseUrl);
+    if (
+      !["http:", "https:"].includes(target.protocol) ||
+      target.username ||
+      target.password ||
+      target.search ||
+      target.hash
+    )
+      throw new Error("Use a plain HTTP(S) gateway base URL");
+    if (typeof input.endpoint.apiKey !== "string" || !input.endpoint.apiKey)
+      throw new Error("Gateway API key is required");
+    if (!["api-key", "bearer"].includes(input.authType))
+      throw new Error("Invalid gateway authentication");
+  } else if (
+    input.endpoint !== undefined ||
+    input.authType !== undefined ||
+    input.betas !== undefined
+  ) {
+    throw new Error(
+      "Subscription requests cannot contain gateway credentials or beta flags",
+    );
+  }
   if (
     input.betas !== undefined &&
     (!Array.isArray(input.betas) ||
@@ -128,6 +146,7 @@ export async function createDriver(options = {}) {
     options.executable || process.env.NEXTCHAT_CLAUDE_PATH || "claude";
   const sessions = await createSessionStore(dataDirectory, options);
   const cliVersion = createRuntimeInspector();
+  let ownedSessions;
   return {
     id: "claude-code",
     close: () => sessions.close(),
@@ -145,6 +164,11 @@ export async function createDriver(options = {}) {
     },
     async chat(input, { signal, emit, hostMcp, settings = {} }) {
       validate(input);
+      const subscription = input.credentials === "subscription";
+      if (subscription && options.subscriptionLogin !== true)
+        throw new Error(
+          "桥接服务未启用订阅登录 / Subscription login is disabled on this bridge",
+        );
       if (signal.aborted) throw abortError();
       const executable = runtimes[input.cliVersion] || fallback;
       const actualVersion = await cliVersion(executable, signal);
@@ -155,6 +179,32 @@ export async function createDriver(options = {}) {
         throw new Error(
           `Claude Code version mismatch: requested ${input.cliVersion}, installed ${actualVersion}. Configure the matching executable on the bridge.`,
         );
+      const subscriptionWork = join(dataDirectory, "subscription-work");
+      let ownedRegistry;
+      if (subscription) {
+        await mkdir(subscriptionWork, { recursive: true });
+        const workStat = await lstat(subscriptionWork);
+        if (!workStat.isDirectory() || workStat.isSymbolicLink())
+          throw new Error("Invalid subscription working directory");
+        const status = await subscriptionStatus(
+          executable,
+          signal,
+          subscriptionWork,
+        );
+        if (status === "signed-out")
+          throw new Error(
+            "请先在终端运行 claude 并登录订阅账号 / Run claude in a terminal and sign in to your subscription first",
+          );
+        if (status !== "signed-in")
+          throw new Error(
+            "无法确认 Claude 订阅登录状态 / Cannot verify Claude subscription login status",
+          );
+        ownedSessions ||= createOwnedSessions({
+          dataDirectory,
+          workDirectory: subscriptionWork,
+        });
+        ownedRegistry = await ownedSessions;
+      }
       const systems = input.messages
         .filter((m) => m.role === "system")
         .map((m) =>
@@ -174,7 +224,7 @@ export async function createDriver(options = {}) {
       if (typeof allowedTools !== "string" || allowedTools.length > 4096)
         throw new Error("Invalid allowed CLI tools");
       const scope = hash([
-        input.endpoint,
+        subscription ? "subscription" : input.endpoint,
         actualVersion,
         input.model,
         systems,
@@ -184,7 +234,10 @@ export async function createDriver(options = {}) {
         allowedTools,
         hostMcp?.tools,
       ]);
-      const key = hash([input.endpoint, input.sessionId]);
+      const key = hash([
+        subscription ? "subscription" : input.endpoint,
+        input.sessionId,
+      ]);
       const stored = await sessions.begin(
         key,
         scope,
@@ -196,9 +249,10 @@ export async function createDriver(options = {}) {
       let text = "";
       let diagnostic = "";
       const redact = (value) =>
-        String(value)
-          .split(input.endpoint.apiKey)
-          .join("[REDACTED]")
+        (input.endpoint?.apiKey
+          ? String(value).split(input.endpoint.apiKey).join("[REDACTED]")
+          : String(value)
+        )
           .replace(/(Bearer\s+)[^\s"']+/gi, "$1[REDACTED]")
           .slice(0, 2000);
       let sawStream = false;
@@ -208,25 +262,23 @@ export async function createDriver(options = {}) {
       const configDirectory = stored.directory;
       let requestDirectory;
       let committed = false;
-      const env = Object.fromEntries(
-        Object.entries(process.env).filter(
-          ([name]) =>
-            !/^(ANTHROPIC_|CLAUDE_|NEXTCHAT_(?:BRIDGE|WIRE|SERVICE)_|BUN_OPTIONS$|NODE_OPTIONS$)/i.test(
-              name,
-            ),
-        ),
-      );
+      let owned = false;
+      const env = cleanCliEnvironment();
       Object.assign(env, {
-        ANTHROPIC_BASE_URL: input.endpoint.baseUrl
-          .replace(/\/+$/, "")
-          .replace(/\/v1$/, ""),
-        [input.authType === "bearer"
-          ? "ANTHROPIC_AUTH_TOKEN"
-          : "ANTHROPIC_API_KEY"]: input.endpoint.apiKey,
-        CLAUDE_CONFIG_DIR: configDirectory,
         CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
         DISABLE_AUTOUPDATER: "1",
       });
+      if (subscription) env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = "1";
+      else
+        Object.assign(env, {
+          ANTHROPIC_BASE_URL: input.endpoint.baseUrl
+            .replace(/\/+$/, "")
+            .replace(/\/v1$/, ""),
+          [input.authType === "bearer"
+            ? "ANTHROPIC_AUTH_TOKEN"
+            : "ANTHROPIC_API_KEY"]: input.endpoint.apiKey,
+          CLAUDE_CONFIG_DIR: configDirectory,
+        });
       const args = [
         "--print",
         "--input-format",
@@ -238,13 +290,23 @@ export async function createDriver(options = {}) {
         "--model",
         input.model,
         "--setting-sources",
-        options.settingsSources || "",
+        subscription ? "" : options.settingsSources || "",
         "--strict-mcp-config",
         "--permission-mode",
         "dontAsk",
         canResume ? "--resume" : "--session-id",
         session,
       ];
+      if (subscription)
+        args.push(
+          "--disable-slash-commands",
+          "--settings",
+          JSON.stringify({
+            disableAllHooks: true,
+            disableClaudeAiConnectors: true,
+            autoMemoryEnabled: false,
+          }),
+        );
       const permitted = input.enableTools
         ? allowedTools
             .split(",")
@@ -290,8 +352,12 @@ export async function createDriver(options = {}) {
           args.push("--mcp-config", configFile);
         }
         if (signal.aborted) throw abortError();
+        if (subscription) {
+          await ownedRegistry.begin(session);
+          owned = true;
+        }
         child = spawn(executable, args, {
-          cwd: workingDirectory,
+          cwd: subscription ? subscriptionWork : workingDirectory,
           env,
           windowsHide: true,
           detached: process.platform !== "win32",
@@ -409,12 +475,14 @@ export async function createDriver(options = {}) {
                 });
           } else if (event.type === "result") {
             if (event.is_error || event.subtype !== "success") {
+              const message = redact(
+                event.errors?.join("\n") || event.result || "Request failed",
+              );
+              if (subscription) throw new Error(message);
               throw new Error(
                 `Claude Code failed (${String(
                   event.subtype || "unknown",
-                ).replace(/[^a-z0-9_-]/gi, "")}): ${redact(
-                  event.errors?.join("\n") || event.result || "Request failed",
-                )}`,
+                ).replace(/[^a-z0-9_-]/gi, "")}): ${message}`,
               );
             }
             if (!sawStream && !text && typeof event.result === "string") {
@@ -443,6 +511,14 @@ export async function createDriver(options = {}) {
       } catch (error) {
         committed = false;
         await terminateProcessTree(child);
+        const message = String(error?.message || "");
+        if (
+          subscription &&
+          /not logged in|not signed in|please (?:log|sign) in/i.test(message)
+        )
+          throw new Error(
+            "请先在终端运行 claude 并登录订阅账号 / Run claude in a terminal and sign in to your subscription first",
+          );
         throw error;
       } finally {
         signal.removeEventListener("abort", stop);
@@ -455,7 +531,11 @@ export async function createDriver(options = {}) {
               retryDelay: 100,
             });
         } finally {
-          await sessions.end(key, stored, committed);
+          try {
+            await sessions.end(key, stored, committed);
+          } finally {
+            if (owned) await ownedRegistry.end(session);
+          }
         }
       }
     },

@@ -5,6 +5,7 @@ mod bundled_plugins;
 mod claude_cli;
 mod claude_cli_events;
 mod claude_cli_mcp;
+mod claude_cli_owned;
 mod claude_cli_sessions;
 mod claude_cli_tauri;
 mod mcp;
@@ -62,6 +63,7 @@ fn main() {
             claude_cli_tauri::claude_cli_cancel,
             claude_cli_tauri::claude_cli_tool_result,
             claude_cli_tauri::claude_cli_status,
+            claude_cli_tauri::claude_cli_login_status,
             claude_cli_tauri::claude_cli_configure,
             claude_cli_tauri::claude_cli_options,
             stream::stream_fetch,

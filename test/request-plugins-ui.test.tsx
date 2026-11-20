@@ -46,7 +46,7 @@ jest.unstable_mockModule("@/app/request-plugins/worker", () => ({
 }));
 const pkg = JSON.parse(
   readFileSync(
-    "public/request-plugins/nextchat.claude-code-4.0.0.json",
+    "public/request-plugins/nextchat.claude-code-4.1.0.json",
     "utf8",
   ),
 );
@@ -56,6 +56,9 @@ const { RequestPluginManager } = await import(
 );
 const { EndpointConfigList } = await import(
   "../app/components/endpoint-config"
+);
+const { ClaudeCliControl } = await import(
+  "../app/components/claude-cli-control"
 );
 const { default: Locale, getLang } = await import("../app/locales");
 const { localizeText } = await import("../app/request-plugins/schema");
@@ -101,7 +104,7 @@ test("install a package without rebuilding and bind its configurable version to 
     target: { value: "https://gateway.test" },
   });
   fireEvent.change(screen.getByLabelText(Locale.RequestPlugins.Select), {
-    target: { value: "nextchat.claude-code@4.0.0" },
+    target: { value: "nextchat.claude-code@4.1.0" },
   });
   expect(screen.getByLabelText(fieldTitle("connection"))).toHaveValue(
     "builtin",
@@ -141,7 +144,7 @@ test("install a package without rebuilding and bind its configurable version to 
   );
   expect(useAppConfig.getState().endpoints[0].requestPlugin).toMatchObject({
     id: "nextchat.claude-code",
-    version: "4.0.0",
+    version: "4.1.0",
     config: {
       connection: "external",
       bridgeToken: "local-cli-token-12345",
@@ -150,11 +153,96 @@ test("install a package without rebuilding and bind its configurable version to 
   });
   fireEvent.click(
     screen.getByRole("checkbox", {
-      name: `${Locale.RequestPlugins.Enabled}: Claude Code 4.0.0`,
+      name: `${Locale.RequestPlugins.Enabled}: Claude Code 4.1.0`,
     }),
   );
   expect(useAppConfig.getState().requestPlugins[0].enabled).toBe(false);
   expect(useAppConfig.getState().endpoints[0].requestPlugin?.version).toBe(
-    "4.0.0",
+    "4.1.0",
   );
+});
+
+test("subscription mode hides gateway fields and can save an endpoint with no gateway", async () => {
+  useAppConfig.setState({
+    requestPlugins: [{ ...pkg, enabled: true }],
+    endpoints: [],
+  });
+  render(<EndpointConfigList />);
+  fireEvent.click(
+    screen.getByRole("button", { name: Locale.EndpointConfig.Add }),
+  );
+  fireEvent.change(screen.getByLabelText(Locale.EndpointConfig.Name), {
+    target: { value: "Subscription" },
+  });
+  fireEvent.change(screen.getByLabelText(Locale.EndpointConfig.Protocol), {
+    target: { value: "anthropic" },
+  });
+  fireEvent.change(screen.getByLabelText(Locale.RequestPlugins.Select), {
+    target: { value: "nextchat.claude-code@4.1.0" },
+  });
+  expect(screen.getByLabelText(fieldTitle("authType"))).toBeInTheDocument();
+  expect(screen.getByLabelText(fieldTitle("nativeBeta"))).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText(fieldTitle("credentials")), {
+    target: { value: "subscription" },
+  });
+  expect(screen.queryByLabelText(fieldTitle("authType"))).toBeNull();
+  expect(screen.queryByLabelText(fieldTitle("nativeBeta"))).toBeNull();
+  expect(screen.queryByLabelText(Locale.EndpointConfig.BaseUrl)).toBeNull();
+  expect(screen.queryByLabelText(Locale.EndpointConfig.ApiKey)).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: Locale.EndpointConfig.Save }),
+  );
+  expect(useAppConfig.getState().endpoints[0]).toMatchObject({
+    baseUrl: "",
+    apiKey: "",
+    requestPlugin: {
+      version: "4.1.0",
+      config: { credentials: "subscription" },
+    },
+  });
+});
+
+test("login status is checked only while its settings control is shown", async () => {
+  const invoke = jest.fn(async (command: string) =>
+    command === "claude_cli_login_status"
+      ? "signed-in"
+      : {
+          executablePath: "",
+          cliVersion: "1.2.3",
+          allowedTools: "Read",
+          requestTimeoutMs: 0,
+        },
+  );
+  Object.defineProperty(window, "__TAURI__", {
+    value: { invoke },
+    configurable: true,
+  });
+  try {
+    const view = render(<ClaudeCliControl />);
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("claude_cli_status", undefined),
+    );
+    expect(invoke).not.toHaveBeenCalledWith("claude_cli_login_status");
+    view.rerender(<ClaudeCliControl showLogin />);
+    await screen.findByText(Locale.RequestPlugins.Service.LoginSignedIn);
+    expect(
+      invoke.mock.calls.filter(
+        ([command]) => command === "claude_cli_login_status",
+      ),
+    ).toHaveLength(1);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: Locale.RequestPlugins.Service.LoginRefresh,
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        invoke.mock.calls.filter(
+          ([command]) => command === "claude_cli_login_status",
+        ),
+      ).toHaveLength(2),
+    );
+  } finally {
+    delete (window as any).__TAURI__;
+  }
 });

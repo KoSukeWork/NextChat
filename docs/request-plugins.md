@@ -8,6 +8,6 @@
 
 `prepareRequest(request, context)` 可返回带 `url`、`headers` 和可选 `body` 的请求；宿主只允许同源目的地，以免重定向接口凭据。`prepareChat(chat, context)` 可返回同源的外部驱动 HTTP 请求，或声明宿主注册的内置驱动。插件不能提供可执行文件、命令参数或环境变量。声明或返回旧版独立 transport 的插件会被拒绝。
 
-Claude Code 4.0.0 使用真实 CLI 的 `-p / --print`。桌面内置驱动和网页版桥接的使用方法见 [Claude Code CLI 插件](claude-code-modes.md)。模型需在接口配置中手动添加。
+Claude Code 4.1.0 使用官方 CLI 的 `-p / --print`，支持网关 API Key 或本机 Claude Code 的个人订阅登录。订阅模式不向插件或驱动发送接口地址和 API Key，不能共享部署给他人；网页版桥接默认禁用订阅登录。桌面内置驱动和网页版桥接的使用方法见 [Claude Code CLI 插件](claude-code-modes.md)。模型需在接口配置中手动添加。
 
-旧版 Claude Code 包和绑定在配置加载后自动迁移到 4.0.0；原外部桥接地址与令牌保留，原本自动管理的 CLI 改为桌面内置。原 HTTP 模式会显示一次迁移提示。导入备份时同样迁移旧绑定，不导入旧包；其他声明 transport 的包会被拒绝。网关地址、密钥和模型不因迁移改变。
+旧版 Claude Code 包和绑定在配置加载及备份导入时自动迁移到 4.1.0，并默认为网关凭据；原外部桥接地址与令牌保留，原本自动管理的 CLI 改为桌面内置。原 HTTP 模式会显示一次迁移提示。其他声明 transport 的包会被拒绝。网关地址、密钥和模型不因迁移改变，4.0.0 发布包保持不变。

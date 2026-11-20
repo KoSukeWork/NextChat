@@ -32,7 +32,7 @@ import styles from "./request-plugins.module.scss";
 
 const labels = () => Locale.RequestPlugins;
 const text = (value?: LocalizedText) => localizeText(value, getLang());
-const bundledClaudeVersion = "4.0.0";
+const bundledClaudeVersion = "4.1.0";
 
 export function RequestPluginManager() {
   const config = useAppConfig();
@@ -288,9 +288,11 @@ export function EndpointRequestPlugin(props: {
         </ListItem>
       )}
       {pkg?.manifest.id === "nextchat.claude-code" &&
-        pkg.manifest.version === "4.0.0" &&
+        pkg.manifest.version === bundledClaudeVersion &&
         config.connection === "builtin" &&
-        supportsLocalServices() && <ClaudeCliControl />}
+        supportsLocalServices() && (
+          <ClaudeCliControl showLogin={config.credentials === "subscription"} />
+        )}
       {pkg &&
         Object.entries(pkg.manifest.fields)
           .filter(

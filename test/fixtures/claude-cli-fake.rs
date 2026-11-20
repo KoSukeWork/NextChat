@@ -9,7 +9,19 @@ fn main() {
         return;
     }
     if args.iter().any(|arg| arg == "--version") {
+        assert!(std::env::var_os("CLAUDE_CODE_OAUTH_TOKEN").is_none());
         println!("1.2.3 (Claude Code)");
+        return;
+    }
+    if args.iter().any(|arg| arg == "auth") && args.iter().any(|arg| arg == "status") {
+        assert!(std::env::var_os("ANTHROPIC_API_KEY").is_none());
+        assert!(std::env::var_os("CLAUDE_CODE_OAUTH_TOKEN").is_none());
+        assert!(std::env::var_os("CLAUDE_CONFIG_DIR").is_none());
+        if std::path::Path::new("fake-signed-out").exists() {
+            println!("{{\"loggedIn\":false}}");
+        } else {
+            println!("{{\"loggedIn\":true,\"authMethod\":\"oauth_token\"}}");
+        }
         return;
     }
     let mut input = String::new();
@@ -40,7 +52,32 @@ fn main() {
             .unwrap()
             .contains("system instructions"));
     }
-    assert_eq!(std::env::var("ANTHROPIC_API_KEY").unwrap(), "dummy-secret");
+    if input.contains("subscription-test") {
+        for name in [
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_BASE_URL",
+            "CLAUDE_CONFIG_DIR",
+            "CLAUDE_CODE_OAUTH_TOKEN",
+        ] {
+            assert!(
+                std::env::var_os(name).is_none(),
+                "unexpected credential variable"
+            );
+        }
+        assert!(args.iter().any(|arg| arg == "--disable-slash-commands"));
+        let sources = args
+            .iter()
+            .position(|arg| arg == "--setting-sources")
+            .unwrap();
+        assert_eq!(args[sources + 1], "");
+        if input.contains("subscription-limit") {
+            println!("{{\"type\":\"result\",\"subtype\":\"error\",\"is_error\":true,\"result\":\"Usage limit reached; try again later\"}}");
+            return;
+        }
+    } else {
+        assert_eq!(std::env::var("ANTHROPIC_API_KEY").unwrap(), "dummy-secret");
+    }
     if input.contains("events-request") {
         for event in [
             r#"{"type":"stream_event","event":{"type":"message_start"}}"#,

@@ -2,13 +2,20 @@ import { endpointUrl } from "../utils/endpoints";
 import type { Endpoint, EndpointModel } from "../utils/endpoints";
 import { endpointFetch } from "../utils/endpoint-transport";
 import { endpointHeaders } from "./endpoint-protocol";
-import { createPluginSession } from "../request-plugins/host";
+import {
+  createPluginSession,
+  usesClaudeSubscription,
+} from "../request-plugins/host";
 import { nanoid } from "nanoid";
 
 export async function fetchEndpointModels(
   endpoint: Endpoint,
   requestFetch: typeof endpointFetch = endpointFetch,
 ): Promise<EndpointModel[]> {
+  if (usesClaudeSubscription(endpoint))
+    throw new Error(
+      "Claude 订阅模式请手动添加模型 / Add models manually for Claude subscription login",
+    );
   const found = new Map<string, EndpointModel>();
   const plugin = endpoint.requestPlugin
     ? createPluginSession(endpoint, nanoid(), "models")

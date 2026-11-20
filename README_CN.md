@@ -97,6 +97,12 @@ code1,code2,code3
 
 需要 Claude Code CLI 专用接口时，可以安装请求插件。桌面版直接调用已安装的 Claude Code，网页版连接自行部署的 Node 桥接服务。配置方法参见 [Claude Code CLI 插件](docs/claude-code-modes.md)。
 
+### Claude 订阅登录的使用限制
+
+Claude Code 插件可使用本机官方 Claude Code 的个人订阅登录。**仅供订阅持有人个人使用**：NextChat 没有账号系统，多设备使用指同一人的设备；请勿将使用订阅模式的 NextChat 或桥接部署分享给其他人，否则就是用你的订阅替他人转发请求，这是 Anthropic 明确禁止的。网页版桥接的订阅模式默认关闭，管理员须明确启用。
+
+请自行在终端运行官方、未经修改的 `claude` 并登录；NextChat 不读取或保存 Claude 凭据。请求计入订阅额度，相关限制按普通个人使用设计。Anthropic 的规则在 2026 年多次变化，今后也可能变化；如有疑问请使用 API Key。请参阅 [Claude Code 法律与合规](https://code.claude.com/docs/en/legal-and-compliance) 和 [使用 Claude 计划运行 Claude Agent SDK](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan)（核对日期：2026-11-19）。
+
 可选服务端配置见 `.env.template`。`CODE` 用于网页版访问验证；启用 `ENABLE_MCP=true` 时也必须配置 `CODE`。`WHITE_WEBDAV_ENDPOINTS` 用于增加允许的 WebDAV 转发地址。
 
 ## 开发

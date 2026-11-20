@@ -89,6 +89,12 @@ const en: LocaleType = {
   },
   RequestPlugins: {
     Service: {
+      Login: "Claude subscription login",
+      LoginChecking: "Checking",
+      LoginSignedIn: "Signed in",
+      LoginSignedOut: "Signed out; run claude in a terminal to sign in",
+      LoginUnknown: "Unable to verify; run claude in a terminal to check",
+      LoginRefresh: "Check again",
       AllowedTools: "Preapproved CLI tools",
       AllowedToolsHint:
         "Comma-separated names, e.g. Read,Glob,Grep,Bash,Write,Edit,WebFetch. Empty disables local tools. Listed tools may execute without per-call confirmation. Shared by CLI endpoints; applies to the next request. Enabled NextChat MCP and plugin tools use their existing executors.",
@@ -147,6 +153,9 @@ const en: LocaleType = {
     BaseUrl: "Base URL",
     ApiKey: "API key",
     RequestUrl: "Request URL",
+    Subscription: "Claude subscription login",
+    SubscriptionHint:
+      "Uses the local Claude Code sign-in; add models manually.",
     Models: "Models",
     ModelName: "Model name",
     DisplayName: "Display name (optional)",

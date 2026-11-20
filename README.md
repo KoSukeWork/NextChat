@@ -77,6 +77,12 @@ For enterprise inquiries, please contact: **business@nextchat.club**
 
 ![More](./docs/images/more.png)
 
+## Claude subscription login limits
+
+The Claude Code plugin can use the local sign-in of the official, unmodified Claude Code CLI. This is for the subscription holder's personal use only. NextChat has no account system; use across devices means the same person. Do not share a NextChat or bridge deployment using subscription mode with others, since that routes their requests through your plan, which Anthropic explicitly prohibits. The web bridge requires an administrator to enable subscription mode explicitly.
+
+Run `claude` in a terminal and sign in yourself; NextChat does not read or store Claude credentials. Requests count against your plan's limits, which assume ordinary individual use. Anthropic's rules changed several times in 2026 and may change again; use an API key if unsure. See [Claude Code legal and compliance](https://code.claude.com/docs/en/legal-and-compliance) and [using the Claude Agent SDK with your Claude plan](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan) (checked 2026-11-19). Setup details are in the [Claude Code plugin guide](docs/claude-code-modes.md).
+
 ## Features
 
 - **Deploy for free with one-click** on Vercel in under 1 minute

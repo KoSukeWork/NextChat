@@ -8,7 +8,13 @@ export function prepareCliChat(chat, context) {
     );
   if (!/^\d+\.\d+\.\d+$/.test(config.nativeCliVersion || ""))
     throw new Error("Specify the exact installed Claude Code version");
-  if (!["api-key", "bearer"].includes(config.authType))
+  const credentials = config.credentials || "gateway";
+  if (!["gateway", "subscription"].includes(credentials))
+    throw new Error("Invalid Claude Code credential mode");
+  if (
+    credentials === "gateway" &&
+    !["api-key", "bearer"].includes(config.authType)
+  )
     throw new Error("Invalid gateway authentication type");
   const bridge = new URL(config.bridgeUrl);
   if (
@@ -26,16 +32,24 @@ export function prepareCliChat(chat, context) {
       authorization: `Bearer ${config.bridgeToken}`,
     },
     body: {
-      ...chat,
-      endpoint: { baseUrl: endpoint.baseUrl, apiKey: endpoint.apiKey },
+      model: chat.model,
+      messages: chat.messages,
+      enableTools: chat.enableTools,
+      ...(chat.reasoningEffort ? { reasoningEffort: chat.reasoningEffort } : {}),
       sessionId,
       requestId,
       cliVersion: config.nativeCliVersion,
-      authType: config.authType,
-      betas: (config.nativeBeta || "")
-        .split(",")
-        .map((value) => value.trim())
-        .filter(Boolean),
+      credentials,
+      ...(credentials === "gateway"
+        ? {
+            endpoint: { baseUrl: endpoint.baseUrl, apiKey: endpoint.apiKey },
+            authType: config.authType,
+            betas: (config.nativeBeta || "")
+              .split(",")
+              .map((value) => value.trim())
+              .filter(Boolean),
+          }
+        : {}),
     },
   };
 }

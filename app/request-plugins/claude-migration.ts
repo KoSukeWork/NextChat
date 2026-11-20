@@ -1,10 +1,10 @@
-import bundled from "../../public/request-plugins/nextchat.claude-code-4.0.0.json";
+import bundled from "../../public/request-plugins/nextchat.claude-code-4.1.0.json";
 import type { Endpoint } from "../utils/endpoints";
 import { parsePluginPackage } from "./schema";
 import type { InstalledRequestPlugin, RequestPluginBinding } from "./schema";
 
 export const CLAUDE_PLUGIN_ID = "nextchat.claude-code";
-export const CLAUDE_PLUGIN_VERSION = "4.0.0";
+export const CLAUDE_PLUGIN_VERSION = "4.1.0";
 
 export function isLegacyClaudePlugin(id: unknown, version: unknown) {
   if (id !== CLAUDE_PLUGIN_ID || typeof version !== "string") return false;
@@ -12,10 +12,7 @@ export function isLegacyClaudePlugin(id: unknown, version: unknown) {
   if (!match) return false;
   return (
     Number(match[1]) < 4 ||
-    (Number(match[1]) === 4 &&
-      Number(match[2]) === 0 &&
-      Number(match[3]) === 0 &&
-      !!match[4])
+    (Number(match[1]) === 4 && Number(match[2]) === 0 && Number(match[3]) === 0)
   );
 }
 
@@ -43,6 +40,13 @@ function migrateBinding(
   previous?: InstalledRequestPlugin,
 ): RequestPluginBinding {
   const old = binding.config ?? {};
+  if (/^4\.0\.0(?:-[\w.-]+)?$/.test(binding.version)) {
+    return {
+      ...binding,
+      version: CLAUDE_PLUGIN_VERSION,
+      config: { ...old, credentials: "gateway" },
+    };
+  }
   const modeField = previous?.manifest.fields.mode;
   const mode =
     old.mode ||
@@ -60,6 +64,7 @@ function migrateBinding(
         !generatedLocalConnection(url, token)));
   const config: Record<string, string> = {
     connection: external ? "external" : "builtin",
+    credentials: "gateway",
     authType: old.authType === "bearer" ? "bearer" : "api-key",
     nativeBeta:
       old.nativeBeta ||

@@ -29,8 +29,17 @@ async function identity(executable) {
 
 export function probeVersion(executable) {
   return new Promise((resolve, reject) => {
+    const env = {};
+    for (const name of Object.keys(process.env))
+      if (
+        !/^(ANTHROPIC_|CLAUDE_|NEXTCHAT_(?:BRIDGE|WIRE|SERVICE)_|BUN_OPTIONS$|NODE_OPTIONS$)/i.test(
+          name,
+        )
+      )
+        env[name] = process.env[name];
     const child = spawn(executable, ["--version"], {
       windowsHide: true,
+      env,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let text = "";
